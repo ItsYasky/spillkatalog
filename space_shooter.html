@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<title>ROM-RYDDER</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#070712; display:flex; align-items:center; justify-content:center; height:100vh; }
+  canvas { display:block; }
+</style>
+</head>
+<body>
+<canvas id="g" width="480" height="600"></canvas>
+<script>
+const cv = document.getElementById('g');
+const ctx = cv.getContext('2d');
+const W = 480, H = 600;
+const GX=10, GY=36, GW=460, GH=530; // game area
+
+// ── Pre-render static background ─────────────────────────────────
+const bgcv = document.createElement('canvas');
+bgcv.width=W; bgcv.height=H;
+const bx = bgcv.getContext('2d');
+bx.fillStyle='#070712'; bx.fillRect(0,0,W,H);
+// Subtle floor grid
+bx.strokeStyle='rgba(255,255,255,0.035)'; bx.lineWidth=1;
+for (let x=GX; x<=GX+GW; x+=46) { bx.beginPath(); bx.moveTo(x,GY); bx.lineTo(x,GY+GH); bx.stroke(); }
+for (let y=GY; y<=GY+GH; y+=46) { bx.beginPath(); bx.moveTo(GX,y); bx.lineTo(GX+GW,y); bx.stroke(); }
+bx.strokeStyle='rgba(255,255,255,0.12)'; bx.lineWidth=1;
+bx.strokeRect(GX,GY,GW,GH);
+// Stars outside arena
+for (let i=0; i<60; i++) {
+  bx.fillStyle=`rgba(255,255,255,${0.05+Math.random()*.3})`;
+  bx.beginPath(); bx.arc(Math.random()*W, Math.random()*H, Math.random()<.1?1.1:.6, 0, Math.PI*2); bx.fill();
+}
+
+// ── Constants ─────────────────────────────────────────────────────
+const ECLR   = ['#ef4444','#f97316','#a855f7','#4ade80','#facc15'];
+const ENAMES = ['JEGER','SKYTTE','PANSER','HEALER','BOMBER'];
+const SHIELD_DUR=120, SHIELD_CD=360;
+const LASER_DUR=9999, LASER_CD=1;
+const DASH_DUR=10,    DASH_CD=1;
+const PARRY_DUR=18,   PARRY_CD=80; // parry: kort vindu, kort cooldown
+// Vegger — 4 dekningspunkter symmetrisk i arenaen
+const WALLS=[
+  {x:GX+90,       y:GY+GH/2-36, w:14, h:72},   // venstre søyle
+  {x:GX+GW-104,   y:GY+GH/2-36, w:14, h:72},   // høyre søyle
+  {x:GX+GW/2-44,  y:GY+148,     w:88, h:14},   // topp-bar
+  {x:GX+GW/2-44,  y:GY+GH-162,  w:88, h:14},   // bunn-bar
+];
+
+// ── State ─────────────────────────────────────────────────────────
+const MAX_HP=300;
+let state='menu';
+let score=0, hp=MAX_HP, room=1;
+let keys={}, particles=[], texts=[];
+let transitTimer=0;
+let shield={state:'ready',timer:0};
+let laser={state:'ready',timer:0,angle:0,x:0,y:0};
+let laserSegs=[];
+let dash={state:'ready',timer:0,dx:0,dy:0};
+let parry={state:'ready',timer:0};
+let capeTrail=[];
+let explodeAnims=[], killFlashes=[];
+
+// ── Player ────────────────────────────────────────────────────────
+const P={x:GX+GW/2, y:GY+GH/2, w:28, h:22, speed:4, angle:-Math.PI/2, cd:0, inv:0, bullets:[]};
+
+// ── Enemies ───────────────────────────────────────────────────────
+let enemies=[], eB=[];
+
+function getWave(r) {
+  return {
+    red:    Math.min(2+Math.floor(r*.5), 6),
+    orange: Math.min(Math.max(0,r-1)*2,  6),
+    purple: Math.min(Math.max(0,r-3),    4),
+    green:  r>=4 ? Math.min(Math.floor((r-3)*.6)+1, 3) : 0,  // HEALER
+    yellow: r>=6 ? Math.min(Math.floor((r-5)*.6)+1, 3) : 0,  // BOMBER
+  };
+}
+function spawnRoom() {
+  enemies=[]; eB=[];
+  P.x=GX+GW/2; P.y=GY+GH/2;
+  P.bullets=[]; P.cd=0;
+  const w=getWave(room);
+  const spd = 1 + (room-1)*0.06;
+  const shootInt = Math.max(35, 80-room*4);
+  const types=[...Array(w.red).fill(0),...Array(w.orange).fill(1),...Array(w.purple).fill(2),
+               ...Array(w.green).fill(3),...Array(w.yellow).fill(4)];
+  const EW=[22,24,28,18,22], EH=[22,22,20,18,22];
+  const EHP=[20,35,80,40,28];
+  types.forEach(t=>{
+    let x,y,att=0;
+    do {
+      x=GX+35+Math.random()*(GW-70);
+      y=GY+35+Math.random()*(GH-70);
+      att++;
+    } while(Math.hypot(x-P.x,y-P.y)<150 && att<60);
+    const hp=EHP[t];
+    enemies.push({x,y,w:EW[t],h:EH[t],t,hp,maxHp:hp,alive:true,ft:0,
+      shootT:Math.floor(Math.random()*shootInt),spd,shootInt,
+      enraged:false,healTarget:null,healT:0,pulseT:0});
+  });
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function ov(ax,ay,aw,ah,bx2,by2,bw,bh){
+  return ax-aw/2<bx2+bw/2&&ax+aw/2>bx2-bw/2&&ay-ah/2<by2+bh/2&&ay+ah/2>by2-bh/2;
+}
+function boom(x,y,clr,n=14){
+  if(particles.length>80)return;
+  for(let i=0;i<n;i++){
+    const a=Math.PI*2*i/n+Math.random()*.5,s=Math.random()*4+1;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,d:.028+Math.random()*.02,r:Math.random()*2+1,clr});
+  }
+}
+function ftxt(x,y,t,clr){texts.push({x,y,t,clr,life:1,vy:-1.4});}
+function nearest(){
+  let best=null,min=Infinity;
+  enemies.forEach(e=>{if(!e.alive)return;const d=Math.hypot(e.x-P.x,e.y-P.y);if(d<min){min=d;best=e;}});
+  return best;
+}
+function pushWalls(obj){
+  WALLS.forEach(wall=>{
+    const el=obj.x-obj.w/2,er=obj.x+obj.w/2,et=obj.y-obj.h/2,eb=obj.y+obj.h/2;
+    const wl=wall.x,wr=wall.x+wall.w,wt=wall.y,wb=wall.y+wall.h;
+    if(er>wl&&el<wr&&eb>wt&&et<wb){
+      const dl=er-wl,dr=wr-el,dt=eb-wt,db=wb-et;
+      const mn=Math.min(dl,dr,dt,db);
+      if(mn===dl)obj.x-=dl;
+      else if(mn===dr)obj.x+=dr;
+      else if(mn===dt)obj.y-=dt;
+      else obj.y+=db;
+    }
+  });
+}
+function hitWall(bx,by){
+  return WALLS.some(w=>bx>w.x&&bx<w.x+w.w&&by>w.y&&by<w.y+w.h);
+}
+function ptLineDist(px,py,x1,y1,x2,y2){
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
+  if(len===0)return Math.hypot(px-x1,py-y1);
+  const t=Math.max(0,Math.min(1,((px-x1)*dx+(py-y1)*dy)/(len*len)));
+  return Math.hypot(px-(x1+t*dx),py-(y1+t*dy));
+}
+// Elektrisk kjedelyn — bygger opp et tre av lynnedslag
+function getElectricChain(){
+  const arcs=[], hit=new Set();
+  const primary=nearest();
+  if(!primary) return arcs;
+
+  // Nivå 0: spiller → nærmeste fiende
+  arcs.push({fx:P.x,fy:P.y,tx:primary.x,ty:primary.y,enemy:primary,lvl:0});
+  hit.add(primary);
+
+  // Nivå 1: fra primær → opptil 4 naboer
+  const near1=enemies.filter(e=>e.alive&&!hit.has(e)&&Math.hypot(e.x-primary.x,e.y-primary.y)<170)
+    .sort((a,b)=>Math.hypot(a.x-primary.x,a.y-primary.y)-Math.hypot(b.x-primary.x,b.y-primary.y))
+    .slice(0,4);
+  near1.forEach(e=>{
+    hit.add(e);
+    arcs.push({fx:primary.x,fy:primary.y,tx:e.x,ty:e.y,enemy:e,lvl:1});
+  });
+
+  // Nivå 2: fra nivå-1 fiender → enda flere
+  near1.forEach(src=>{
+    enemies.filter(e=>e.alive&&!hit.has(e)&&Math.hypot(e.x-src.x,e.y-src.y)<130)
+      .sort((a,b)=>Math.hypot(a.x-src.x,a.y-src.y)-Math.hypot(b.x-src.x,b.y-src.y))
+      .slice(0,3).forEach(e=>{
+        hit.add(e);
+        arcs.push({fx:src.x,fy:src.y,tx:e.x,ty:e.y,enemy:e,lvl:2});
+      });
+  });
+
+  return arcs;
+}
+
+// Tegner et sikk-sakk-lynnedslag mellom to punkter
+function drawBolt(x1,y1,x2,y2,color,lw,alpha,seed){
+  const segs=8;
+  const dx=x2-x1, dy=y2-y1, len=Math.hypot(dx,dy)||1;
+  const nx=-dy/len, ny=dx/len;
+  const rng=n=>(Math.sin(n*127.1+seed*311.7)*43758.5453%1+1)%1;
+  ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.globalAlpha=alpha;
+  ctx.beginPath(); ctx.moveTo(x1,y1);
+  for(let i=1;i<segs;i++){
+    const t=i/segs, off=(rng(i)-.5)*len*.35;
+    ctx.lineTo(x1+dx*t+nx*off, y1+dy*t+ny*off);
+  }
+  ctx.lineTo(x2,y2); ctx.stroke();
+}
+function killEnemy(e){
+  if(!e.alive)return; // guard against double-kill
+  e.alive=false;
+  const pts=[10,20,40,15,30][e.t]*room;
+  score+=pts;
+  // Scaled explosion — bigger for tankier enemies
+  const boomN=Math.min(Math.ceil(e.maxHp/5)+8,32);
+  boom(e.x,e.y,ECLR[e.t],boomN);
+  // Kill-flash ring
+  killFlashes.push({x:e.x,y:e.y,r:e.w/2+4,life:1,clr:ECLR[e.t],maxR:e.w*3+20});
+  // Floating enemy name + score
+  ftxt(e.x,e.y-26,ENAMES[e.t],ECLR[e.t]);
+  ftxt(e.x,e.y-12,`+${pts}`,'#f1f5f9');
+  // BOMBER chain-explosion on death
+  if(e.t===4){
+    const R=95;
+    explodeAnims.push({x:e.x,y:e.y,r:8,life:1});
+    for(let i=0;i<28;i++){
+      const a=Math.PI*2*i/28,s=Math.random()*5+2;
+      particles.push({x:e.x,y:e.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,d:.025,r:Math.random()*3+1,clr:i%2?'#facc15':'#fb923c'});
+    }
+    enemies.forEach(n=>{
+      if(!n.alive||n===e)return;
+      const d=Math.hypot(n.x-e.x,n.y-e.y);
+      if(d<R){n.hp-=Math.ceil(28*(1-d/R));n.ft=14;if(n.hp<=0)killEnemy(n);}
+    });
+    if(Math.hypot(P.x-e.x,P.y-e.y)<R) hitPlayer();
+  }
+}
+
+// ── Update ────────────────────────────────────────────────────────
+function update(){
+  if(state==='transition'){
+    transitTimer--;
+    particles=particles.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vx*=.93;p.vy*=.93;p.life-=p.d;return p.life>0;});
+    texts=texts.filter(t=>{t.y+=t.vy;t.life-=.018;return t.life>0;});
+    if(transitTimer<=0)startNextRoom();
+    return;
+  }
+  if(state!=='playing')return;
+
+  // ── Player move ───────────────────────────────────────────────
+  let dx=0,dy=0;
+  if(keys['w']||keys['ArrowUp'])    dy-=1;
+  if(keys['s']||keys['ArrowDown'])  dy+=1;
+  if(keys['a']||keys['ArrowLeft'])  dx-=1;
+  if(keys['d']||keys['ArrowRight']) dx+=1;
+  if(dx&&dy){dx*=.707;dy*=.707;}
+  P.x=Math.max(GX+P.w/2,Math.min(GX+GW-P.w/2,P.x+dx*P.speed));
+  P.y=Math.max(GY+P.h/2,Math.min(GY+GH-P.h/2,P.y+dy*P.speed));
+  pushWalls(P);
+
+  // ── Auto-aim + auto-shoot ──────────────────────────────────────
+  const tgt=nearest();
+  if(tgt){
+    const ta=Math.atan2(tgt.y-P.y,tgt.x-P.x);
+    let diff=ta-P.angle;
+    while(diff>Math.PI)diff-=Math.PI*2;
+    while(diff<-Math.PI)diff+=Math.PI*2;
+    P.angle+=diff*.2;
+    if(P.cd<=0){
+      P.bullets.push({x:P.x,y:P.y,vx:Math.cos(P.angle)*11,vy:Math.sin(P.angle)*11});
+      P.cd=11;
+    }
+  }
+  if(P.cd>0)P.cd--;
+  if(P.inv>0)P.inv--;
+
+  // ── Dash (kappe) ──────────────────────────────────────────────
+  if(dash.state==='active'){
+    P.x=Math.max(GX+P.w/2,Math.min(GX+GW-P.w/2,P.x+dash.dx*18));
+    P.y=Math.max(GY+P.h/2,Math.min(GY+GH-P.h/2,P.y+dash.dy*18));
+    if(particles.length<80) particles.push({x:P.x,y:P.y,vx:-dash.dx*2,vy:-dash.dy*2,life:.5,d:.07,r:10,clr:'#fbbf24'});
+    // Dash skader alle fiender den passerer gjennom
+    enemies.forEach(e=>{
+      if(!e.alive)return;
+      if(ov(P.x,P.y,P.w+10,P.h+10,e.x,e.y,e.w,e.h)){
+        e.hp-=8; e.ft=10;
+        boom(e.x,e.y,ECLR[e.t],8);
+        if(e.hp<=0)killEnemy(e);
+      }
+    });
+    dash.timer--;
+    if(dash.timer<=0){dash.state='cooldown';dash.timer=DASH_CD;}
+  } else if(dash.state==='cooldown'){
+    dash.timer--;
+    if(dash.timer<=0)dash.state='ready';
+  }
+
+  // Cape trail (always)
+  capeTrail.push({x:P.x,y:P.y,angle:P.angle});
+  if(capeTrail.length>7)capeTrail.shift();
+
+  // ── Shield ────────────────────────────────────────────────────
+  if(shield.state==='active'){
+    shield.timer--;
+    if(shield.timer<=0){shield.state='cooldown';shield.timer=SHIELD_CD;}
+  } else if(shield.state==='cooldown'){
+    shield.timer--;
+    if(shield.timer<=0)shield.state='ready';
+  }
+  if((keys['q']||keys['Shift'])&&shield.state==='ready'){
+    shield.state='active'; shield.timer=SHIELD_DUR;
+  }
+
+  // ── Elektrisk kjedelyn ────────────────────────────────────────
+  if(laser.state==='active'){
+    laser.x=P.x; laser.y=P.y; laser.angle=P.angle;
+    laser.timer--;
+    laserSegs=getElectricChain();
+    if(laser.timer%10===0){
+      laserSegs.forEach(arc=>{
+        if(!arc.enemy||!arc.enemy.alive)return;
+        const dmg=[3,2,1][arc.lvl];
+        arc.enemy.hp-=dmg; arc.enemy.ft=8;
+        if(arc.enemy.hp<=0)killEnemy(arc.enemy);
+      });
+    }
+    if(laser.timer<=0){laser.state='cooldown';laser.timer=LASER_CD;}
+  } else {
+    laserSegs=[];
+    if(laser.state==='cooldown'){laser.timer--;if(laser.timer<=0)laser.state='ready';}
+  }
+
+  // ── Parry ─────────────────────────────────────────────────────
+  if(parry.state==='active'){
+    parry.timer--;
+    const PR=42;
+    eB=eB.filter(b=>{
+      if(Math.hypot(b.x-P.x,b.y-P.y)<PR){
+        const tgt2=nearest();
+        const ta2=tgt2?Math.atan2(tgt2.y-P.y,tgt2.x-P.x):Math.atan2(-b.vy,-b.vx);
+        P.bullets.push({x:b.x,y:b.y,vx:Math.cos(ta2)*14,vy:Math.sin(ta2)*14,dmg:5,parried:true});
+        boom(b.x,b.y,'#c084fc',7);
+        return false;
+      }
+      return true;
+    });
+    if(parry.timer<=0){parry.state='cooldown';parry.timer=PARRY_CD;}
+  } else if(parry.state==='cooldown'){
+    parry.timer--;
+    if(parry.timer<=0)parry.state='ready';
+  }
+
+  // ── Player bullets ────────────────────────────────────────────
+  P.bullets=P.bullets.filter(b=>{
+    b.x+=b.vx; b.y+=b.vy;
+    return b.x>GX&&b.x<GX+GW&&b.y>GY&&b.y<GY+GH&&!hitWall(b.x,b.y);
+  });
+
+  // ── Enemy AI ─────────────────────────────────────────────────
+  enemies.forEach(e=>{
+    if(!e.alive)return;
+    if(e.ft>0)e.ft--;
+    e.pulseT++;
+    const dx2=P.x-e.x,dy2=P.y-e.y,dist=Math.hypot(dx2,dy2);
+    const ang=Math.atan2(dy2,dx2);
+
+    if(e.t===0){ // ── JEGER: fast charger ───────────────────────
+      e.x+=Math.cos(ang)*1.7*e.spd;
+      e.y+=Math.sin(ang)*1.7*e.spd;
+
+    } else if(e.t===1){ // ── SKYTTE: orbit + triple burst ────────
+      const pref=120;
+      const move = dist>pref+18?1 : dist<pref-18?-1:0;
+      e.x+=Math.cos(ang)*.9*e.spd*move;
+      e.y+=Math.sin(ang)*.9*e.spd*move;
+      e.shootT++;
+      if(e.shootT>=e.shootInt){
+        e.shootT=0;
+        // Triple burst: 3 shots spread slightly
+        for(let s=-1;s<=1;s++){
+          const sa=ang+s*.18;
+          eB.push({x:e.x,y:e.y,vx:Math.cos(sa)*5.5,vy:Math.sin(sa)*5.5});
+        }
+      }
+
+    } else if(e.t===2){ // ── PANSER: tank — enrages at <25% HP ───
+      if(!e.enraged && e.hp/e.maxHp<.25){
+        e.enraged=true;
+        ftxt(e.x,e.y-28,'RASERI!','#ef4444');
+        killFlashes.push({x:e.x,y:e.y,r:14,life:1,clr:'#ef4444',maxR:60});
+      }
+      const moveSpd = e.enraged ? 1.9 : .75;
+      e.x+=Math.cos(ang)*moveSpd*e.spd;
+      e.y+=Math.sin(ang)*moveSpd*e.spd;
+
+    } else if(e.t===3){ // ── HEALER: finds most-damaged ally, heals ──
+      let best=null, minRatio=1;
+      enemies.forEach(n=>{
+        if(!n.alive||n===e)return;
+        const r=n.hp/n.maxHp;
+        if(r<minRatio){minRatio=r;best=n;}
+      });
+      e.healTarget=best;
+      if(best){
+        const ha=Math.atan2(best.y-e.y,best.x-e.x);
+        const hd=Math.hypot(best.x-e.x,best.y-e.y);
+        const dir=hd>65?1:hd<40?-1:0;
+        e.x+=Math.cos(ha)*.65*e.spd*dir;
+        e.y+=Math.sin(ha)*.65*e.spd*dir;
+        e.healT++;
+        if(e.healT>=44){
+          e.healT=0;
+          if(best.alive&&best.hp<best.maxHp){
+            best.hp=Math.min(best.maxHp,best.hp+4);
+            best.ft=6;
+            ftxt(best.x,best.y-14,'+HELSE','#4ade80');
+          }
+        }
+      } else {
+        // No injured allies — flee from player
+        e.x-=Math.cos(ang)*.45*e.spd;
+        e.y-=Math.sin(ang)*.45*e.spd;
+        e.healTarget=null;
+      }
+
+    } else if(e.t===4){ // ── BOMBER: rushes player, explodes on contact ──
+      const rushSpd=2.1+Math.sin(e.pulseT*.08)*.4;
+      e.x+=Math.cos(ang)*rushSpd*e.spd;
+      e.y+=Math.sin(ang)*rushSpd*e.spd;
+      if(dist<22){ killEnemy(e); return; } // contact explosion
+    }
+
+    e.x=Math.max(GX+e.w/2,Math.min(GX+GW-e.w/2,e.x));
+    e.y=Math.max(GY+e.h/2,Math.min(GY+GH-e.h/2,e.y));
+    pushWalls(e);
+  });
+
+  // Enemy bullets — move + clip to arena + stop at walls
+  eB=eB.filter(b=>{b.x+=b.vx;b.y+=b.vy;return b.x>GX-10&&b.x<GX+GW+10&&b.y>GY-10&&b.y<GY+GH+10&&!hitWall(b.x,b.y);});
+
+  // ── Bullet-enemy collision ────────────────────────────────────
+  P.bullets=P.bullets.filter(b=>{
+    for(const e of enemies){
+      if(!e.alive)continue;
+      if(ov(b.x,b.y,6,6,e.x,e.y,e.w,e.h)){
+        // Knockback in bullet direction
+        const blen=Math.hypot(b.vx,b.vy)||1;
+        e.x+=b.vx/blen*6; e.y+=b.vy/blen*6;
+        e.x=Math.max(GX+e.w/2,Math.min(GX+GW-e.w/2,e.x));
+        e.y=Math.max(GY+e.h/2,Math.min(GY+GH-e.h/2,e.y));
+        const dmg=b.dmg||1;
+        e.hp-=dmg; e.ft=6;
+        if(e.hp<=0)killEnemy(e);
+        else ftxt(e.x,e.y-14,b.parried?`-${dmg}★`:'!',b.parried?'#c084fc':ECLR[e.t]);
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // ── Enemy-player collision ────────────────────────────────────
+  const shielded=shield.state==='active';
+  if(shielded){
+    eB=eB.filter(b=>{
+      if(ov(b.x,b.y,5,5,P.x,P.y,54,54)){boom(b.x,b.y,'#818cf8',4);return false;}
+      return true;
+    });
+  } else if(P.inv<=0){
+    eB=eB.filter(b=>{
+      if(ov(b.x,b.y,5,5,P.x,P.y,P.w,P.h)){hitPlayer();return false;}
+      return true;
+    });
+    enemies.forEach(e=>{
+      if(!e.alive)return;
+      if(ov(P.x,P.y,P.w,P.h,e.x,e.y,e.w,e.h))hitPlayer();
+    });
+  }
+
+  // ── Room clear? ───────────────────────────────────────────────
+  if(enemies.every(e=>!e.alive)){
+    state='transition'; transitTimer=90;
+  }
+
+  particles=particles.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vx*=.93;p.vy*=.93;p.life-=p.d;return p.life>0;});
+  texts=texts.filter(t=>{t.y+=t.vy;t.life-=.018;return t.life>0;});
+  explodeAnims=explodeAnims.filter(a=>{a.r+=14;a.life-=.045;return a.life>0;});
+  killFlashes=killFlashes.filter(f=>{f.r+=5;f.life-=.07;return f.life>0;});
+}
+
+function hitPlayer(){
+  if(P.inv>0)return;
+  boom(P.x,P.y,'#ef4444',22);
+  hp-=20;
+  P.inv=90; // 1.5 sek usårbarhet etter treff
+  if(hp<=0){hp=0;state='dead';}
+}
+function startNextRoom(){room++;spawnRoom();state='playing';} // uendelig modus
+
+// ── Draw ──────────────────────────────────────────────────────────
+function draw(){
+  ctx.drawImage(bgcv,0,0);
+  if(state==='menu'){drawMenu();return;}
+  if(state==='dead'){drawEnd();return;}
+  if(state==='win') {drawWin();return;}
+
+  drawWorld();
+  drawHUD();
+  if(state==='transition')drawTransition();
+}
+
+function drawWorld(){
+  // ── Vegger ────────────────────────────────────────────────────
+  WALLS.forEach(w=>{
+    ctx.fillStyle='#1e293b'; ctx.fillRect(w.x,w.y,w.w,w.h);
+    ctx.strokeStyle='#334155'; ctx.lineWidth=1.5;
+    ctx.strokeRect(w.x,w.y,w.w,w.h);
+    // Subtle highlight edge
+    ctx.strokeStyle='rgba(148,163,184,0.12)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(w.x,w.y+w.h); ctx.lineTo(w.x,w.y); ctx.lineTo(w.x+w.w,w.y); ctx.stroke();
+  });
+
+  // ── Elektrisk kjedelyn
+  if(laser.state==='active'&&laserSegs.length){
+    const seed=Math.floor(Date.now()/55); // flimrer ~18 ganger/sek
+    const flicker=.75+.25*Math.sin(Date.now()/35);
+    const colors=['#7dd3fc','#38bdf8','#bfdbfe'];
+    const widths=[3.5, 2.2, 1.4];
+    laserSegs.forEach(arc=>{
+      const c=colors[arc.lvl], lw=widths[arc.lvl];
+      // Ytre, lysere bue
+      drawBolt(arc.fx,arc.fy,arc.tx,arc.ty,c,lw,flicker*.85,seed+arc.lvl*77);
+      // Hvit kjerne
+      drawBolt(arc.fx,arc.fy,arc.tx,arc.ty,'#e0f2fe',lw*.35,flicker*.5,seed+arc.lvl*77);
+      // Gnistpunkt på fienden
+      ctx.fillStyle='#ffffff'; ctx.globalAlpha=flicker;
+      ctx.beginPath(); ctx.arc(arc.tx,arc.ty,arc.lvl===0?5:3,0,Math.PI*2); ctx.fill();
+    });
+    // Elektrisk aura på spilleren
+    ctx.strokeStyle='#38bdf8'; ctx.lineWidth=1.5;
+    ctx.globalAlpha=flicker*.4;
+    ctx.beginPath(); ctx.arc(P.x,P.y,20,0,Math.PI*2); ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+
+  // Cape trail
+  const dashBright = dash.state==='active';
+  capeTrail.forEach((pos,i)=>{
+    const a = (i/capeTrail.length)*(dashBright?.55:.1);
+    ctx.save();
+    ctx.translate(pos.x,pos.y); ctx.rotate(pos.angle+Math.PI/2);
+    ctx.fillStyle='#f1f5f9'; ctx.globalAlpha=a;
+    ctx.beginPath(); ctx.moveTo(0,-P.h/2); ctx.lineTo(P.w/2,P.h/2); ctx.lineTo(-P.w/2,P.h/2); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  });
+  ctx.globalAlpha=1;
+
+  // Aim line + reticle
+  const tgt=nearest();
+  if(tgt){
+    ctx.strokeStyle='rgba(56,189,248,0.12)'; ctx.lineWidth=1;
+    ctx.setLineDash([4,6]);
+    ctx.beginPath(); ctx.moveTo(P.x,P.y); ctx.lineTo(tgt.x,tgt.y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle='rgba(56,189,248,0.4)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(tgt.x,tgt.y,tgt.w/2+5,0,Math.PI*2); ctx.stroke();
+  }
+
+  // Player
+  if(P.inv<=0||Math.floor(P.inv/5)%2===0){
+    ctx.save();
+    ctx.translate(P.x,P.y); ctx.rotate(P.angle+Math.PI/2);
+    ctx.fillStyle='#f1f5f9';
+    ctx.beginPath(); ctx.moveTo(0,-P.h/2); ctx.lineTo(P.w/2,P.h/2); ctx.lineTo(-P.w/2,P.h/2); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if(shield.state==='active'){
+      ctx.strokeStyle='#818cf8'; ctx.lineWidth=2;
+      ctx.globalAlpha=.45+.3*Math.sin(Date.now()/75);
+      ctx.beginPath(); ctx.arc(P.x,P.y,30,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+    // Parry ring
+    if(parry.state==='active'){
+      const pt=parry.timer/PARRY_DUR;
+      ctx.strokeStyle='#c084fc'; ctx.lineWidth=2.5;
+      ctx.globalAlpha=pt;
+      ctx.beginPath(); ctx.arc(P.x,P.y,42,0,Math.PI*2); ctx.stroke();
+      ctx.fillStyle='#818cf8'; ctx.globalAlpha=pt*.18;
+      ctx.beginPath(); ctx.arc(P.x,P.y,42,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=1;
+    }
+  }
+
+  // Player bullets (parried = purple + bigger)
+  P.bullets.forEach(b=>{
+    ctx.fillStyle=b.parried?'#c084fc':'#38bdf8';
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.parried?5:3,0,Math.PI*2); ctx.fill();
+  });
+
+  // ── Healer beams (behind enemies) ────────────────────────────
+  enemies.forEach(e=>{
+    if(!e.alive||e.t!==3||!e.healTarget||!e.healTarget.alive)return;
+    ctx.strokeStyle='#4ade80'; ctx.lineWidth=1.5;
+    ctx.globalAlpha=.45+.3*Math.sin(Date.now()/110);
+    ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(e.x,e.y); ctx.lineTo(e.healTarget.x,e.healTarget.y); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha=1;
+  });
+
+  // ── Enemies ───────────────────────────────────────────────────
+  enemies.forEach(e=>{
+    if(!e.alive)return;
+    const baseClr = ECLR[e.t];
+    const flashClr = '#ffffff';
+    const fill = e.ft>0 ? flashClr : baseClr;
+
+    // PANSER enrage glow — pulsing red outline
+    if(e.t===2&&e.enraged){
+      ctx.strokeStyle='#ef4444'; ctx.lineWidth=3;
+      ctx.globalAlpha=.5+.5*Math.abs(Math.sin(Date.now()/80));
+      ctx.strokeRect(e.x-e.w/2-2,e.y-e.h/2-2,e.w+4,e.h+4);
+      ctx.globalAlpha=1;
+    }
+
+    ctx.fillStyle=fill;
+    if(e.t===0){ // JEGER — diamond
+      ctx.beginPath(); ctx.moveTo(e.x,e.y-e.h/2); ctx.lineTo(e.x+e.w/2,e.y);
+      ctx.lineTo(e.x,e.y+e.h/2); ctx.lineTo(e.x-e.w/2,e.y); ctx.closePath(); ctx.fill();
+
+    } else if(e.t===1){ // SKYTTE — triangle
+      ctx.beginPath(); ctx.moveTo(e.x,e.y+e.h/2); ctx.lineTo(e.x+e.w/2,e.y-e.h/2);
+      ctx.lineTo(e.x-e.w/2,e.y-e.h/2); ctx.closePath(); ctx.fill();
+
+    } else if(e.t===2){ // PANSER — square
+      ctx.fillRect(e.x-e.w/2,e.y-e.h/2,e.w,e.h);
+
+    } else if(e.t===3){ // HEALER — circle with cross
+      ctx.beginPath(); ctx.arc(e.x,e.y,e.w/2,0,Math.PI*2); ctx.fill();
+      ctx.strokeStyle=e.ft>0?'#1e1b33':'#052e16'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(e.x,e.y-e.w/2+4); ctx.lineTo(e.x,e.y+e.w/2-4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(e.x-e.w/2+4,e.y); ctx.lineTo(e.x+e.w/2-4,e.y); ctx.stroke();
+
+    } else if(e.t===4){ // BOMBER — pulsing circle with warning rings
+      const pulse=(.7+.3*Math.abs(Math.sin(e.pulseT*.09)))*e.w/2;
+      ctx.beginPath(); ctx.arc(e.x,e.y,pulse,0,Math.PI*2); ctx.fill();
+      // Danger ring
+      ctx.strokeStyle=fill; ctx.lineWidth=1.2;
+      ctx.globalAlpha=.35+.35*Math.abs(Math.sin(e.pulseT*.09));
+      ctx.beginPath(); ctx.arc(e.x,e.y,pulse+7,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1;
+    }
+
+    // HP-bar
+    const bw=e.w+6;
+    ctx.fillStyle='#1e1b33'; ctx.fillRect(e.x-bw/2,e.y-e.h/2-7,bw,3);
+    ctx.fillStyle=baseClr;   ctx.fillRect(e.x-bw/2,e.y-e.h/2-7,bw*(e.hp/e.maxHp),3);
+  });
+
+  // Kill flash rings
+  killFlashes.forEach(f=>{
+    ctx.strokeStyle=f.clr; ctx.lineWidth=2.5;
+    ctx.globalAlpha=f.life*.85;
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.r,0,Math.PI*2); ctx.stroke();
+    ctx.lineWidth=1; ctx.globalAlpha=f.life*.4;
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.r*.55,0,Math.PI*2); ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+
+  // Enemy bullets
+  ctx.fillStyle='#f87171';
+  eB.forEach(b=>ctx.fillRect(b.x-3,b.y-3,6,6));
+
+  // Particles
+  particles.forEach(p=>{ctx.globalAlpha=p.life;ctx.fillStyle=p.clr;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();});
+  ctx.globalAlpha=1;
+
+  // Eksplosjon-ringer
+  explodeAnims.forEach(a=>{
+    ctx.strokeStyle='#fb923c'; ctx.lineWidth=4;
+    ctx.globalAlpha=a.life*.9;
+    ctx.beginPath(); ctx.arc(a.x,a.y,a.r,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='#fef08a'; ctx.lineWidth=1.5;
+    ctx.globalAlpha=a.life*.5;
+    ctx.beginPath(); ctx.arc(a.x,a.y,a.r*.55,0,Math.PI*2); ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+
+  // Floating texts
+  ctx.textBaseline='alphabetic';
+  texts.forEach(t=>{ctx.globalAlpha=t.life;ctx.fillStyle=t.clr;ctx.font='bold 12px Courier New';ctx.textAlign='center';ctx.fillText(t.t,t.x,t.y);});
+  ctx.globalAlpha=1;
+}
+
+function drawHUD(){
+  ctx.textBaseline='middle';
+
+  // Top
+  ctx.fillStyle='rgba(7,7,18,.9)'; ctx.fillRect(0,0,W,34);
+  ctx.fillStyle='#475569'; ctx.font='10px Courier New';
+  ctx.textAlign='left';   ctx.fillText('POENG',8,11);
+  ctx.textAlign='center'; ctx.fillText('ROM',W/2,11);
+  ctx.textAlign='right';  ctx.fillText('HP',W-8,11);
+  ctx.fillStyle='#f1f5f9'; ctx.font='bold 13px Courier New';
+  ctx.textAlign='left';   ctx.fillText(score,8,24);
+  ctx.textAlign='center'; ctx.fillText(`ROM ${room}`,W/2,24);
+  ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.textAlign='right'; ctx.fillText('ESC Katalog',W-8,11);
+  // Health bar
+  const hbw=140, hbx=W-8-hbw, hby=19, hbh=10;
+  const hpRatio=Math.max(0,hp/MAX_HP);
+  // Background
+  ctx.fillStyle='#1e293b'; ctx.fillRect(hbx,hby,hbw,hbh);
+  // Fill — colour shifts green→yellow→red
+  const hue=Math.round(hpRatio*120);
+  ctx.fillStyle=`hsl(${hue},85%,48%)`; ctx.fillRect(hbx,hby,hbw*hpRatio,hbh);
+  // Thin border
+  ctx.strokeStyle='#334155'; ctx.lineWidth=1; ctx.strokeRect(hbx,hby,hbw,hbh);
+  // HP number centred inside bar
+  ctx.fillStyle='#f1f5f9'; ctx.font='bold 8px Courier New';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(`${hp} / ${MAX_HP}`,hbx+hbw/2,hby+hbh/2);
+  ctx.textBaseline='middle'; // restore default for rest of HUD
+
+  // Bottom bar — 3 abilities
+  ctx.fillStyle='rgba(7,7,18,.9)'; ctx.fillRect(0,H-34,W,34);
+
+  function slot(label,key,st,timer,dur,cd,clr,x,align){
+    const c={ready:clr,active:clr,cooldown:'#334155'}[st];
+    ctx.fillStyle=c; ctx.font='bold 9px Courier New'; ctx.textAlign=align;
+    ctx.fillText(align==='left'?`${key} ${label}`:`${label} ${key}`,x,H-21);
+    const bw=70, bx2=align==='left'?x:x-bw;
+    ctx.fillStyle='#1e293b'; ctx.fillRect(bx2,H-14,bw,3);
+    if(st==='active'){
+      ctx.fillStyle=clr; ctx.fillRect(bx2,H-14,bw*(timer/dur),3);
+      ctx.fillStyle=clr; ctx.font='8px Courier New'; ctx.textAlign=align; ctx.fillText('AKTIV',x,H-26);
+    } else if(st==='cooldown'){
+      ctx.fillStyle='#374151'; ctx.fillRect(bx2,H-14,bw*(1-timer/cd),3);
+      ctx.fillStyle='#4b5563'; ctx.font='8px Courier New'; ctx.textAlign=align; ctx.fillText(`${Math.ceil(timer/60)}s`,x,H-26);
+    } else {
+      ctx.fillStyle=clr; ctx.fillRect(bx2,H-14,bw,3);
+      ctx.fillStyle=clr; ctx.font='8px Courier New'; ctx.textAlign=align; ctx.fillText('KLAR',x,H-26);
+    }
+  }
+  slot('SKJOLD','Q',shield.state,shield.timer,SHIELD_DUR,SHIELD_CD,'#818cf8',8,'left');
+  slot('KAPPE', 'F',dash.state,  dash.timer,  DASH_DUR,  DASH_CD,  '#fbbf24',88,'left');
+
+  const aliveN=enemies.filter(e=>e.alive).length;
+  ctx.fillStyle=aliveN>0?'#94a3b8':'#4ade80'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
+  ctx.fillText(aliveN>0?`${aliveN} igjen`:'KLART!',W/2,H-18);
+
+  slot('PARRY',  'R',parry.state, parry.timer, PARRY_DUR, PARRY_CD, '#c084fc',W-90,'right');
+  slot('ELEKTRO','E',laser.state,laser.timer,LASER_DUR,LASER_CD,'#7dd3fc',W-8,'right');
+
+  ctx.textBaseline='alphabetic';
+}
+
+function drawTransition(){
+  const progress=(90-transitTimer)/90;
+  const alpha=Math.sin(progress*Math.PI)*.7;
+  ctx.fillStyle=`rgba(7,7,18,${alpha})`; ctx.fillRect(0,0,W,H);
+  const ta=Math.sin(progress*Math.PI);
+  ctx.globalAlpha=ta;
+  ctx.fillStyle='#4ade80'; ctx.font='bold 26px Courier New'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(`ROM ${room} RYDDET!`,W/2,H/2-16);
+  ctx.fillStyle='#94a3b8'; ctx.font='13px Courier New';
+  ctx.fillText(`Poeng: ${score}`,W/2,H/2+14);
+  ctx.globalAlpha=1; ctx.textBaseline='alphabetic';
+}
+
+function drawMenu(){
+  ctx.fillStyle='rgba(7,7,18,.55)'; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='alphabetic'; ctx.textAlign='center';
+  ctx.fillStyle='#f1f5f9'; ctx.font='bold 28px Courier New'; ctx.fillText('ROM-RYDDER',W/2,105);
+  ctx.fillStyle='#475569'; ctx.font='11px Courier New'; ctx.fillText('Uendelig modus — rydd rom etter rom',W/2,130);
+
+  ctx.fillStyle='#1e293b'; ctx.font='10px Courier New'; ctx.fillText('─── KONTROLLER ───',W/2,164);
+  const ctrl=[['WASD','Beveg deg · gjemme deg bak vegger'],['Auto-sikt','Skyter automatisk på nærmeste'],['Q / SHIFT','Skjold — blokkerer alle skudd'],['R','Parry — reflekter kuler tilbake (5 dmg)'],['E','Elektro-laser (av/på)'],['F / Klikk','Kappe — dash mot fiende'],['MELLOMROM','Eksplosjon — område-skade']];
+  ctrl.forEach(([k,v],i)=>{
+    ctx.fillStyle='#38bdf8'; ctx.font='bold 10px Courier New'; ctx.textAlign='right'; ctx.fillText(k,W/2-4,180+i*15);
+    ctx.fillStyle='#94a3b8'; ctx.font='10px Courier New'; ctx.textAlign='left';  ctx.fillText(v,W/2+4,180+i*15);
+  });
+
+  ctx.fillStyle='#1e293b'; ctx.font='10px Courier New'; ctx.textAlign='center'; ctx.fillText('─── FIENDER ───',W/2,292);
+  [
+    [ECLR[0],'◆ JEGER',    'Lader rett mot deg'],
+    [ECLR[1],'▽ SKYTTE',   'Holder avstand, skyter trippelburst'],
+    [ECLR[2],'▬ PANSER',   'Tank · raser ved lavt liv (2×fart)'],
+    [ECLR[3],'● HEALER',   'Leger nærmeste skadede alliert'],
+    [ECLR[4],'◉ BOMBER',   'Ruser deg · eksploderer ved død'],
+  ].forEach(([c,n,d],i)=>{
+    ctx.fillStyle=c; ctx.font='bold 10px Courier New'; ctx.textAlign='center';
+    ctx.fillText(`${n}  —  ${d}`,W/2,308+i*16);
+  });
+
+  ctx.fillStyle='#f1f5f9'; ctx.font='bold 13px Courier New'; ctx.textAlign='center'; ctx.fillText('ENTER for å starte',W/2,H-65);
+}
+
+function drawEnd(){
+  ctx.fillStyle='rgba(7,7,18,.82)'; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='alphabetic'; ctx.textAlign='center';
+  ctx.fillStyle='#ef4444'; ctx.font='bold 28px Courier New'; ctx.fillText('DU DØDE',W/2,H/2-28);
+  ctx.fillStyle='#94a3b8'; ctx.font='14px Courier New'; ctx.fillText(`Poeng: ${score}  ·  Kom til rom ${room}`,W/2,H/2+10);
+  ctx.fillStyle='#475569'; ctx.font='11px Courier New'; ctx.fillText('ENTER for å prøve igjen',W/2,H/2+36);
+}
+function drawWin(){
+  ctx.fillStyle='rgba(7,7,18,.82)'; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='alphabetic'; ctx.textAlign='center';
+  ctx.fillStyle='#4ade80'; ctx.font='bold 26px Courier New'; ctx.fillText('ALLE 12 ROM RYDDET!',W/2,H/2-28);
+  ctx.fillStyle='#94a3b8'; ctx.font='14px Courier New'; ctx.fillText(`Endelig poeng: ${score}`,W/2,H/2+10);
+  ctx.fillStyle='#475569'; ctx.font='11px Courier New'; ctx.fillText('ENTER for å spille igjen',W/2,H/2+36);
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+function startGame(){
+  score=0; hp=MAX_HP; room=1;
+  P.angle=-Math.PI/2; P.inv=0;
+  shield={state:'ready',timer:0};
+  laser={state:'ready',timer:0,angle:0,x:0,y:0};
+  dash={state:'ready',timer:0,dx:0,dy:0};
+  parry={state:'ready',timer:0};
+  capeTrail=[];
+  particles=[]; texts=[]; explodeAnims=[]; killFlashes=[];
+  spawnRoom(); state='playing';
+}
+
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+
+document.addEventListener('keydown',e=>{
+  keys[e.key]=true;
+  if(e.key==='Escape'){window.location.href='index.html';return;}
+  if(e.key==='Enter'&&(state==='menu'||state==='dead'||state==='win'))startGame();
+  if(e.key===' '){
+    e.preventDefault();
+    if(state==='playing'){
+      // Eksplosjon — dreper alle innen 240px, ingen cooldown
+      const R=240;
+      explodeAnims.push({x:P.x,y:P.y,r:20,life:1});
+      for(let i=0;i<40;i++){
+        const a=Math.PI*2*i/40,s=Math.random()*6+2;
+        particles.push({x:P.x,y:P.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,d:.02,r:Math.random()*3+1,clr:i%2?'#fb923c':'#fef08a'});
+      }
+      enemies.forEach(e=>{
+        if(!e.alive)return;
+        const d=Math.hypot(e.x-P.x,e.y-P.y);
+        if(d<R){
+          const dmg=Math.ceil(e.maxHp*(1-d/R)*1.5+5); // mer skade jo nærmere
+          e.hp-=dmg; e.ft=12;
+          if(e.hp<=0)killEnemy(e);
+          else{boom(e.x,e.y,ECLR[e.t],6);ftxt(e.x,e.y-16,`-${dmg}`,ECLR[e.t]);}
+        }
+      });
+    }
+  }
+  if(state!=='playing')return;
+  if(e.key==='r'&&parry.state==='ready'){
+    parry.state='active'; parry.timer=PARRY_DUR;
+    P.inv=Math.max(P.inv,PARRY_DUR);
+    boom(P.x,P.y,'#c084fc',8);
+  }
+  if(e.key==='e'){
+    if(laser.state==='ready'){laser.state='active';laser.timer=LASER_DUR;laser.angle=P.angle;laser.x=P.x;laser.y=P.y;}
+    else if(laser.state==='active'){laser.state='ready';laser.timer=0;laserSegs=[];}
+  }
+  if(e.key==='f'&&dash.state==='ready'){
+    let ddx=0,ddy=0;
+    if(keys['w']||keys['ArrowUp'])    ddy-=1;
+    if(keys['s']||keys['ArrowDown'])  ddy+=1;
+    if(keys['a']||keys['ArrowLeft'])  ddx-=1;
+    if(keys['d']||keys['ArrowRight']) ddx+=1;
+    if(!ddx&&!ddy){ddx=Math.cos(P.angle);ddy=Math.sin(P.angle);}
+    const dl=Math.hypot(ddx,ddy)||1;
+    dash.state='active';dash.timer=DASH_DUR;
+    dash.dx=ddx/dl;dash.dy=ddy/dl;
+    P.inv=Math.max(P.inv,DASH_DUR+5);
+  }
+});
+document.addEventListener('keyup',e=>{ keys[e.key]=false; });
+
+cv.addEventListener('mousedown',e=>{
+  if(state!=='playing')return;
+  const rect=cv.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  // Finn nærmeste fiende til klikket (innen 60px), ellers klikk-posisjon
+  let target=null, minD=60;
+  enemies.forEach(en=>{
+    if(!en.alive)return;
+    const d=Math.hypot(en.x-mx,en.y-my);
+    if(d<minD){minD=d;target=en;}
+  });
+  const tx=target?target.x:mx, ty=target?target.y:my;
+  const dl=Math.hypot(tx-P.x,ty-P.y)||1;
+  dash.state='active'; dash.timer=DASH_DUR;
+  dash.dx=(tx-P.x)/dl; dash.dy=(ty-P.y)/dl;
+  P.inv=Math.max(P.inv,DASH_DUR+5);
+});
+
+loop();
+</script>
+</body>
+</html>

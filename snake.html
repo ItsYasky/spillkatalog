@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<title>SLANGE</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#070712; display:flex; align-items:center; justify-content:center; height:100vh; }
+</style>
+</head>
+<body>
+<canvas id="g" width="480" height="560"></canvas>
+<script>
+const cv=document.getElementById('g'), ctx=cv.getContext('2d');
+const W=480, H=560;
+const COLS=20, ROWS=20, CS=22;
+const OX=Math.floor((W-COLS*CS)/2);  // 20
+const OY=52;
+
+// ── Pre-render background ────────────────────────────────────────
+const bgcv=document.createElement('canvas'); bgcv.width=W; bgcv.height=H;
+const bx=bgcv.getContext('2d');
+bx.fillStyle='#070712'; bx.fillRect(0,0,W,H);
+bx.strokeStyle='rgba(74,222,128,0.032)'; bx.lineWidth=.8;
+for(let c=0;c<=COLS;c++){bx.beginPath();bx.moveTo(OX+c*CS,OY);bx.lineTo(OX+c*CS,OY+ROWS*CS);bx.stroke();}
+for(let r=0;r<=ROWS;r++){bx.beginPath();bx.moveTo(OX,OY+r*CS);bx.lineTo(OX+COLS*CS,OY+r*CS);bx.stroke();}
+bx.strokeStyle='rgba(74,222,128,0.18)'; bx.lineWidth=1.5;
+bx.strokeRect(OX,OY,COLS*CS,ROWS*CS);
+// Stars
+const rng=n=>(Math.sin(n*127.1)*43758.5453%1+1)%1;
+for(let i=0;i<40;i++){
+  const x=rng(i*3)*(OX-4); const y=rng(i*7)*H;
+  bx.fillStyle=`rgba(255,255,255,${.05+rng(i)*.15})`;
+  bx.beginPath(); bx.arc(x,y,.4+rng(i*.9),0,Math.PI*2); bx.fill();
+  bx.beginPath(); bx.arc(W-x,y,.4+rng(i),0,Math.PI*2); bx.fill();
+}
+
+// ── State ────────────────────────────────────────────────────────
+let snake, dir, nextDir, food, score, state, spd, tick, hiScore=0;
+let deathParticles=[];
+
+function placeFood(){
+  let f;
+  do{f=[Math.floor(Math.random()*COLS),Math.floor(Math.random()*ROWS)];}
+  while(snake.some(s=>s[0]===f[0]&&s[1]===f[1]));
+  food=f;
+}
+function startGame(){
+  snake=[[10,10],[9,10],[8,10]];
+  dir=[1,0]; nextDir=[1,0];
+  score=0; spd=7; tick=0;
+  deathParticles=[];
+  placeFood(); state='playing';
+}
+
+state='menu';
+snake=[[10,10],[9,10],[8,10]]; dir=[1,0]; nextDir=[1,0];
+placeFood(); score=0; spd=7; tick=0;
+
+// ── Update ────────────────────────────────────────────────────────
+function update(){
+  if(state==='dead'){
+    deathParticles=deathParticles.filter(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.vx*=.94; p.vy*=.94; p.life-=p.d; return p.life>0;
+    });
+    return;
+  }
+  if(state!=='playing')return;
+  tick++;
+  const interval=Math.max(3,Math.round(60/spd));
+  if(tick%interval!==0)return;
+  dir=[...nextDir];
+  const head=[snake[0][0]+dir[0],snake[0][1]+dir[1]];
+  // Collision
+  if(head[0]<0||head[0]>=COLS||head[1]<0||head[1]>=ROWS
+    ||snake.some(s=>s[0]===head[0]&&s[1]===head[1])){
+    if(score>hiScore)hiScore=score;
+    // Spawn death particles
+    snake.forEach(([sx,sy])=>{
+      for(let i=0;i<3;i++){
+        const a=Math.PI*2*Math.random(), s2=Math.random()*3+.5;
+        deathParticles.push({x:OX+sx*CS+CS/2,y:OY+sy*CS+CS/2,vx:Math.cos(a)*s2,vy:Math.sin(a)*s2,life:1,d:.025+Math.random()*.02,r:Math.random()*2.5+.5,clr:'#4ade80'});
+      }
+    });
+    state='dead'; return;
+  }
+  snake.unshift(head);
+  if(head[0]===food[0]&&head[1]===food[1]){
+    score+=10*(Math.floor(spd/7)); // bonus at higher speeds
+    score+=10;
+    spd=Math.min(24,7+Math.floor(score/80));
+    placeFood();
+  } else snake.pop();
+}
+
+// ── Draw ──────────────────────────────────────────────────────────
+function draw(){
+  ctx.drawImage(bgcv,0,0);
+
+  // HUD top bar
+  ctx.fillStyle='rgba(7,7,18,.95)'; ctx.fillRect(0,0,W,42);
+  ctx.textBaseline='middle';
+  ctx.fillStyle='#4ade80'; ctx.font='bold 13px Courier New'; ctx.textAlign='left'; ctx.fillText('SLANGE',8,13);
+  ctx.fillStyle='#1e293b'; ctx.font='9px Courier New';                              ctx.fillText(`BEST: ${hiScore}`,8,28);
+  ctx.fillStyle=state==='playing'?'#f1f5f9':'#334155';
+  ctx.font='bold 18px Courier New'; ctx.textAlign='center'; ctx.fillText(score,W/2,21);
+  ctx.fillStyle='#1e293b'; ctx.font='9px Courier New'; ctx.textAlign='right';
+  ctx.fillText(`FART ${spd}`,W-8,13); ctx.fillText('ESC Katalog',W-8,28);
+
+  if(state==='menu'){
+    ctx.fillStyle='rgba(7,7,18,.55)'; ctx.fillRect(0,42,W,H-42);
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#4ade80'; ctx.font='bold 34px Courier New'; ctx.fillText('SLANGE',W/2,H/2-52);
+    ctx.fillStyle='#1e293b'; ctx.font='10px Courier New';
+    ctx.fillText('WASD eller piltaster for å styre',W/2,H/2-14);
+    ctx.fillText('Spis mat  ·  voks  ·  unngå vegger og deg selv',W/2,H/2+6);
+    ctx.fillStyle='#4ade80'; ctx.font='bold 12px Courier New';
+    ctx.fillText('ENTER for å starte',W/2,H/2+44);
+    ctx.textBaseline='alphabetic'; return;
+  }
+
+  // Death particles
+  deathParticles.forEach(p=>{ctx.globalAlpha=p.life;ctx.fillStyle=p.clr;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();});
+  ctx.globalAlpha=1;
+
+  // Snake body
+  snake.forEach(([sx,sy],i)=>{
+    const t=1-i/snake.length;
+    ctx.fillStyle=i===0?'#4ade80':`rgba(74,222,128,${.28+t*.62})`;
+    ctx.fillRect(OX+sx*CS+1,OY+sy*CS+1,CS-2,CS-2);
+    // Subtle top-left shine
+    if(i===0||t>.6){
+      ctx.fillStyle='rgba(255,255,255,0.1)';
+      ctx.fillRect(OX+sx*CS+1,OY+sy*CS+1,CS-2,3);
+    }
+  });
+
+  // Eyes on head
+  if(state!=='dead'){
+    const [hx,hy]=snake[0];
+    ctx.fillStyle='#070712';
+    let e1,e2;
+    if(dir[0]===1) { e1=[CS*.65,CS*.25]; e2=[CS*.65,CS*.6]; }
+    else if(dir[0]===-1){ e1=[CS*.2,CS*.25];  e2=[CS*.2,CS*.6]; }
+    else if(dir[1]===-1){ e1=[CS*.25,CS*.2];  e2=[CS*.6,CS*.2]; }
+    else              { e1=[CS*.25,CS*.65]; e2=[CS*.6,CS*.65]; }
+    ctx.fillRect(OX+hx*CS+e1[0],OY+hy*CS+e1[1],3,3);
+    ctx.fillRect(OX+hx*CS+e2[0],OY+hy*CS+e2[1],3,3);
+  }
+
+  // Food — pulsing with glow ring
+  const pulse=.72+.28*Math.sin(Date.now()/190);
+  const fx=OX+food[0]*CS+CS/2, fy=OY+food[1]*CS+CS/2;
+  ctx.fillStyle='#ef4444'; ctx.globalAlpha=pulse;
+  ctx.beginPath(); ctx.arc(fx,fy,4.5,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=1;
+  ctx.strokeStyle=`rgba(239,68,68,0.25)`; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(fx,fy,7.5*pulse,0,Math.PI*2); ctx.stroke();
+
+  // Score popup text while growing (already in score)
+  // HUD bottom — snake length indicator
+  const len=snake.length;
+  ctx.fillStyle='rgba(7,7,18,.85)'; ctx.fillRect(0,H-28,W,28);
+  ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText(`LENGDE`,8,H-14);
+  const barW=W-80;
+  ctx.fillStyle='#0d1424'; ctx.fillRect(60,H-19,barW,10);
+  ctx.fillStyle='#4ade80'; ctx.globalAlpha=.5;
+  ctx.fillRect(60,H-19,Math.min(barW,barW*(len/100)),10);
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#334155'; ctx.textAlign='right';
+  ctx.fillText(len,W-8,H-14);
+
+  if(state==='dead'){
+    ctx.fillStyle='rgba(7,7,18,.72)'; ctx.fillRect(0,42,W,H-70);
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#ef4444'; ctx.font='bold 28px Courier New'; ctx.fillText('DU KRASJET!',W/2,H*.45-22);
+    ctx.fillStyle='#64748b'; ctx.font='12px Courier New';
+    ctx.fillText(`Poeng: ${score}  ·  Lengde: ${snake.length}`,W/2,H*.45+8);
+    if(score>=hiScore&&score>0){
+      ctx.fillStyle='#facc15'; ctx.font='bold 10px Courier New';
+      ctx.fillText('★ NY REKORD! ★',W/2,H*.45+28);
+    }
+    ctx.fillStyle='#475569'; ctx.font='10px Courier New';
+    ctx.fillText('ENTER for å prøve igjen',W/2,H*.45+52);
+  }
+  ctx.textBaseline='alphabetic';
+}
+
+// ── Input ─────────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){window.location.href='index.html';return;}
+  const mv={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0],
+             w:[0,-1],s:[0,1],a:[-1,0],d:[1,0]};
+  if(mv[e.key]){
+    e.preventDefault();
+    const nd=mv[e.key];
+    // Only update nextDir if not directly opposite to current dir
+    if(!(nd[0]===-dir[0]&&nd[1]===-dir[1]))nextDir=nd;
+  }
+  if(e.key==='Enter'&&(state==='menu'||state==='dead'))startGame();
+});
+
+function loop(){update();draw();requestAnimationFrame(loop);}
+loop();
+</script>
+</body>
+</html>

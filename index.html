@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<title>ARKADE</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#070712;
+  color:#f1f5f9;
+  font-family:'Courier New',monospace;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  user-select:none;
+  overflow:auto;
+}
+canvas#bg { position:fixed; top:0; left:0; z-index:0; pointer-events:none; }
+.ui { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; }
+h1 {
+  font-size:52px; letter-spacing:.28em; color:#f1f5f9;
+  margin-bottom:6px;
+}
+.tagline { font-size:9px; letter-spacing:.28em; color:#1e293b; margin-bottom:48px; }
+.grid { display:grid; grid-template-columns:repeat(3,204px); gap:16px; margin-bottom:28px; }
+.card {
+  width:204px; background:#080f1e;
+  border:1px solid #151f30; cursor:pointer;
+  transition:transform .12s, border-color .12s;
+  --c:#38bdf8;
+  outline:none;
+}
+.card:hover { transform:translateY(-4px); }
+.card.sel { border-color:var(--c); transform:translateY(-4px); }
+.ctop { height:2px; background:var(--c); }
+.cbody { padding:15px; }
+.card canvas { display:block; margin:0 auto 12px; border:1px solid #0e1828; }
+.ctitle { font-size:16px; font-weight:bold; letter-spacing:.07em; color:var(--c); }
+.ctag { font-size:7px; letter-spacing:.2em; color:#1e293b; margin:3px 0 9px; }
+.cdesc { font-size:8.5px; color:#3d526b; line-height:1.65; margin-bottom:10px; min-height:28px; }
+.cctrl { font-size:7.5px; color:#1e293b; border-top:1px solid #0e1828; padding-top:7px; }
+.cctrl b { color:#2d3f55; }
+.cbtn {
+  display:block; margin-top:12px; padding:6px 0;
+  border:1px solid var(--c); color:var(--c);
+  background:transparent; font-family:'Courier New',monospace;
+  font-size:9px; letter-spacing:.22em; cursor:pointer; width:100%;
+  transition:background .1s, color .1s;
+}
+.card.sel .cbtn { background:var(--c); color:#070712; }
+.cbtn:hover { background:var(--c); color:#070712; }
+.hint { font-size:8px; letter-spacing:.18em; color:#151f30; text-align:center; }
+.hint span { color:#1e293b; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div class="ui">
+  <h1>ARKADE</h1>
+  <p class="tagline">— SPILLKATALOG —</p>
+  <div class="grid" id="grid"></div>
+  <p class="hint"><span>← →</span> &nbsp;NAVIGER&nbsp; · &nbsp;<span>ENTER</span> &nbsp;SPILL</p>
+</div>
+<script>
+// ── Star background ─────────────────────────────────────────────
+const bgcv=document.getElementById('bg');
+bgcv.width=window.innerWidth; bgcv.height=window.innerHeight;
+const bgx=bgcv.getContext('2d');
+const rng=n=>(Math.sin(n*127.1)*43758.5453%1+1)%1;
+const stars=Array.from({length:90},(_,i)=>({
+  x:rng(i*3)*bgcv.width, y:rng(i*7)*bgcv.height,
+  r:rng(i)<.08?1.3:.55, a:rng(i*11)*.3+.04
+}));
+(function animBg(){
+  bgx.clearRect(0,0,bgcv.width,bgcv.height);
+  stars.forEach(s=>{bgx.fillStyle=`rgba(255,255,255,${s.a})`;bgx.beginPath();bgx.arc(s.x,s.y,s.r,0,Math.PI*2);bgx.fill();});
+  requestAnimationFrame(animBg);
+})();
+
+// ── Game list ────────────────────────────────────────────────────
+const GAMES=[
+  {
+    file:'space_shooter.html',
+    title:'ROM-RYDDER',
+    tag:'ACTION · SHOOTER',
+    desc:'Rydd rom for fiender. Elektrisk laser, dash-kappe, parry og eksplosjon.',
+    ctrl:'WASD Beveg · E Laser · F Dash · R Parry · SPC Boom',
+    color:'#38bdf8',
+    draw(cv){
+      const c=cv.getContext('2d'),W=cv.width,H=cv.height;
+      c.fillStyle='#070712'; c.fillRect(0,0,W,H);
+      c.strokeStyle='rgba(56,189,248,0.05)'; c.lineWidth=.8;
+      for(let x=0;x<W;x+=18){c.beginPath();c.moveTo(x,0);c.lineTo(x,H);c.stroke();}
+      for(let y=0;y<H;y+=18){c.beginPath();c.moveTo(0,y);c.lineTo(W,y);c.stroke();}
+      for(let i=0;i<28;i++){
+        c.fillStyle=`rgba(255,255,255,${.06+rng(i)*.22})`;
+        c.beginPath();c.arc(rng(i*3)*W,rng(i*7)*H,.4+rng(i),0,Math.PI*2);c.fill();
+      }
+      // Ship
+      c.save();c.translate(W*.5,H*.68);c.rotate(-Math.PI/2);
+      c.fillStyle='#f1f5f9';c.beginPath();c.moveTo(0,-7);c.lineTo(6,7);c.lineTo(-6,7);c.closePath();c.fill();
+      c.restore();
+      c.fillStyle='rgba(251,191,36,0.45)';c.beginPath();c.arc(W*.5,H*.68+9,2.5,0,Math.PI*2);c.fill();
+      // Enemies
+      [[.2,.3,'#ef4444'],[.78,.22,'#f97316'],[.5,.14,'#a855f7'],[.3,.52,'#4ade80']].forEach(([ex,ey,ec])=>{
+        c.fillStyle=ec;c.beginPath();c.arc(ex*W,ey*H,4,0,Math.PI*2);c.fill();
+      });
+      // Lightning arc
+      c.strokeStyle='rgba(56,189,248,0.75)'; c.lineWidth=1.2;
+      c.beginPath();c.moveTo(W*.5,H*.62);
+      c.lineTo(W*.34+rng(1)*6,H*.52+rng(2)*6);
+      c.lineTo(W*.2+rng(3)*4,H*.3+rng(4)*4);
+      c.stroke();
+    }
+  },
+  {
+    file:'snake.html',
+    title:'SLANGE',
+    tag:'KLASSISK · ARCADE',
+    desc:'Spis mat, voks og unngå å krasje. Hastigheten øker med scoren.',
+    ctrl:'WASD / Piltaster — styr slangen',
+    color:'#4ade80',
+    draw(cv){
+      const c=cv.getContext('2d'),W=cv.width,H=cv.height;
+      c.fillStyle='#070712'; c.fillRect(0,0,W,H);
+      const cs=11;
+      c.strokeStyle='rgba(74,222,128,0.04)'; c.lineWidth=.5;
+      for(let x=0;x<W;x+=cs){c.beginPath();c.moveTo(x,0);c.lineTo(x,H);c.stroke();}
+      for(let y=0;y<H;y+=cs){c.beginPath();c.moveTo(0,y);c.lineTo(W,y);c.stroke();}
+      const body=[[8,5],[7,5],[6,5],[5,5],[5,4],[5,3],[6,3],[7,3],[8,3],[9,3],[9,4],[9,5],[9,6],[10,6],[11,6]];
+      body.forEach(([sx,sy],i)=>{
+        const t=1-i/body.length;
+        c.fillStyle=i===0?'#4ade80':`rgba(74,222,128,${.22+t*.68})`;
+        c.fillRect(sx*cs+1,sy*cs+1,cs-2,cs-2);
+      });
+      c.fillStyle='#ef4444'; c.globalAlpha=.9;
+      c.beginPath();c.arc(13*cs+cs/2,2*cs+cs/2,4,0,Math.PI*2);c.fill();
+      c.globalAlpha=1;
+    }
+  },
+  {
+    file:'racing.html',
+    title:'RACING',
+    tag:'RACING · ARKADE',
+    desc:'3 runder mot 3 AI-motstandere. Nitro, drift og minibane.',
+    ctrl:'↑ Gass · ↓ Brems · ← → Styr · SPC/SHIFT Nitro',
+    color:'#facc15',
+    draw(cv){
+      const c=cv.getContext('2d'),W=cv.width,H=cv.height;
+      c.fillStyle='#07100a'; c.fillRect(0,0,W,H);
+      // Simple oval track preview
+      c.strokeStyle='#181828'; c.lineWidth=18;
+      c.beginPath(); c.ellipse(W/2,H/2,W*.35,H*.36,0,0,Math.PI*2); c.stroke();
+      c.strokeStyle='#21213a'; c.lineWidth=14;
+      c.beginPath(); c.ellipse(W/2,H/2,W*.35,H*.36,0,0,Math.PI*2); c.stroke();
+      c.strokeStyle='rgba(240,220,40,.09)'; c.lineWidth=1.5; c.setLineDash([6,9]);
+      c.beginPath(); c.ellipse(W/2,H/2,W*.35,H*.36,0,0,Math.PI*2); c.stroke();
+      c.setLineDash([]);
+      // Cars
+      [[W*.62,H*.18,-.6,'#e2e8f0'],[W*.72,H*.28,-.3,'#ef4444'],[W*.7,H*.7,.5,'#f97316']].forEach(([cx,cy,ang,clr])=>{
+        c.save();c.translate(cx,cy);c.rotate(ang);
+        c.fillStyle=clr;c.fillRect(-6,-3.5,12,7);c.restore();
+      });
+      // Start/finish
+      c.fillStyle='rgba(255,255,255,.5)'; c.fillRect(W*.62-1,H*.12,2,10);
+    }
+  },
+  {
+    file:'vintage_f1.html',
+    title:'GRAND PRIX',
+    tag:'RACING · VINTAGE',
+    desc:'Veteranbil-racing fra 1967. Overrev motoren for fart, men pass den ikke koker.',
+    ctrl:'↑ Gass · ↓ Brems · ← → Styr · SPC/SHIFT Overrev',
+    color:'#c9a227',
+    draw(cv){
+      const c=cv.getContext('2d'),W=cv.width,H=cv.height;
+      c.fillStyle='#140f08'; c.fillRect(0,0,W,H);
+      c.strokeStyle='#241a10'; c.lineWidth=16;
+      c.beginPath(); c.ellipse(W/2,H/2,W*.35,H*.36,0,0,Math.PI*2); c.stroke();
+      c.strokeStyle='#7d6b4a'; c.lineWidth=12;
+      c.beginPath(); c.ellipse(W/2,H/2,W*.35,H*.36,0,0,Math.PI*2); c.stroke();
+      c.strokeStyle='rgba(238,232,213,.14)'; c.lineWidth=1.2; c.setLineDash([5,8]);
+      c.beginPath(); c.ellipse(W/2,H/2,W*.35,H*.36,0,0,Math.PI*2); c.stroke();
+      c.setLineDash([]);
+      // Cigar-shaped open-wheel cars
+      [[W*.62,H*.18,-.6,'#0f5c33'],[W*.72,H*.28,-.3,'#a6192e'],[W*.7,H*.7,.5,'#c0c0c0']].forEach(([cx,cy,ang,clr])=>{
+        c.save();c.translate(cx,cy);c.rotate(ang);
+        c.fillStyle='#141210';
+        c.fillRect(-6,-4,3,3);c.fillRect(-6,1,3,3);c.fillRect(3,-4,3,3);c.fillRect(3,1,3,3);
+        c.fillStyle=clr;
+        c.beginPath();c.moveTo(6,0);c.lineTo(2,-2.5);c.lineTo(-5,-2.5);c.lineTo(-5,2.5);c.lineTo(2,2.5);c.closePath();c.fill();
+        c.restore();
+      });
+      // Start/finish
+      c.fillStyle='rgba(238,232,213,.5)'; c.fillRect(W*.62-1,H*.12,2,10);
+    }
+  },
+  {
+    file:'mario.html',
+    title:'KLODDE',
+    tag:'PLATTFORM · ARKADE',
+    desc:'Hopp over groper, plukk mynter og stomp fiender på vei til flagget.',
+    ctrl:'← → / A D Gå · SPC / W / ↑ Hopp',
+    color:'#cd7f32',
+    draw(cv){
+      const c=cv.getContext('2d'),W=cv.width,H=cv.height;
+      c.fillStyle='#150f0a';c.fillRect(0,0,W,H);
+      c.fillStyle='#3a2a18';
+      for(let x=2;x<W;x+=10)for(let y=6;y<H-14;y+=10)c.fillRect(x,y,1,1);
+      // ground
+      c.fillStyle='#241a10';c.fillRect(0,H-14,W,14);
+      c.fillStyle='#cd7f32';c.fillRect(0,H-14,W,2);
+      // floating platform
+      c.fillStyle='#241a10';c.fillRect(W*.55,H*.42,W*.28,10);
+      c.fillStyle='#cd7f32';c.fillRect(W*.55+2,H*.42,W*.28-4,2);
+      // coin
+      c.fillStyle='#cd7f32';c.beginPath();c.arc(W*.42,H*.5,3,0,Math.PI*2);c.fill();
+      // player
+      c.fillStyle='#cd7f32';c.fillRect(W*.18,H-14-14,10,14);
+      c.fillStyle='#1a130c';c.fillRect(W*.18+5,H-14-9,3,3);
+      // enemy
+      c.fillStyle='#6b4423';c.fillRect(W*.75,H-14-11,11,11);
+      c.fillStyle='#f0e6d8';c.fillRect(W*.75+2,H-14-8,2,2);c.fillRect(W*.75+7,H-14-8,2,2);
+    }
+  },
+  {
+    file:'tetris.html',
+    title:'BLOKK',
+    tag:'PUSLESPILL · KLASSISK',
+    desc:'Stabel blokker og fjern linjer. Fire på rad = Tetris og bonuspoeng.',
+    ctrl:'← → Flytt · ↑ Roter · ↓ Fall · SPC Harddrop',
+    color:'#a855f7',
+    draw(cv){
+      const c=cv.getContext('2d'),W=cv.width,H=cv.height;
+      c.fillStyle='#070712'; c.fillRect(0,0,W,H);
+      const cs=11;
+      c.strokeStyle='rgba(168,85,247,0.05)'; c.lineWidth=.5;
+      for(let x=0;x<W;x+=cs){c.beginPath();c.moveTo(x,0);c.lineTo(x,H);c.stroke();}
+      for(let y=0;y<H;y+=cs){c.beginPath();c.moveTo(0,y);c.lineTo(W,y);c.stroke();}
+      const blocks=[
+        [1,5,'#38bdf8'],[2,5,'#38bdf8'],[3,5,'#38bdf8'],[4,5,'#38bdf8'],
+        [1,6,'#60a5fa'],[2,6,'#60a5fa'],[3,6,'#f97316'],[4,6,'#f97316'],[5,6,'#facc15'],[6,6,'#facc15'],
+        [1,7,'#ef4444'],[2,7,'#ef4444'],[3,7,'#4ade80'],[4,7,'#4ade80'],[5,7,'#a855f7'],[6,7,'#a855f7'],[7,7,'#f97316'],
+        [1,8,'#38bdf8'],[2,8,'#60a5fa'],[3,8,'#facc15'],[4,8,'#facc15'],[5,8,'#ef4444'],[6,8,'#4ade80'],[7,8,'#4ade80'],[8,8,'#a855f7'],
+      ];
+      blocks.forEach(([x,y,clr])=>{c.fillStyle=clr;c.globalAlpha=.75;c.fillRect(x*cs+1,y*cs+1,cs-2,cs-2);});
+      // Falling T
+      [[3,2],[4,2],[5,2],[4,3]].forEach(([x,y])=>{c.fillStyle='#a855f7';c.globalAlpha=1;c.fillRect(x*cs+1,y*cs+1,cs-2,cs-2);});
+      c.globalAlpha=1;
+    }
+  }
+];
+
+// ── Render cards ─────────────────────────────────────────────────
+let sel=0;
+function render(){
+  const grid=document.getElementById('grid');
+  grid.innerHTML='';
+  GAMES.forEach((g,i)=>{
+    const el=document.createElement('div');
+    el.className='card'+(i===sel?' sel':'');
+    el.style.setProperty('--c',g.color);
+    el.innerHTML=`<div class="ctop"></div><div class="cbody">
+      <canvas width="172" height="104"></canvas>
+      <div class="ctitle">${g.title}</div>
+      <div class="ctag">${g.tag}</div>
+      <div class="cdesc">${g.desc}</div>
+      <div class="cctrl"><b>KONTROLLER:</b> ${g.ctrl}</div>
+      <button class="cbtn">▶ &nbsp;SPILL NÅ</button>
+    </div>`;
+    g.draw(el.querySelector('canvas'));
+    el.addEventListener('mouseenter',()=>{if(sel!==i){sel=i;render();}});
+    el.addEventListener('click',()=>launch());
+    el.querySelector('.cbtn').addEventListener('click',e=>{e.stopPropagation();sel=i;launch();});
+    grid.appendChild(el);
+  });
+}
+function launch(){window.location.href=GAMES[sel].file;}
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='d'){e.preventDefault();sel=(sel+1)%GAMES.length;render();}
+  else if(e.key==='ArrowLeft'||e.key==='a'){e.preventDefault();sel=(sel-1+GAMES.length)%GAMES.length;render();}
+  else if(e.key==='Enter'||e.key===' '){e.preventDefault();launch();}
+});
+render();
+</script>
+</body>
+</html>
