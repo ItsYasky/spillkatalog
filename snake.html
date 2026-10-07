@@ -38,6 +38,16 @@ for(let i=0;i<40;i++){
 // ── State ────────────────────────────────────────────────────────
 let snake, dir, nextDir, food, score, state, spd, tick, hiScore=0;
 let deathParticles=[];
+let particles=[], texts=[], shake=0, eatPulse=0, trailPulse=0;
+
+function boom(x,y,clr,n=10){
+  for(let i=0;i<n;i++){
+    const a=Math.PI*2*Math.random(), s=Math.random()*3+.6;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,d:.025+Math.random()*.03,r:Math.random()*2.2+.6,clr});
+  }
+}
+function ftxt(x,y,t,clr){ texts.push({x,y,t,clr,life:1,vy:-1.1}); }
+function addShake(n){ shake=Math.min(14,shake+n); }
 
 function placeFood(){
   let f;
@@ -49,7 +59,7 @@ function startGame(){
   snake=[[10,10],[9,10],[8,10]];
   dir=[1,0]; nextDir=[1,0];
   score=0; spd=7; tick=0;
-  deathParticles=[];
+  deathParticles=[]; particles=[]; texts=[]; shake=0; eatPulse=0; trailPulse=0;
   placeFood(); state='playing';
 }
 
@@ -59,6 +69,13 @@ placeFood(); score=0; spd=7; tick=0;
 
 // ── Update ────────────────────────────────────────────────────────
 function update(){
+  if(shake>0)shake*=.82; if(shake<.1)shake=0;
+  if(eatPulse>0)eatPulse-=.06;
+  if(trailPulse>0)trailPulse-=.03;
+  particles=particles.filter(p=>{
+    p.x+=p.vx; p.y+=p.vy; p.vx*=.95; p.vy*=.95; p.life-=p.d; return p.life>0;
+  });
+  texts=texts.filter(t=>{ t.y+=t.vy; t.life-=.02; return t.life>0; });
   if(state==='dead'){
     deathParticles=deathParticles.filter(p=>{
       p.x+=p.vx; p.y+=p.vy; p.vx*=.94; p.vy*=.94; p.life-=p.d; return p.life>0;
@@ -75,26 +92,37 @@ function update(){
   if(head[0]<0||head[0]>=COLS||head[1]<0||head[1]>=ROWS
     ||snake.some(s=>s[0]===head[0]&&s[1]===head[1])){
     if(score>hiScore)hiScore=score;
+    addShake(11);
     // Spawn death particles
-    snake.forEach(([sx,sy])=>{
-      for(let i=0;i<3;i++){
-        const a=Math.PI*2*Math.random(), s2=Math.random()*3+.5;
-        deathParticles.push({x:OX+sx*CS+CS/2,y:OY+sy*CS+CS/2,vx:Math.cos(a)*s2,vy:Math.sin(a)*s2,life:1,d:.025+Math.random()*.02,r:Math.random()*2.5+.5,clr:'#4ade80'});
+    snake.forEach(([sx,sy],i)=>{
+      for(let i2=0;i2<(i===0?7:3);i2++){
+        const a=Math.PI*2*Math.random(), s2=Math.random()*3.6+.5;
+        deathParticles.push({x:OX+sx*CS+CS/2,y:OY+sy*CS+CS/2,vx:Math.cos(a)*s2,vy:Math.sin(a)*s2,life:1,d:.02+Math.random()*.02,r:Math.random()*2.8+.6,clr:i===0?'#f1f5f9':'#4ade80'});
       }
     });
     state='dead'; return;
   }
   snake.unshift(head);
   if(head[0]===food[0]&&head[1]===food[1]){
-    score+=10*(Math.floor(spd/7)); // bonus at higher speeds
-    score+=10;
+    const gained=10*(Math.floor(spd/7))+10; // bonus at higher speeds
+    score+=gained;
+    const fx=OX+food[0]*CS+CS/2, fy=OY+food[1]*CS+CS/2;
+    boom(fx,fy,'#ef4444',16);
+    ftxt(fx,fy-6,`+${gained}`,'#facc15');
+    eatPulse=1; trailPulse=1;
+    addShake(2.5);
+    const oldSpd=spd;
     spd=Math.min(24,7+Math.floor(score/80));
+    if(spd>oldSpd) ftxt(fx,fy+14,'FART OPP!','#67e8f9');
     placeFood();
   } else snake.pop();
 }
 
 // ── Draw ──────────────────────────────────────────────────────────
 function draw(){
+  ctx.clearRect(0,0,W,H);
+  const sx=shake?(Math.random()-.5)*shake:0, sy=shake?(Math.random()-.5)*shake:0;
+  ctx.save(); ctx.translate(sx,sy);
   ctx.drawImage(bgcv,0,0);
 
   // HUD top bar
@@ -116,22 +144,37 @@ function draw(){
     ctx.fillText('Spis mat  ·  voks  ·  unngå vegger og deg selv',W/2,H/2+6);
     ctx.fillStyle='#4ade80'; ctx.font='bold 12px Courier New';
     ctx.fillText('ENTER for å starte',W/2,H/2+44);
-    ctx.textBaseline='alphabetic'; return;
+    ctx.textBaseline='alphabetic'; ctx.restore(); return;
   }
 
   // Death particles
   deathParticles.forEach(p=>{ctx.globalAlpha=p.life;ctx.fillStyle=p.clr;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();});
   ctx.globalAlpha=1;
 
+  // Trail glow when boosted by a recent meal
+  if(trailPulse>0){
+    ctx.save(); ctx.globalAlpha=trailPulse*.35; ctx.shadowColor='#4ade80'; ctx.shadowBlur=14;
+    snake.forEach(([sx,sy])=>{ctx.fillStyle='#4ade80';ctx.fillRect(OX+sx*CS+1,OY+sy*CS+1,CS-2,CS-2);});
+    ctx.restore();
+  }
+
   // Snake body
-  snake.forEach(([sx,sy],i)=>{
+  snake.forEach(([px,py],i)=>{
     const t=1-i/snake.length;
-    ctx.fillStyle=i===0?'#4ade80':`rgba(74,222,128,${.28+t*.62})`;
-    ctx.fillRect(OX+sx*CS+1,OY+sy*CS+1,CS-2,CS-2);
+    if(i===0){
+      ctx.save(); ctx.shadowColor='#4ade80'; ctx.shadowBlur=8+eatPulse*10;
+      ctx.fillStyle='#4ade80';
+      const grow=eatPulse>0?eatPulse*1.5:0;
+      ctx.fillRect(OX+px*CS+1-grow*.5,OY+py*CS+1-grow*.5,CS-2+grow,CS-2+grow);
+      ctx.restore();
+    } else {
+      ctx.fillStyle=`rgba(74,222,128,${.28+t*.62})`;
+      ctx.fillRect(OX+px*CS+1,OY+py*CS+1,CS-2,CS-2);
+    }
     // Subtle top-left shine
     if(i===0||t>.6){
       ctx.fillStyle='rgba(255,255,255,0.1)';
-      ctx.fillRect(OX+sx*CS+1,OY+sy*CS+1,CS-2,3);
+      ctx.fillRect(OX+px*CS+1,OY+py*CS+1,CS-2,3);
     }
   });
 
@@ -151,13 +194,24 @@ function draw(){
   // Food — pulsing with glow ring
   const pulse=.72+.28*Math.sin(Date.now()/190);
   const fx=OX+food[0]*CS+CS/2, fy=OY+food[1]*CS+CS/2;
+  ctx.save(); ctx.shadowColor='#ef4444'; ctx.shadowBlur=10*pulse;
   ctx.fillStyle='#ef4444'; ctx.globalAlpha=pulse;
   ctx.beginPath(); ctx.arc(fx,fy,4.5,0,Math.PI*2); ctx.fill();
+  ctx.restore();
   ctx.globalAlpha=1;
   ctx.strokeStyle=`rgba(239,68,68,0.25)`; ctx.lineWidth=1;
   ctx.beginPath(); ctx.arc(fx,fy,7.5*pulse,0,Math.PI*2); ctx.stroke();
+  ctx.strokeStyle=`rgba(239,68,68,${.12*pulse})`; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(fx,fy,11*pulse,0,Math.PI*2); ctx.stroke();
 
-  // Score popup text while growing (already in score)
+  // Eat particles + floating score popups
+  particles.forEach(p=>{ctx.globalAlpha=Math.max(p.life,0);ctx.fillStyle=p.clr;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();});
+  ctx.globalAlpha=1;
+  texts.forEach(t=>{
+    ctx.globalAlpha=Math.max(t.life,0); ctx.fillStyle=t.clr; ctx.font='bold 11px Courier New';
+    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(t.t,t.x,t.y);
+  });
+  ctx.globalAlpha=1; ctx.textBaseline='alphabetic';
   // HUD bottom — snake length indicator
   const len=snake.length;
   ctx.fillStyle='rgba(7,7,18,.85)'; ctx.fillRect(0,H-28,W,28);
@@ -185,6 +239,7 @@ function draw(){
     ctx.fillText('ENTER for å prøve igjen',W/2,H*.45+52);
   }
   ctx.textBaseline='alphabetic';
+  ctx.restore();
 }
 
 // ── Input ─────────────────────────────────────────────────────────
