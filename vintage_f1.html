@@ -213,37 +213,37 @@ function buildTrack(cfg){
 }
 
 const TRACKS=[
-  buildTrack({name:'MONTE SPIRA', info:'Trangt · Hårnålskurver', ncp:30, R0:220, cx:300, cy:300,
-    wobbleAmp:10, wobbleFreq:5, wobblePhase:.4, TW:30,
+  buildTrack({name:'MONTE SPIRA', info:'Trangt · Hårnålskurver', ncp:30, R0:1144, cx:1240, cy:1240,
+    wobbleAmp:52, wobbleFreq:5, wobblePhase:.4, TW:48,
     features:[
-      {a0:.10*Math.PI*2,width:.05*Math.PI*2,depth:-120},
-      {a0:.28*Math.PI*2,width:.07*Math.PI*2,depth:70},
-      {a0:.45*Math.PI*2,width:.04*Math.PI*2,depth:-150},
-      {a0:.62*Math.PI*2,width:.06*Math.PI*2,depth:-90},
-      {a0:.80*Math.PI*2,width:.05*Math.PI*2,depth:60}
-    ],
-    drsCount:1
-  }),
-  buildTrack({name:'ARDENNE', info:'Flytende · Lange svinger', ncp:32, R0:320, cx:340, cy:320,
-    wobbleAmp:18, wobbleFreq:3, wobblePhase:1.1, TW:42,
-    features:[
-      {a0:.08*Math.PI*2,width:.09*Math.PI*2,depth:55},
-      {a0:.18*Math.PI*2,width:.035*Math.PI*2,depth:-70},
-      {a0:.50*Math.PI*2,width:.10*Math.PI*2,depth:-100},
-      {a0:.78*Math.PI*2,width:.08*Math.PI*2,depth:65}
+      {a0:.10*Math.PI*2,width:.05*Math.PI*2,depth:-624},
+      {a0:.28*Math.PI*2,width:.07*Math.PI*2,depth:364},
+      {a0:.45*Math.PI*2,width:.04*Math.PI*2,depth:-780},
+      {a0:.62*Math.PI*2,width:.06*Math.PI*2,depth:-468},
+      {a0:.80*Math.PI*2,width:.05*Math.PI*2,depth:312}
     ],
     drsCount:2
   }),
-  buildTrack({name:'AUTODROMO', info:'Høy fart · Lange rettstrekk', ncp:30, R0:360, cx:330, cy:330,
-    wobbleAmp:8, wobbleFreq:2, wobblePhase:0, TW:46,
+  buildTrack({name:'ARDENNE', info:'Flytende · Lange svinger', ncp:32, R0:1664, cx:1760, cy:1680,
+    wobbleAmp:94, wobbleFreq:3, wobblePhase:1.1, TW:68,
     features:[
-      {a0:.05*Math.PI*2,width:.025*Math.PI*2,depth:-130},
-      {a0:.12*Math.PI*2,width:.025*Math.PI*2,depth:50},
-      {a0:.45*Math.PI*2,width:.05*Math.PI*2,depth:-140},
-      {a0:.60*Math.PI*2,width:.03*Math.PI*2,depth:-100},
-      {a0:.66*Math.PI*2,width:.03*Math.PI*2,depth:60}
+      {a0:.08*Math.PI*2,width:.09*Math.PI*2,depth:286},
+      {a0:.18*Math.PI*2,width:.035*Math.PI*2,depth:-364},
+      {a0:.50*Math.PI*2,width:.10*Math.PI*2,depth:-520},
+      {a0:.78*Math.PI*2,width:.08*Math.PI*2,depth:338}
     ],
-    drsCount:2
+    drsCount:3
+  }),
+  buildTrack({name:'AUTODROMO', info:'Høy fart · Lange rettstrekk', ncp:30, R0:1872, cx:1720, cy:1720,
+    wobbleAmp:42, wobbleFreq:2, wobblePhase:0, TW:74,
+    features:[
+      {a0:.05*Math.PI*2,width:.025*Math.PI*2,depth:-676},
+      {a0:.12*Math.PI*2,width:.025*Math.PI*2,depth:260},
+      {a0:.45*Math.PI*2,width:.05*Math.PI*2,depth:-728},
+      {a0:.60*Math.PI*2,width:.03*Math.PI*2,depth:-520},
+      {a0:.66*Math.PI*2,width:.03*Math.PI*2,depth:312}
+    ],
+    drsCount:3
   })
 ];
 
@@ -264,7 +264,7 @@ class Car{
     this.team=team;this.isPlayer=isPlayer;
     this.lap=0;this.curProg=0;this.prevProg=0;this.seenHalf=false;
     this.sectorIdx=0;this.sectorStartT=0;this.lapStartT=0;this.lapTimes=[];
-    this.aiIdx=0;this.aiSpd=2.6+Math.random()*.5;
+    this.aiIdx=0;this.aiSpd=2.25+Math.random()*.45;
     this.trail=[];this.finished=false;this.place=1;
     this.offtrack=false;this.drsActive=false;
   }
@@ -275,8 +275,9 @@ let TR=TRACKS[0];
 let cars=[],player,state='menu',raceTime=0,keys={},particles=[],texts=[];
 let shake=0, confetti=[], winTimer=0, toasts=[];
 let trackSel=0, cntTimer=0;
-let camX=0,camY=0;
+let camX=0,camY=0,camAngle=0;
 const LAPS=3;
+const CHASE_Y = HY+(H-HY)*0.68; // chase-cam anchor: car sits lower on screen, more track visible ahead
 let bestSector=[Infinity,Infinity,Infinity];
 
 function addShake(n){ shake=Math.min(16,shake+n); }
@@ -297,8 +298,17 @@ function dust(x,y,clr){
 
 function buildCars(){
   cars=[];
+  // shuffle which team occupies which grid slot, so the player doesn't
+  // always start in pole position — real overtaking becomes necessary.
+  const order=[0,1,2,3];
+  for(let i=order.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [order[i],order[j]]=[order[j],order[i]];
+  }
+  const slots=[[-1,0],[1,0],[-1,1],[1,1]];
   const behind=TR.sfAng+Math.PI;
-  [[0,-1,0],[1,1,0],[2,-1,1],[3,1,1]].forEach(([idx,col,row])=>{
+  slots.forEach(([col,row],i)=>{
+    const idx=order[i];
     const gx=TR.sfx+Math.cos(TR.sfAng+Math.PI/2)*col*16+Math.cos(behind)*row*28;
     const gy=TR.sfy+Math.sin(TR.sfAng+Math.PI/2)*col*16+Math.sin(behind)*row*28;
     const c=new Car(gx,gy,TR.sfAng,TEAMS[idx],idx===0);
@@ -306,8 +316,8 @@ function buildCars(){
     c.prevProg=c.curProg;
     cars.push(c);
   });
-  player=cars[0];
-  camX=player.x; camY=player.y;
+  player=cars.find(c=>c.isPlayer);
+  camX=player.x; camY=player.y; camAngle=player.angle;
 }
 
 function startRace(){
@@ -315,6 +325,18 @@ function startRace(){
   buildCars(); particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; winTimer=0; raceTime=0;
   bestSector=[Infinity,Infinity,Infinity];
   state='countdown'; cntTimer=180;
+}
+
+function startPractice(){
+  TR=TRACKS[trackSel];
+  const c=new Car(TR.sfx,TR.sfy,TR.sfAng,TEAMS[0],true);
+  c.curProg=nearestOnPath(TR.PATH,c.x,c.y).progress;
+  c.prevProg=c.curProg;
+  cars=[c]; player=c;
+  camX=player.x; camY=player.y; camAngle=player.angle;
+  particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; raceTime=0;
+  bestSector=[Infinity,Infinity,Infinity];
+  state='practice';
 }
 
 function inDRSZone(prog){
@@ -336,7 +358,7 @@ function update(){
     cntTimer--; if(cntTimer<=0) state='playing';
     return;
   }
-  if(state!=='playing') return;
+  if(state!=='playing' && state!=='practice') return;
   raceTime++;
 
   cars.forEach(c=>{
@@ -357,7 +379,10 @@ function update(){
       let diff=wrapPi(da-c.angle);
       steerL=diff<-0.05; steerR=diff>0.05; gas=true;
       const gap=c.totalDist-player.totalDist;
-      c.aiSpd=Math.max(2.3,Math.min(3.6,c.aiSpd+(gap>.5?-.006:gap<-.5?.006:0)));
+      // tight rubber-band: keeps rivals genuinely close the whole race (not just
+      // within half a lap, which on these much bigger tracks would mean they
+      // could vanish for minutes) — forces real, repeated overtaking battles.
+      c.aiSpd=Math.max(1.9,Math.min(4.05,c.aiSpd+(gap>.05?-.013:gap<-.05?.013:0)));
     }
 
     const near=nearestOnPath(TR.PATH,c.x,c.y);
@@ -374,7 +399,7 @@ function update(){
 
     const DRSon = c.isPlayer ? (drsKey && inDRSZone(c.curProg)) : inDRSZone(c.curProg);
     c.drsActive = DRSon;
-    let MAX=(c.isPlayer?5.6:c.aiSpd)*(DRSon?1.12:1);
+    let MAX=(c.isPlayer?4.8:c.aiSpd)*(DRSon?1.12:1);
     let GRIP=0.82, accelMul=1, dragMul=1;
     if(c.offtrack){
       accelMul = deepOff? 0.28 : 0.45;
@@ -391,7 +416,7 @@ function update(){
     c.speed*=dragMul;
     c.speed=Math.max(0,Math.min(c.speed,MAX*1.02));
 
-    const turnRate=0.046*(0.32+0.68*Math.min(1,c.speed/((c.isPlayer?5.6:c.aiSpd))));
+    const turnRate=0.046*(0.32+0.68*Math.min(1,c.speed/((c.isPlayer?4.8:c.aiSpd))));
     if(steerL)c.angle-=turnRate;
     if(steerR)c.angle+=turnRate;
 
@@ -442,10 +467,12 @@ function update(){
     if(c.prevProg>.88&&pr<.12&&c.seenHalf){
       c.lap++; c.seenHalf=false; c.sectorIdx=0; c.sectorStartT=raceTime;
       if(c.isPlayer){
-        c.lapTimes.push(((raceTime-c.lapStartT)/60).toFixed(2));
+        const lt=((raceTime-c.lapStartT)/60).toFixed(2);
+        c.lapTimes.push(lt);
         c.lapStartT=raceTime;
+        if(state==='practice') toast(`RUNDE ${c.lap} FERDIG: ${lt}s`,'#38bdf8');
       }
-      if(c.lap>=LAPS){
+      if(state==='playing' && c.lap>=LAPS){
         c.finished=true;
         if(c.isPlayer){ state='win'; winTimer=0; if(c.place===1) spawnConfetti(); }
       }
@@ -453,9 +480,30 @@ function update(){
     c.prevProg=pr;
   });
 
+  // car-vs-car contact: prevents free pass-through so overtaking is a real,
+  // contested act (bump and lose speed if a pass is misjudged).
+  if(cars.length>1){
+    for(let i=0;i<cars.length;i++){
+      for(let j=i+1;j<cars.length;j++){
+        const a=cars[i], b=cars[j];
+        if(a.finished||b.finished) continue;
+        const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy), minD=15;
+        if(d>0&&d<minD){
+          const overlap=(minD-d)/2, nx=dx/d, ny=dy/d;
+          a.x-=nx*overlap; a.y-=ny*overlap;
+          b.x+=nx*overlap; b.y+=ny*overlap;
+          a.speed*=.92; b.speed*=.92;
+          a.vx-=nx*.4; a.vy-=ny*.4; b.vx+=nx*.4; b.vy+=ny*.4;
+          if(a.isPlayer||b.isPlayer) addShake(3);
+        }
+      }
+    }
+  }
+
   [...cars].sort((a,b)=>b.totalDist-a.totalDist).forEach((c,i)=>c.place=i+1);
   camX+=(player.x-camX)*.14;
   camY+=(player.y-camY)*.14;
+  camAngle+=wrapPi(player.angle-camAngle)*.12;
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -492,14 +540,22 @@ function drawCar(c){
   ctx.restore();
 }
 
+// Chase-cam: world is rotated so the player's heading always points "up"
+// on screen, with the camera anchored behind/below the car (CHASE_Y).
 function worldToScreen(wx,wy){
-  return [wx-camX+W/2, wy-camY+(HY+(H-HY)/2)];
+  const dx=wx-camX, dy=wy-camY;
+  const rot=-(camAngle+Math.PI/2);
+  const cs=Math.cos(rot), sn=Math.sin(rot);
+  return [dx*cs-dy*sn+W/2, dx*sn+dy*cs+CHASE_Y];
 }
 
 function drawTrackScene(){
-  const drawX = (TR.bgMinX - camX) + W/2;
-  const drawY = (TR.bgMinY - camY) + (HY+(H-HY)/2);
-  ctx.drawImage(TR.bg, drawX, drawY);
+  ctx.save();
+  ctx.translate(W/2,CHASE_Y);
+  ctx.rotate(-(camAngle+Math.PI/2));
+  ctx.translate(-camX,-camY);
+
+  ctx.drawImage(TR.bg, TR.bgMinX, TR.bgMinY);
 
   // animated racing line overlay
   ctx.save();
@@ -507,23 +563,21 @@ function drawTrackScene(){
   ctx.setLineDash([8,10]); ctx.lineDashOffset=-raceTime*.6;
   ctx.beginPath();
   const rl=TR.raceLine;
-  const [p0x,p0y]=worldToScreen(rl[0][0],rl[0][1]); ctx.moveTo(p0x,p0y);
-  for(let i=1;i<rl.length;i++){ const [px,py]=worldToScreen(rl[i][0],rl[i][1]); ctx.lineTo(px,py); }
+  ctx.moveTo(rl[0][0],rl[0][1]);
+  for(let i=1;i<rl.length;i++) ctx.lineTo(rl[i][0],rl[i][1]);
   ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
   ctx.restore();
 
   // particles
   particles.forEach(p=>{
-    const [px,py]=worldToScreen(p.x,p.y);
     ctx.globalAlpha=Math.max(p.life,0); ctx.fillStyle=p.clr;
-    ctx.beginPath(); ctx.arc(px,py,p.r,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
   });
   ctx.globalAlpha=1;
 
-  // cars (world->screen translate once)
-  ctx.save();
-  ctx.translate(W/2-camX, (HY+(H-HY)/2)-camY);
+  // cars — already inside the camera transform, draw directly in world space
   [...cars].sort((a,b)=>a.place-b.place).reverse().forEach(drawCar);
+
   ctx.restore();
 }
 
@@ -537,7 +591,7 @@ function draw(){
   if(state==='menu'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle='#e10600'; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
-    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · tre baner · optimal racing line',W/2,H/2-122);
+    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · tre store baner · øvingsmodus',W/2,H/2-122);
     ctx.fillStyle='#334155'; ctx.font='10px Courier New';
     [['↑ / W','Gass'],['↓ / S','Brems'],['← → / A D','Styr'],['SPC / SHIFT','DRS i grønn/lilla zone']].forEach(([k,v],i)=>{
       ctx.fillStyle='#e10600'; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-70+i*20);
@@ -554,7 +608,8 @@ function draw(){
   if(state==='trackselect'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('VELG BANE',W/2,70);
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('← → bytt   ENTER kjør',W/2,94);
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('← → bytt   ENTER kjør løp',W/2,94);
+    ctx.fillStyle='#38bdf8'; ctx.fillText('P — øvingskjøring (ingen motstandere)',W/2,110);
     TRACKS.forEach((t,i)=>{
       const sel=i===trackSel;
       const bx0=60+i*150, by0=140, bw0=130, bh0=420;
@@ -591,7 +646,7 @@ function draw(){
   drawTrackScene();
 
   // speed-lines vignette
-  if(state==='playing'){
+  if(state==='playing'||state==='practice'){
     const pspd=Math.hypot(player.vx,player.vy);
     if(pspd>4.4){
       const amt=Math.min(1,(pspd-4.4)/2.4);
@@ -610,12 +665,18 @@ function draw(){
   ctx.fillStyle='rgba(5,7,10,.92)'; ctx.fillRect(0,0,W,HY);
   ctx.fillStyle=TEAMS[0].color; ctx.fillRect(0,HY-3,W,3);
   ctx.textBaseline='middle';
-  const posLbl=['P1','P2','P3','P4'][player.place-1]||'';
-  const posClr=[,'#4ade80','#38bdf8','#f97316','#ef4444'][player.place];
-  ctx.fillStyle=posClr; ctx.font='bold 22px Courier New'; ctx.textAlign='left'; ctx.fillText(posLbl,8,HY/2);
-  const displayLap=Math.min(player.lap+1,LAPS);
-  ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
-  ctx.fillText(`RUNDE ${displayLap}/${LAPS}  ·  ${TR.name}`,W/2,HY/2-9);
+  if(state==='practice'){
+    ctx.fillStyle='#38bdf8'; ctx.font='bold 14px Courier New'; ctx.textAlign='left'; ctx.fillText('ØVING',8,HY/2);
+    ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
+    ctx.fillText(`RUNDE ${player.lap+1}  ·  ${TR.name}`,W/2,HY/2-9);
+  } else {
+    const posLbl=['P1','P2','P3','P4'][player.place-1]||'';
+    const posClr=[,'#4ade80','#38bdf8','#f97316','#ef4444'][player.place];
+    ctx.fillStyle=posClr; ctx.font='bold 22px Courier New'; ctx.textAlign='left'; ctx.fillText(posLbl,8,HY/2);
+    const displayLap=Math.min(player.lap+1,LAPS);
+    ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
+    ctx.fillText(`RUNDE ${displayLap}/${LAPS}  ·  ${TR.name}`,W/2,HY/2-9);
+  }
   const ts=raceTime/60;
   ctx.fillStyle='#64748b'; ctx.font='9px Courier New';
   ctx.fillText(`${Math.floor(ts/60).toString().padStart(2,'0')}:${(ts%60).toFixed(2).padStart(5,'0')}`,W/2,HY/2+9);
@@ -630,7 +691,7 @@ function draw(){
   ctx.fillText('DRS',W-8,HY/2+9);
 
   // off-track indicator
-  if(state==='playing' && player.offtrack){
+  if((state==='playing'||state==='practice') && player.offtrack){
     ctx.fillStyle='rgba(239,68,68,.9)'; ctx.font='bold 10px Courier New'; ctx.textAlign='center';
     ctx.fillText('UTENFOR BANEN',W/2,HY+16);
   }
@@ -654,16 +715,21 @@ function draw(){
   }
 
   // ── leaderboard panel (top-right) ──
-  const lbX=W-108, lbY=HY+8, lbW=100;
-  ctx.fillStyle='rgba(5,7,10,.78)'; ctx.fillRect(lbX,lbY,lbW,18+cars.length*16);
-  ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(lbX,lbY,lbW,18+cars.length*16);
-  ctx.fillStyle='#475569'; ctx.font='bold 8px Courier New'; ctx.textAlign='left'; ctx.fillText('LEDERTAVLE',lbX+6,lbY+11);
-  [...cars].sort((a,b)=>a.place-b.place).forEach((c,i)=>{
-    const ry=lbY+24+i*16;
-    ctx.fillStyle=c.team.color; ctx.fillRect(lbX+6,ry-5,8,8);
-    ctx.fillStyle=c.isPlayer?'#f1f5f9':'#94a3b8'; ctx.font='bold 9px Courier New';
-    ctx.fillText(`${i+1}. ${c.team.name}`,lbX+18,ry);
-  });
+  if(state!=='practice'){
+    const lbX=W-108, lbY=HY+8, lbW=100;
+    ctx.fillStyle='rgba(5,7,10,.78)'; ctx.fillRect(lbX,lbY,lbW,18+cars.length*16);
+    ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(lbX,lbY,lbW,18+cars.length*16);
+    ctx.fillStyle='#475569'; ctx.font='bold 8px Courier New'; ctx.textAlign='left'; ctx.fillText('LEDERTAVLE',lbX+6,lbY+11);
+    [...cars].sort((a,b)=>a.place-b.place).forEach((c,i)=>{
+      const ry=lbY+24+i*16;
+      ctx.fillStyle=c.team.color; ctx.fillRect(lbX+6,ry-5,8,8);
+      ctx.fillStyle=c.isPlayer?'#f1f5f9':'#94a3b8'; ctx.font='bold 9px Courier New';
+      ctx.fillText(`${i+1}. ${c.team.name}`,lbX+18,ry);
+    });
+  } else {
+    ctx.fillStyle='rgba(5,7,10,.7)'; ctx.font='bold 8px Courier New'; ctx.textAlign='right';
+    ctx.fillText('T bane-valg · R restart',W-8,HY+16);
+  }
 
   // ── minimap (bottom-left) ──
   const mmX=10,mmY=H-92,mmS=82;
@@ -739,8 +805,13 @@ document.addEventListener('keydown',e=>{
   if(state==='trackselect'){
     if(e.key==='ArrowLeft') trackSel=(trackSel+TRACKS.length-1)%TRACKS.length;
     if(e.key==='ArrowRight') trackSel=(trackSel+1)%TRACKS.length;
+    if(e.key==='p'||e.key==='P') startPractice();
   }
   if(state==='win' && (e.key==='t'||e.key==='T')) state='trackselect';
+  if(state==='practice'){
+    if(e.key==='t'||e.key==='T') state='trackselect';
+    if(e.key==='r'||e.key==='R') startPractice();
+  }
   if(e.key===' ')e.preventDefault();
 });
 document.addEventListener('keyup',e=>{keys[e.key]=false;});
