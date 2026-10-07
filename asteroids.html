@@ -46,14 +46,22 @@ const HYPER_COOLDOWN=110;
 const HYPER_DEATH_CHANCE=0.12;
 const UFO_FIRE_RATE=75;
 const SIZES={
-  LARGE:{r:42,pts:20,speed:1.05},
-  MEDIUM:{r:24,pts:50,speed:1.65},
-  SMALL:{r:13,pts:100,speed:2.55},
+  LARGE:{r:42,pts:20,speed:0.48},
+  MEDIUM:{r:24,pts:50,speed:0.78},
+  SMALL:{r:13,pts:100,speed:1.3},
 };
 const UFO_SIZES={
   BIG:{r:20,pts:200,speed:1.5},
   SMALL:{r:11,pts:1000,speed:2.2},
 };
+
+// ── Power-ups (droppes av UFO-er, inspirert av ROM-RYDDER sine evner) ──
+const POWERUPS={
+  SHIELD:{clr:'#818cf8', name:'SKJOLD',  dur:360},
+  ELEKTRO:{clr:'#7dd3fc', name:'ELEKTRO', dur:480},
+  KAPPE:{clr:'#fbbf24',  name:'KAPPE',   dur:480},
+};
+const PICKUP_LIFE=560;
 
 // ── State ─────────────────────────────────────────────────────────
 let ship,bullets,ufoBullets,particles,asteroids,ufo;
@@ -62,6 +70,8 @@ let fireCooldown,hyperCooldown,respawnTimer,waveTransition,ufoTimer;
 let toastTimer=0,toastText='',toastColor='#67e8f9';
 let state='menu';
 let keys={};
+let pickups=[],lightningBolts=[];
+let shieldTime=0,elektroTime=0,kappeTime=0;
 
 function makeShape(r){
   const n=8+Math.floor(Math.random()*5);
@@ -160,6 +170,35 @@ function spawnUFO(){
   };
 }
 
+// ── Power-up pickups (droppes når en UFO drepes) ─────────────────
+function spawnPickup(x,y){
+  const types=Object.keys(POWERUPS);
+  const type=types[Math.floor(Math.random()*types.length)];
+  const ang=Math.random()*Math.PI*2, spd=0.5+Math.random()*0.5;
+  pickups.push({x,y,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,type,life:PICKUP_LIFE,rot:0});
+}
+
+function applyPowerup(type){
+  const cfg=POWERUPS[type];
+  if(type==='SHIELD') shieldTime=cfg.dur;
+  else if(type==='ELEKTRO') elektroTime=cfg.dur;
+  else if(type==='KAPPE') kappeTime=cfg.dur;
+  toast(`${cfg.name} AKTIVERT!`,cfg.clr);
+}
+
+function chainLightning(x,y,exclude){
+  let remaining=2;
+  for(let ai=asteroids.length-1;ai>=0 && remaining>0;ai--){
+    const a=asteroids[ai];
+    if(a===exclude) continue;
+    if(dist(x,y,a.x,a.y)<130){
+      lightningBolts.push({x1:x,y1:y,x2:a.x,y2:a.y,life:14});
+      splitAsteroid(a); asteroids.splice(ai,1);
+      remaining--;
+    }
+  }
+}
+
 function killShip(){
   spawnExplosion(ship.x,ship.y,'#f1f5f9',22);
   ship.alive=false;
@@ -185,19 +224,32 @@ function hyperspace(){
   }
 }
 
+function dashRam(){
+  if(hyperCooldown>0||!ship.alive)return;
+  hyperCooldown=HYPER_COOLDOWN;
+  const boost=9.5;
+  ship.vx+=Math.cos(ship.angle)*boost;
+  ship.vy+=Math.sin(ship.angle)*boost;
+  const sp=Math.hypot(ship.vx,ship.vy), cap=MAX_SPEED*2.2;
+  if(sp>cap){ ship.vx=ship.vx/sp*cap; ship.vy=ship.vy/sp*cap; }
+  ship.dashTimer=26;
+  spawnExplosion(ship.x,ship.y,POWERUPS.KAPPE.clr,10);
+}
+
 function resetGame(){
-  ship={x:W/2,y:H/2,vx:0,vy:0,angle:-Math.PI/2,thrusting:false,alive:true,invuln:INVULN_TIME};
-  bullets=[]; ufoBullets=[]; particles=[]; ufo=null;
+  ship={x:W/2,y:H/2,vx:0,vy:0,angle:-Math.PI/2,thrusting:false,alive:true,invuln:INVULN_TIME,dashTimer:0};
+  bullets=[]; ufoBullets=[]; particles=[]; ufo=null; pickups=[]; lightningBolts=[];
   score=0; lives=3; wave=1; nextExtra=10000;
   fireCooldown=0; hyperCooldown=0; respawnTimer=0; waveTransition=0;
+  shieldTime=0; elektroTime=0; kappeTime=0;
   ufoTimer=420+Math.random()*300;
   spawnWave(wave);
   state='playing';
 }
 
 // Decorative menu field
-ship={x:W/2,y:H/2,vx:0,vy:0,angle:-Math.PI/2,thrusting:false,alive:true,invuln:0};
-bullets=[]; ufoBullets=[]; particles=[]; asteroids=[]; ufo=null;
+ship={x:W/2,y:H/2,vx:0,vy:0,angle:-Math.PI/2,thrusting:false,alive:true,invuln:0,dashTimer:0};
+bullets=[]; ufoBullets=[]; particles=[]; asteroids=[]; ufo=null; pickups=[]; lightningBolts=[];
 score=0; lives=3; wave=1; nextExtra=10000;
 fireCooldown=0; hyperCooldown=0; respawnTimer=0; waveTransition=0; ufoTimer=600;
 for(let i=0;i<5;i++) spawnAsteroid('LARGE');
@@ -214,6 +266,20 @@ function update(){
 
   if(hyperCooldown>0)hyperCooldown--;
   if(fireCooldown>0)fireCooldown--;
+  if(shieldTime>0)shieldTime--;
+  if(elektroTime>0)elektroTime--;
+  if(kappeTime>0)kappeTime--;
+  if(ship.dashTimer>0)ship.dashTimer--;
+
+  for(let i=pickups.length-1;i>=0;i--){
+    const p=pickups[i];
+    p.x+=p.vx; p.y+=p.vy; p.rot+=0.04; wrap(p,11); p.life--;
+    if(ship.alive && dist(ship.x,ship.y,p.x,p.y)<SHIP_R+12){
+      applyPowerup(p.type); pickups.splice(i,1); continue;
+    }
+    if(p.life<=0) pickups.splice(i,1);
+  }
+  lightningBolts=lightningBolts.filter(b=>{ b.life--; return b.life>0; });
 
   if(ship.alive){
     if(keys['ArrowLeft']||keys['a']) ship.angle-=ROT_SPEED;
@@ -269,7 +335,12 @@ function update(){
     for(let ai=asteroids.length-1;ai>=0;ai--){
       const a=asteroids[ai];
       if(dist(b.x,b.y,a.x,a.y)<a.r){
-        splitAsteroid(a); asteroids.splice(ai,1); used=true; break;
+        if(elektroTime>0) chainLightning(a.x,a.y,a);
+        splitAsteroid(a);
+        const idx=asteroids.indexOf(a);
+        if(idx>=0) asteroids.splice(idx,1);
+        used=true;
+        break;
       }
     }
     if(used){ bullets.splice(bi,1); continue; }
@@ -277,22 +348,35 @@ function update(){
       score+=ufo.pts; checkExtraLife();
       spawnExplosion(ufo.x,ufo.y,'#f97316',16);
       toast(`+${ufo.pts}`,'#f97316');
+      spawnPickup(ufo.x,ufo.y);
       ufo=null; bullets.splice(bi,1);
     }
   }
 
   // Ship vs hazards
-  if(ship.alive && ship.invuln<=0){
-    for(const a of asteroids){
-      if(dist(ship.x,ship.y,a.x,a.y)<a.r+SHIP_R){ killShip(); break; }
+  if(ship.alive && (ship.invuln<=0 || ship.dashTimer>0 || shieldTime>0)){
+    for(let ai=asteroids.length-1;ai>=0;ai--){
+      const a=asteroids[ai];
+      if(dist(ship.x,ship.y,a.x,a.y)<a.r+SHIP_R){
+        if(ship.dashTimer>0){ splitAsteroid(a); asteroids.splice(ai,1); }
+        else if(shieldTime>0){ /* skjold: uskadd, steinen overlever */ }
+        else if(ship.invuln<=0){ killShip(); break; }
+      }
     }
     if(ship.alive && ufo && dist(ship.x,ship.y,ufo.x,ufo.y)<ufo.r+SHIP_R){
-      spawnExplosion(ufo.x,ufo.y,'#f97316',16); ufo=null; killShip();
+      spawnExplosion(ufo.x,ufo.y,'#f97316',16);
+      if(ship.dashTimer>0){ score+=ufo.pts; checkExtraLife(); toast(`+${ufo.pts}`,'#f97316'); spawnPickup(ufo.x,ufo.y); ufo=null; }
+      else if(shieldTime>0){ ufo=null; }
+      else if(ship.invuln<=0){ ufo=null; killShip(); }
     }
     if(ship.alive){
       for(let i=ufoBullets.length-1;i>=0;i--){
         const b=ufoBullets[i];
-        if(dist(ship.x,ship.y,b.x,b.y)<SHIP_R+2){ ufoBullets.splice(i,1); killShip(); break; }
+        if(dist(ship.x,ship.y,b.x,b.y)<SHIP_R+2){
+          ufoBullets.splice(i,1);
+          if(shieldTime<=0 && ship.dashTimer<=0 && ship.invuln<=0) killShip();
+          break;
+        }
       }
     }
   }
@@ -332,12 +416,28 @@ function draw(){
     ctx.restore();
   }
 
+  drawPickups();
+  drawLightning();
+
   ctx.fillStyle='#f1f5f9';
   bullets.forEach(b=>{ ctx.beginPath(); ctx.arc(b.x,b.y,2,0,Math.PI*2); ctx.fill(); });
   ctx.fillStyle='#fb923c';
   ufoBullets.forEach(b=>{ ctx.beginPath(); ctx.arc(b.x,b.y,2.4,0,Math.PI*2); ctx.fill(); });
 
   if(ship.alive && !(ship.invuln>0 && Math.floor(ship.invuln/5)%2===0)){
+    if(shieldTime>0){
+      ctx.save(); ctx.translate(ship.x,ship.y);
+      ctx.globalAlpha=0.55+0.25*Math.sin(Date.now()/90);
+      ctx.strokeStyle=POWERUPS.SHIELD.clr; ctx.lineWidth=1.6;
+      ctx.beginPath(); ctx.arc(0,0,SHIP_R+7,0,Math.PI*2); ctx.stroke();
+      ctx.globalAlpha=1; ctx.restore();
+    }
+    if(ship.dashTimer>0){
+      ctx.save(); ctx.translate(ship.x,ship.y); ctx.rotate(ship.angle);
+      ctx.strokeStyle=POWERUPS.KAPPE.clr; ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.moveTo(-9,7); ctx.lineTo(-20-Math.random()*8,0); ctx.lineTo(-9,-7); ctx.stroke();
+      ctx.restore();
+    }
     ctx.save(); ctx.translate(ship.x,ship.y); ctx.rotate(ship.angle);
     ctx.strokeStyle='#67e8f9'; ctx.lineWidth=1.6; ctx.lineJoin='round';
     ctx.beginPath();
@@ -354,6 +454,54 @@ function draw(){
   if(state==='menu') drawMenu();
   if(state==='gameover') drawGameOver();
   drawToast();
+}
+
+function drawPickups(){
+  pickups.forEach(p=>{
+    if(p.life<90 && Math.floor(p.life/6)%2===0)return;
+    const cfg=POWERUPS[p.type];
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+    ctx.strokeStyle=cfg.clr; ctx.lineWidth=1.5;
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+      const a=(i/6)*Math.PI*2, px=Math.cos(a)*11, py=Math.sin(a)*11;
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.closePath(); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle=cfg.clr; ctx.font='bold 11px Courier New';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(cfg.name[0],p.x,p.y+1);
+  });
+  ctx.textBaseline='alphabetic';
+}
+
+function drawBoltSimple(x1,y1,x2,y2,alpha){
+  ctx.strokeStyle=`rgba(125,211,252,${alpha})`;
+  ctx.lineWidth=1.6;
+  ctx.beginPath();
+  const segs=5; ctx.moveTo(x1,y1);
+  for(let i=1;i<segs;i++){
+    const t=i/segs;
+    ctx.lineTo(x1+(x2-x1)*t+(Math.random()-0.5)*10, y1+(y2-y1)*t+(Math.random()-0.5)*10);
+  }
+  ctx.lineTo(x2,y2);
+  ctx.stroke();
+}
+
+function drawLightning(){
+  lightningBolts.forEach(b=>{ drawBoltSimple(b.x1,b.y1,b.x2,b.y2,Math.min(1,b.life/14)); });
+}
+
+function drawBuffs(){
+  let x=W-10; const items=[];
+  if(shieldTime>0) items.push({t:'S',c:POWERUPS.SHIELD.clr,time:shieldTime});
+  if(elektroTime>0) items.push({t:'E',c:POWERUPS.ELEKTRO.clr,time:elektroTime});
+  if(kappeTime>0) items.push({t:'K',c:POWERUPS.KAPPE.clr,time:kappeTime});
+  if(items.length===0)return;
+  ctx.font='bold 9px Courier New'; ctx.textAlign='right'; ctx.textBaseline='middle';
+  items.forEach(it=>{ ctx.fillStyle=it.c; ctx.fillText(`${it.t} ${Math.ceil(it.time/60)}s`,x,54); x-=38; });
+  ctx.textBaseline='alphabetic';
 }
 
 function drawHud(){
@@ -373,6 +521,7 @@ function drawHud(){
     ctx.restore();
   }
   ctx.textBaseline='alphabetic';
+  drawBuffs();
 }
 
 function drawMenu(){
@@ -383,8 +532,10 @@ function drawMenu(){
   ctx.fillText('← → / A D Roter  ·  ↑ / W Thrust',W/2,H/2-30);
   ctx.fillText('SPACE Skyt  ·  SHIFT Hyperrom (risikabelt!)',W/2,H/2-12);
   ctx.fillText('Knus steinene i biter, unngå UFO-ild',W/2,H/2+6);
+  ctx.fillStyle='#7dd3fc';
+  ctx.fillText('Drep UFO-er for power-ups: Skjold · Elektro · Kappe',W/2,H/2+22);
   ctx.fillStyle='#67e8f9'; ctx.font='bold 12px Courier New';
-  ctx.fillText('ENTER for å starte',W/2,H/2+44);
+  ctx.fillText('ENTER for å starte',W/2,H/2+54);
   ctx.textBaseline='alphabetic';
 }
 
@@ -418,7 +569,7 @@ document.addEventListener('keydown',e=>{
   keys[e.key]=true;
   if([' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
   if(e.key==='Enter' && (state==='menu'||state==='gameover')) resetGame();
-  if((e.key==='Shift'||e.key==='h') && state==='playing') hyperspace();
+  if((e.key==='Shift'||e.key==='h') && state==='playing'){ if(kappeTime>0) dashRam(); else hyperspace(); }
 });
 document.addEventListener('keyup',e=>{ keys[e.key]=false; });
 
