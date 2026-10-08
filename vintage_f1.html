@@ -257,6 +257,30 @@ const TEAMS=[
   {name:'ORANGE',  color:'#ff8700', dark:'#a85900'}
 ];
 
+// AI difficulty tiers — each AI car plans its own corner speed from real track
+// curvature (braking for upcoming corners, not just an elastic band to the
+// player), so the tiers genuinely differ in pace, precision and mistakes.
+// Note: curveK is HIGHEST on ENKEL and LOWEST on ULTRA — a weak driver lifts
+// off far more than a corner actually needs (overly cautious, loses time),
+// while a great driver stays confident and carries speed through the bend.
+// NOTE on lookAhead: this is held constant (11) across every tier on purpose.
+// It sets how far down the race line the AI steers toward each frame; pushing
+// it higher (as a naive "better driver sees further" tier scale once did)
+// makes the AI aim straight at a race-line point that cuts across the inside
+// of hairpins, driving it off-track almost permanently. Genuine skill is
+// instead expressed through curveK (cornering confidence), steerPrec
+// (how small a heading error it bothers correcting), overspeed (braking
+// margin), baseMax (flat-out pace) and mistakeChance (braking lapses) — all
+// calibrated via automated lap testing across all 3 tracks to keep off-track
+// time near 0% while still giving a clear, monotonic pace gap per tier.
+const DIFFICULTIES=[
+  {name:'ENKEL',     clr:'#4ade80', baseMax:3.75, curveK:22, overspeed:1.18, mistakeChance:.0030, steerPrec:.095, lookAhead:11, rubberRate:.015, rubberThresh:.03},
+  {name:'MIDDELS',   clr:'#38bdf8', baseMax:4.25, curveK:12, overspeed:1.12, mistakeChance:.0010, steerPrec:.075, lookAhead:11, rubberRate:.010, rubberThresh:.05},
+  {name:'VANSKELIG', clr:'#f97316', baseMax:4.70, curveK:4,  overspeed:1.07, mistakeChance:.0002, steerPrec:.055, lookAhead:11, rubberRate:.006, rubberThresh:.07},
+  {name:'ULTRA',     clr:'#ef4444', baseMax:5.25, curveK:3,  overspeed:1.03, mistakeChance:0,     steerPrec:.040, lookAhead:11, rubberRate:.003, rubberThresh:.10}
+];
+let difficulty=1;
+
 class Car{
   constructor(x,y,ang,team,isPlayer){
     this.x=x;this.y=y;this.angle=ang;
@@ -265,6 +289,9 @@ class Car{
     this.lap=0;this.curProg=0;this.prevProg=0;this.seenHalf=false;
     this.sectorIdx=0;this.sectorStartT=0;this.lapStartT=0;this.lapTimes=[];
     this.aiIdx=0;this.aiSpd=2.25+Math.random()*.45;
+    this.skillVar=0.94+Math.random()*0.12; // per-car variance so AI aren't identical clones
+    this.rubberMul=1; this.mistakeT=0;
+    this.stuckRefDist=0; this.stuckT=180; // stuck-in-gravel recovery bookkeeping (AI only)
     this.trail=[];this.finished=false;this.place=1;
     this.offtrack=false;this.drsActive=false;
   }
@@ -372,17 +399,42 @@ function update(){
       drsKey=!!(keys[' ']||keys['Shift']||keys['ShiftLeft']||keys['ShiftRight']);
     } else {
       const PN=TR.PN;
+      const D=DIFFICULTIES[difficulty];
       const li=Math.floor(c.curProg*PN);
-      const lookI=(li+16)%PN;
+      const lookI=(li+D.lookAhead)%PN;
       const [tx,ty]=TR.raceLine[lookI];
       const da=Math.atan2(ty-c.y,tx-c.x);
       let diff=wrapPi(da-c.angle);
-      steerL=diff<-0.05; steerR=diff>0.05; gas=true;
+      steerL=diff<-D.steerPrec; steerR=diff>D.steerPrec;
+
+      // occasional misjudged braking point — more frequent on easier tiers,
+      // never happens on ULTRA. While active, the AI brakes far less than it
+      // should for the upcoming corner, so it genuinely runs wide/off-track.
+      if(c.mistakeT>0) c.mistakeT--;
+      else if(D.mistakeChance>0 && Math.random()<D.mistakeChance) c.mistakeT=40;
+      const effK = c.mistakeT>0 ? D.curveK*0.25 : D.curveK;
+
+      // real corner-speed planning: scan ahead (window grows with current
+      // speed, like a real braking distance) for the sharpest upcoming bend
+      // and set a target speed for it, instead of just following a fixed
+      // speed cap blindly into every hairpin.
+      const win=Math.round(20+c.speed*9);
+      let maxCurv=0;
+      for(let k=0;k<win;k++){
+        const cv=Math.abs(TR.smoothCurv[(li+k)%PN]);
+        if(cv>maxCurv) maxCurv=cv;
+      }
+      const corner=c.skillVar*D.baseMax/(1+maxCurv*effK);
+
+      // light rubber-band: keeps the pack from drifting absurdly far apart
+      // over a full race, but it's now a small multiplier on top of genuine
+      // skill-based pace rather than the main driver of AI speed.
       const gap=c.totalDist-player.totalDist;
-      // tight rubber-band: keeps rivals genuinely close the whole race (not just
-      // within half a lap, which on these much bigger tracks would mean they
-      // could vanish for minutes) — forces real, repeated overtaking battles.
-      c.aiSpd=Math.max(1.9,Math.min(4.05,c.aiSpd+(gap>.05?-.013:gap<-.05?.013:0)));
+      c.rubberMul=Math.max(.85,Math.min(1.18,c.rubberMul+(gap>D.rubberThresh?-D.rubberRate:gap<-D.rubberThresh?D.rubberRate:0)));
+
+      c.aiSpd=corner*c.rubberMul;
+      gas = c.speed < c.aiSpd;
+      brake = c.speed > c.aiSpd*D.overspeed;
     }
 
     const near=nearestOnPath(TR.PATH,c.x,c.y);
@@ -395,6 +447,23 @@ function update(){
     }
     if(!c.offtrack && wasOff && c.isPlayer){
       toast('TILBAKE PÅ ASFALT','#4ade80');
+    }
+
+    // stuck-in-gravel recovery (AI only) — if an AI car makes essentially no
+    // lap progress for 3s straight (overshot a corner, wedged on the outer
+    // wall, whatever the cause), snap it back onto the track centerline
+    // instead of leaving it permanently stranded for the rest of the race.
+    if(!c.isPlayer){
+      c.stuckT--;
+      if(c.stuckT<=0){
+        if(c.totalDist-c.stuckRefDist<0.015){
+          const [px,py]=TR.PATH[near.idx];
+          c.x=px; c.y=py; c.angle=TR.heading[near.idx];
+          c.speed=1.2; c.vx=Math.cos(c.angle)*1.2; c.vy=Math.sin(c.angle)*1.2;
+          c.offtrack=false;
+        }
+        c.stuckRefDist=c.totalDist; c.stuckT=180;
+      }
     }
 
     const DRSon = c.isPlayer ? (drsKey && inDRSZone(c.curProg)) : inDRSZone(c.curProg);
@@ -591,7 +660,7 @@ function draw(){
   if(state==='menu'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle='#e10600'; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
-    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · tre store baner · øvingsmodus',W/2,H/2-122);
+    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · tre store baner · øvingsmodus · 4 AI-nivåer',W/2,H/2-122);
     ctx.fillStyle='#334155'; ctx.font='10px Courier New';
     [['↑ / W','Gass'],['↓ / S','Brems'],['← → / A D','Styr'],['SPC / SHIFT','DRS i grønn/lilla zone']].forEach(([k,v],i)=>{
       ctx.fillStyle='#e10600'; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-70+i*20);
@@ -610,9 +679,14 @@ function draw(){
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('VELG BANE',W/2,70);
     ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('← → bytt   ENTER kjør løp',W/2,94);
     ctx.fillStyle='#38bdf8'; ctx.fillText('P — øvingskjøring (ingen motstandere)',W/2,110);
+    {
+      const D=DIFFICULTIES[difficulty];
+      ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('↑ ↓ bytt vanskelighetsgrad',W/2,124);
+      ctx.fillStyle=D.clr; ctx.font='bold 12px Courier New'; ctx.fillText(`AI: ${D.name}`,W/2,140);
+    }
     TRACKS.forEach((t,i)=>{
       const sel=i===trackSel;
-      const bx0=60+i*150, by0=140, bw0=130, bh0=420;
+      const bx0=60+i*150, by0=158, bw0=130, bh0=420;
       ctx.fillStyle=sel?'rgba(225,6,0,.12)':'rgba(255,255,255,.03)';
       ctx.fillRect(bx0,by0,bw0,bh0);
       ctx.strokeStyle=sel?'#e10600':'#1e293b'; ctx.lineWidth=sel?2.5:1;
@@ -675,7 +749,7 @@ function draw(){
     ctx.fillStyle=posClr; ctx.font='bold 22px Courier New'; ctx.textAlign='left'; ctx.fillText(posLbl,8,HY/2);
     const displayLap=Math.min(player.lap+1,LAPS);
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
-    ctx.fillText(`RUNDE ${displayLap}/${LAPS}  ·  ${TR.name}`,W/2,HY/2-9);
+    ctx.fillText(`RUNDE ${displayLap}/${LAPS}  ·  ${TR.name}  ·  ${DIFFICULTIES[difficulty].name}`,W/2,HY/2-9);
   }
   const ts=raceTime/60;
   ctx.fillStyle='#64748b'; ctx.font='9px Courier New';
@@ -805,6 +879,8 @@ document.addEventListener('keydown',e=>{
   if(state==='trackselect'){
     if(e.key==='ArrowLeft') trackSel=(trackSel+TRACKS.length-1)%TRACKS.length;
     if(e.key==='ArrowRight') trackSel=(trackSel+1)%TRACKS.length;
+    if(e.key==='ArrowUp') difficulty=(difficulty+DIFFICULTIES.length-1)%DIFFICULTIES.length;
+    if(e.key==='ArrowDown') difficulty=(difficulty+1)%DIFFICULTIES.length;
     if(e.key==='p'||e.key==='P') startPractice();
   }
   if(state==='win' && (e.key==='t'||e.key==='T')) state='trackselect';
