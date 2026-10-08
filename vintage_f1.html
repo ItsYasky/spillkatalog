@@ -164,6 +164,12 @@ function buildTrack(cfg){
   bx.strokeStyle='#15151c'; bx.lineWidth=cfg.TW*2+10; tPath(bx); bx.stroke();
   bx.strokeStyle='#33333e'; bx.lineWidth=cfg.TW*2; tPath(bx); bx.stroke();
   bx.strokeStyle='rgba(255,255,255,.025)'; bx.lineWidth=cfg.TW*2-14; tPath(bx); bx.stroke();
+  // graffiti tags painted directly on the tarmac, laid down before the edge
+  // lines/curbs/start-finish markings so those stay crisp on top — street
+  // circuit flavour for 'city' tracks. scatterGraffiti/dGraffiti are plain
+  // function declarations defined further down in this same function body,
+  // which JS hoists to the top of buildTrack(), so calling them here is safe.
+  if(cfg.graffiti) scatterGraffiti(28);
   // edge lines
   bx.strokeStyle='rgba(241,245,249,.55)'; bx.lineWidth=2.4; tPath(bx); bx.stroke();
   // curbs on hard corners (red/white)
@@ -320,6 +326,57 @@ function buildTrack(cfg){
     }
     bx.restore();
   }
+  // city street-circuit building, drawn "standing up" out of the gravel —
+  // a tinted facade block with a lit-window grid and an optional rooftop
+  // plant unit, so the skyline reads instantly as urban rather than forest.
+  function dBuilding(x,y,s,pal){
+    bx.save(); bx.translate(x,y);
+    const h=(20+Math.random()*30)*s, w=(11+Math.random()*7)*s;
+    bx.fillStyle=pal||'#2d3344';
+    bx.fillRect(-w/2,-h,w,h);
+    bx.fillStyle='rgba(255,255,255,.07)'; bx.fillRect(-w/2,-h,w*.35,h);
+    bx.fillStyle='rgba(250,204,21,.6)';
+    const rows=Math.floor(h/7), cols=Math.max(1,Math.floor(w/5));
+    for(let r=0;r<rows;r++) for(let cc=0;cc<cols;cc++){
+      if(Math.random()<0.4) continue;
+      bx.fillRect(-w/2+3+cc*5, -h+4+r*7, 2.4,3.2);
+    }
+    if(Math.random()<.5){ bx.fillStyle='#1b1f29'; bx.fillRect(-w*.18,-h-6*s,w*.36,6*s); }
+    bx.restore();
+  }
+  // spray-paint tag: a bold ellipse blob plus a couple of drip lines, drawn
+  // straight onto the tarmac at a random lateral offset within the track
+  // width — graffiti on the racing surface itself, not off-track scenery.
+  function dGraffiti(x,y,ang,scale){
+    bx.save(); bx.translate(x,y); bx.rotate(ang);
+    const palette=['#f472b6','#facc15','#34d399','#38bdf8','#fb923c','#a78bfa'];
+    const c1=palette[Math.floor(Math.random()*palette.length)];
+    const c2=palette[Math.floor(Math.random()*palette.length)];
+    bx.globalAlpha=0.5;
+    bx.fillStyle=c1;
+    bx.beginPath(); bx.ellipse(0,0,10*scale,5*scale,0,0,Math.PI*2); bx.fill();
+    bx.strokeStyle=c2; bx.lineWidth=1.6; bx.stroke();
+    bx.strokeStyle=c2; bx.lineWidth=1.2;
+    for(let k=0;k<3;k++){
+      bx.beginPath();
+      const ox2=(k-1)*6*scale;
+      bx.moveTo(ox2,-4*scale); bx.lineTo(ox2+(Math.random()-.5)*3,6*scale+Math.random()*4*scale);
+      bx.stroke();
+    }
+    bx.globalAlpha=1;
+    bx.restore();
+  }
+  function scatterGraffiti(count){
+    for(let i=0;i<count;i++){
+      const idx=Math.floor(Math.random()*PN);
+      const [px,py]=PATH[idx], h=heading[idx];
+      const latMax=cfg.TW-10; if(latMax<4) continue;
+      const side=Math.random()<0.5?-1:1;
+      const lat=side*(4+Math.random()*(latMax-4));
+      const nx=-Math.sin(h), ny=Math.cos(h);
+      dGraffiti(px+nx*lat+ox, py+ny*lat+oy, h+Math.PI/2, 0.8+Math.random()*0.6);
+    }
+  }
   const terrain=cfg.terrain||'forest';
   if(terrain==='mountain'){
     scatterTerrain(75,22,(x,y)=>dRock(x,y,0.9+Math.random()*0.6));
@@ -337,6 +394,9 @@ function buildTrack(cfg){
   } else if(terrain==='volcanic'){
     scatterTerrain(90,18,(x,y)=>dLavaRock(x,y,0.8+Math.random()*0.6));
     scatterTerrain(14,40,(x,y)=>dLavaPool(x,y,1.1+Math.random()*0.5));
+  } else if(terrain==='city'){
+    scatterTerrain(46,30,(x,y)=>dBuilding(x,y,1+Math.random()*0.6,cfg.cityPal));
+    scatterTerrain(55,14,(x,y)=>dBush(x,y,0.5+Math.random()*0.3));
   }
   // grandstands flank the start/finish straight on the high-speed temple track
   if(cfg.name==='AUTODROMO'){
@@ -410,48 +470,63 @@ const TRACKS=[
     ],
     drsCount:3
   }),
-  // ── the three hard tracks: each pushes a different kind of difficulty,
-  // not just "more of the same" — a tight constant-direction-change maze,
-  // a fast-but-narrow track with sudden decreasing-radius hairpins, and a
-  // relentless, barely-any-straight technical gauntlet.
-  buildTrack({name:'LABIRINTO', info:'Trangt · Evig sikk-sakk', ncp:36, R0:980, cx:1180, cy:1180,
-    wobbleAmp:30, wobbleFreq:6, wobblePhase:.2, TW:40, terrain:'hedge',
+  // ── the three hard tracks, now redesigned with the same real-circuit-
+  // design vocabulary as the first three (genuine straights between a
+  // deliberate corner sequence, not generic procedural wobble) — and two of
+  // them reskinned as proper street circuits (city buildings + graffiti on
+  // the tarmac), so "trange/smale/vulkansk" reads as a design choice rather
+  // than just "more wobble, narrower track":
+  //  - LABIRINTO: Monaco-flavoured tight street circuit — a hairpin off the
+  //    line, an uphill esses pair, a tight harbourside chicane, a long near-
+  //    hairpin, a swimming-pool esses, final hairpin onto the pit straight.
+  //  - SERPENTINA: a fast evening street circuit (Jeddah-flavoured) — wide
+  //    sweepers linking a couple of genuinely heavy, late-braking corners,
+  //    rewarding commitment rather than constant direction changes.
+  //  - VULCANO: a mountain-flank switchback climb up and back down the
+  //    volcano — three linked hairpins, a cliffside sweeper, a narrow
+  //    chicane, then a steep final hairpin and a fast corner onto the line.
+  // feature gap widths below were tuned numerically (not just by eye) against
+  // findDrsZones' 10%-of-lap straight requirement — on a star-shaped polar
+  // track, a corner's curvature footprint extends well past its nominal
+  // gaussian width, so two real straights need roughly a 25-30% RAW angular
+  // gap between feature centers, not just "some space". Verified via a
+  // headless measurement pass before locking these in, so every track below
+  // genuinely delivers the DRS zone count it declares.
+  buildTrack({name:'LABIRINTO', info:'Bygater · Trange hårnåler', ncp:36, R0:1020, cx:1180, cy:1180,
+    wobbleAmp:10, wobbleFreq:2, wobblePhase:.4, TW:40, terrain:'city', cityPal:'#2d3344', graffiti:true,
     features:[
-      {a0:.06*Math.PI*2,width:.030*Math.PI*2,depth:-340},
-      {a0:.19*Math.PI*2,width:.028*Math.PI*2,depth:280},
-      {a0:.32*Math.PI*2,width:.030*Math.PI*2,depth:-360},
-      {a0:.45*Math.PI*2,width:.027*Math.PI*2,depth:300},
-      {a0:.58*Math.PI*2,width:.030*Math.PI*2,depth:-320},
-      {a0:.71*Math.PI*2,width:.028*Math.PI*2,depth:260},
-      {a0:.84*Math.PI*2,width:.030*Math.PI*2,depth:-380},
-      {a0:.97*Math.PI*2,width:.026*Math.PI*2,depth:240}
-    ],
-    drsCount:1
-  }),
-  buildTrack({name:'SERPENTINA', info:'Smalt · Brå strammere', ncp:34, R0:1500, cx:1600, cy:1500,
-    wobbleAmp:70, wobbleFreq:4, wobblePhase:.6, TW:44, terrain:'arid',
-    features:[
-      {a0:.08*Math.PI*2,width:.090*Math.PI*2,depth:220},
-      {a0:.22*Math.PI*2,width:.020*Math.PI*2,depth:-560},
-      {a0:.40*Math.PI*2,width:.100*Math.PI*2,depth:260},
-      {a0:.55*Math.PI*2,width:.025*Math.PI*2,depth:-500},
-      {a0:.70*Math.PI*2,width:.060*Math.PI*2,depth:-340},
-      {a0:.88*Math.PI*2,width:.030*Math.PI*2,depth:300}
+      {a0:.06*Math.PI*2,width:.018*Math.PI*2,depth:-460},
+      {a0:.14*Math.PI*2,width:.013*Math.PI*2,depth:230},
+      {a0:.18*Math.PI*2,width:.013*Math.PI*2,depth:-210},
+      {a0:.28*Math.PI*2,width:.011*Math.PI*2,depth:160},
+      {a0:.32*Math.PI*2,width:.011*Math.PI*2,depth:-180},
+      {a0:.64*Math.PI*2,width:.014*Math.PI*2,depth:200},
+      {a0:.69*Math.PI*2,width:.014*Math.PI*2,depth:-210},
+      {a0:.78*Math.PI*2,width:.016*Math.PI*2,depth:-260}
     ],
     drsCount:2
   }),
-  buildTrack({name:'VULCANO', info:'Smalest · Ingen pause', ncp:38, R0:1260, cx:1350, cy:1400,
-    wobbleAmp:46, wobbleFreq:7, wobblePhase:.9, TW:36, terrain:'volcanic',
+  buildTrack({name:'SERPENTINA', info:'Bygater · Høy fart i kveldslys', ncp:34, R0:1560, cx:1600, cy:1500,
+    wobbleAmp:10, wobbleFreq:2, wobblePhase:.5, TW:46, terrain:'city', cityPal:'#3a2d4a', graffiti:true,
     features:[
-      {a0:.04*Math.PI*2,width:.035*Math.PI*2,depth:-420},
-      {a0:.15*Math.PI*2,width:.030*Math.PI*2,depth:300},
-      {a0:.26*Math.PI*2,width:.025*Math.PI*2,depth:-480},
-      {a0:.37*Math.PI*2,width:.045*Math.PI*2,depth:260},
-      {a0:.48*Math.PI*2,width:.028*Math.PI*2,depth:-440},
-      {a0:.59*Math.PI*2,width:.033*Math.PI*2,depth:320},
-      {a0:.70*Math.PI*2,width:.022*Math.PI*2,depth:-500},
-      {a0:.81*Math.PI*2,width:.038*Math.PI*2,depth:280},
-      {a0:.92*Math.PI*2,width:.026*Math.PI*2,depth:-460}
+      {a0:.06*Math.PI*2,width:.026*Math.PI*2,depth:220},
+      {a0:.19*Math.PI*2,width:.014*Math.PI*2,depth:-440},
+      {a0:.52*Math.PI*2,width:.026*Math.PI*2,depth:240},
+      {a0:.62*Math.PI*2,width:.014*Math.PI*2,depth:-410},
+      {a0:.94*Math.PI*2,width:.026*Math.PI*2,depth:-420}
+    ],
+    drsCount:2
+  }),
+  buildTrack({name:'VULCANO', info:'Smalest · Opp og ned fjellet', ncp:38, R0:1300, cx:1350, cy:1400,
+    wobbleAmp:10, wobbleFreq:2, wobblePhase:.7, TW:36, terrain:'volcanic',
+    features:[
+      {a0:.04*Math.PI*2,width:.018*Math.PI*2,depth:-420},
+      {a0:.12*Math.PI*2,width:.015*Math.PI*2,depth:250},
+      {a0:.20*Math.PI*2,width:.017*Math.PI*2,depth:-400},
+      {a0:.56*Math.PI*2,width:.013*Math.PI*2,depth:170},
+      {a0:.60*Math.PI*2,width:.013*Math.PI*2,depth:-180},
+      {a0:.74*Math.PI*2,width:.022*Math.PI*2,depth:-430},
+      {a0:.88*Math.PI*2,width:.028*Math.PI*2,depth:230}
     ],
     drsCount:1
   })
@@ -475,29 +550,66 @@ const TEAMS=[
 ];
 const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 
-// AI difficulty tiers — each AI car plans its own corner speed from real track
-// curvature (braking for upcoming corners, not just an elastic band to the
-// player), so the tiers genuinely differ in pace, precision and mistakes.
-// Note: curveK is HIGHEST on ENKEL and LOWEST on ULTRA — a weak driver lifts
-// off far more than a corner actually needs (overly cautious, loses time),
-// while a great driver stays confident and carries speed through the bend.
+// AI difficulty tiers — rebuilt so the tiers are differentiated by TECHNIQUE,
+// not raw straight-line pace. baseMax (flat-out speed) is now nearly IDENTICAL
+// across every tier (≈6% spread total, down from the old ~51%) — on a clean
+// straight, an ENKEL car and an ULTRA car accelerate to almost the same top
+// speed. The entire difficulty gap instead comes from how a tier actually
+// *drives*:
+//  - curveK: cornering confidence. HIGHEST on ENKEL, LOWEST on ULTRA — a weak
+//    driver lifts off far more than a corner actually needs (overly cautious,
+//    loses time), a great driver stays confident and carries speed through
+//    the bend. This is the single biggest technique lever.
+//  - steerPrec / overspeed: how tightly a tier holds its line and its braking
+//    margin into a corner — sloppier and more cautious on ENKEL, razor-sharp
+//    on ULTRA.
+//  - mistakeChance: occasional misjudged braking points — frequent on ENKEL,
+//    literally zero on ULTRA.
+//  - overtakeCommit: how decisively a tier executes a passing move (bigger,
+//    more sustained swing around a blocker) — a weak driver half-commits and
+//    often doesn't complete the pass, a great driver fully commits.
+//  - defendSkill: genuine defensive driving — the probability (per frame,
+//    only ever applied on a low-curvature straight/braking zone, never mid-
+//    corner) that this car reacts to an attacker closing from behind by
+//    moving to cover that side of the track. ENKEL barely defends at all;
+//    ULTRA defends its position hard.
+//  - ersSkill: how well a tier manages its battery (see the ERS system in
+//    update()) — a sharp driver deploys it when it matters (on a straight or
+//    mid-overtake/defend), a weak driver uses it more on a whim.
 // NOTE on lookAhead: this is held constant (11) across every tier on purpose.
 // It sets how far down the race line the AI steers toward each frame; pushing
 // it higher (as a naive "better driver sees further" tier scale once did)
 // makes the AI aim straight at a race-line point that cuts across the inside
-// of hairpins, driving it off-track almost permanently. Genuine skill is
-// instead expressed through curveK (cornering confidence), steerPrec
-// (how small a heading error it bothers correcting), overspeed (braking
-// margin), baseMax (flat-out pace) and mistakeChance (braking lapses) — all
-// calibrated via automated lap testing across all 3 tracks to keep off-track
-// time near 0% while still giving a clear, monotonic pace gap per tier.
+// of hairpins, driving it off-track almost permanently.
+// All of the above was recalibrated via automated lap testing across every
+// track to keep off-track time near 0% while still giving each tier a
+// clearly distinct *feel* to race against, without a dominant pace gap.
 const DIFFICULTIES=[
-  {name:'ENKEL',     clr:'#4ade80', baseMax:4.10, curveK:16,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03},
-  {name:'MIDDELS',   clr:'#38bdf8', baseMax:4.75, curveK:8,   overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05},
-  {name:'VANSKELIG', clr:'#f97316', baseMax:5.45, curveK:3.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08},
-  {name:'ULTRA',     clr:'#ef4444', baseMax:6.20, curveK:2.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12}
+  {name:'ENKEL',     clr:'#4ade80', baseMax:5.00, curveK:16,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03, defendSkill:.10, overtakeCommit:.55, ersSkill:.30},
+  {name:'MIDDELS',   clr:'#38bdf8', baseMax:5.12, curveK:8,   overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05, defendSkill:.40, overtakeCommit:.72, ersSkill:.55},
+  {name:'VANSKELIG', clr:'#f97316', baseMax:5.22, curveK:3.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08, defendSkill:.72, overtakeCommit:.88, ersSkill:.80},
+  {name:'ULTRA',     clr:'#ef4444', baseMax:5.32, curveK:2.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12, defendSkill:1.0, overtakeCommit:1.0, ersSkill:1.0}
 ];
 let difficulty=1;
+
+// Player-selectable cosmetic liveries for the F1 car — entirely independent
+// of the randomly-assigned team identity (SKINS[0] "STANDARD" just falls
+// back to whatever team colours the player got that race via color:null).
+const SKINS=[
+  {name:'STANDARD', color:null,      dark:null},
+  {name:'KARBON',    color:'#1a1a1f', dark:'#000000'},
+  {name:'ARKTISK',   color:'#e2e8f0', dark:'#64748b'},
+  {name:'NEON',      color:'#39ff88', dark:'#0a3d1f'},
+  {name:'GULL',      color:'#facc15', dark:'#78350f'},
+  {name:'MAGENTA',   color:'#ec4899', dark:'#701a3d'}
+];
+let skinSel=0;
+
+// Selectable race distance — replaces the old hardcoded 5-lap race. LAPS is
+// kept as the live value everything else reads (finish check + HUD), while
+// LAP_OPTIONS/lapsIdx drive the trackselect UI (Q/E to cycle).
+const LAP_OPTIONS=[3,5,8,12,20];
+let lapsIdx=1, LAPS=LAP_OPTIONS[lapsIdx];
 
 class Car{
   constructor(x,y,ang,team,isPlayer){
@@ -513,8 +625,10 @@ class Car{
     this.rubberMul=1; this.mistakeT=0;
     this.stuckRefDist=0; this.stuckT=180; // stuck-in-gravel recovery bookkeeping (AI only)
     this.overtakeSide=0; this.overtakeT=0; // which way (and for how long) this AI is currently swinging out to pass a blocker ahead
+    this.defendSide=0; this.defendT=0; // which way (and for how long) this AI is currently covering to defend against an attacker from behind
     this.trail=[];this.finished=false;this.place=1;
     this.offtrack=false;this.drsActive=false;
+    this.battery=100; this.ersActive=false; // ERS/battery: 0-100%, see update()
   }
   get totalDist(){return this.lap+this.curProg;}
 }
@@ -524,7 +638,6 @@ let cars=[],player,state='menu',raceTime=0,keys={},particles=[],texts=[];
 let shake=0, confetti=[], winTimer=0, toasts=[];
 let trackSel=0, cntTimer=0;
 let camX=0,camY=0,camAngle=0;
-const LAPS=5;
 const CHASE_Y = HY+(H-HY)*0.68; // chase-cam anchor: car sits lower on screen, more track visible ahead
 let bestSector=[Infinity,Infinity,Infinity];
 
@@ -676,7 +789,10 @@ function update(){
       brake=!!(keys['ArrowDown']||keys['s']||keys['S']);
       steerL=!!(keys['ArrowLeft']||keys['a']||keys['A']);
       steerR=!!(keys['ArrowRight']||keys['d']||keys['D']);
-      drsKey=!!(keys[' ']||keys['Shift']||keys['ShiftLeft']||keys['ShiftRight']);
+      drsKey=!!(keys[' ']);
+      // ERS deploy is its own key (Shift), separate from DRS (Space) — a
+      // real F1 car can run both systems at once.
+      c.ersActive=!!(keys['Shift']||keys['ShiftLeft']||keys['ShiftRight']) && c.battery>0;
     } else {
       const PN=TR.PN;
       const D=DIFFICULTIES[difficulty];
@@ -688,15 +804,22 @@ function update(){
       // the steering target laterally so this car actually swings around the
       // blocker instead of just nose-to-tailing it via collision-separation.
       const cosA=Math.cos(c.angle), sinA=Math.sin(c.angle);
+      // single pass over the field finds both a blocker ahead (to overtake)
+      // and an attacker behind (to defend against) — genuine technique on
+      // both sides of a fight, not just a one-way AI chasing the player.
       let blockerLat=0, blockerFound=false, blockerD=Infinity;
+      let attackerLat=0, attackerFound=false, attackerD=Infinity;
       for(let bi=0;bi<cars.length;bi++){
         const o=cars[bi];
         if(o===c||o.finished) continue;
         const dx=o.x-c.x, dy=o.y-c.y, d=Math.hypot(dx,dy);
         if(d>OVERTAKE_RANGE) continue;
-        const fwd=dx*cosA+dy*sinA;
-        if(fwd<=0||fwd<d*OVERTAKE_CONE) continue; // must be mostly ahead, not beside/behind
-        if(d<blockerD){ blockerD=d; blockerLat=-dx*sinA+dy*cosA; blockerFound=true; }
+        const fwd=dx*cosA+dy*sinA, lat=-dx*sinA+dy*cosA;
+        if(fwd>0 && fwd>=d*OVERTAKE_CONE){
+          if(d<blockerD){ blockerD=d; blockerLat=lat; blockerFound=true; }
+        } else if(fwd<0 && -fwd>=d*OVERTAKE_CONE && o.speed>c.speed*1.02){
+          if(d<attackerD){ attackerD=d; attackerLat=lat; attackerFound=true; }
+        }
       }
       if(c.overtakeT>0) c.overtakeT--;
       if(blockerFound){
@@ -706,13 +829,31 @@ function update(){
           // (driver #1 of each team defaults right, #2 defaults left).
           c.overtakeSide = Math.abs(blockerLat)>2 ? -Math.sign(blockerLat) : (c.num===1?1:-1);
         }
-        c.overtakeT=45;
+        // overtakeCommit: how long/decisively a tier holds the passing move —
+        // a weak driver barely commits before bailing back onto the racing line.
+        c.overtakeT=20+25*D.overtakeCommit;
       }
       const curvNow=Math.abs(TR.smoothCurv[li]);
+
+      // defending: react to an attacker closing from behind by moving to
+      // cover that side — but only ever on a low-curvature stretch (a real
+      // driver defends on the straight/braking zone, never mid-corner).
+      // defendSkill sets both how often this tier even reacts, and (below)
+      // how far it's willing to move to do it.
+      if(c.defendT>0) c.defendT--;
+      if(attackerFound && D.defendSkill>0 && Math.abs(curvNow)<0.012 && Math.random()<D.defendSkill*0.08){
+        c.defendSide = Math.abs(attackerLat)>2 ? -Math.sign(attackerLat) : (c.num===1?1:-1);
+        c.defendT=50;
+      }
+
       const curvAllow=1/(1+curvNow*D.curveK*1.5); // ease the swing off deep in tight corners
       const ramp=Math.min(1,c.overtakeT/20);
-      const maxOvertakeOffset=TR.TW*0.5;
-      const lateralOffset = c.overtakeT>0 ? c.overtakeSide*maxOvertakeOffset*curvAllow*ramp : 0;
+      const maxOvertakeOffset=TR.TW*0.5*D.overtakeCommit;
+      const overtakeOffset = c.overtakeT>0 ? c.overtakeSide*maxOvertakeOffset*curvAllow*ramp : 0;
+      const defendRamp=Math.min(1,c.defendT/25);
+      const maxDefendOffset=TR.TW*0.4*D.defendSkill;
+      const defendOffset = c.defendT>0 ? c.defendSide*maxDefendOffset*defendRamp*curvAllow : 0;
+      const lateralOffset = overtakeOffset+defendOffset;
 
       const lookI=(li+D.lookAhead)%PN;
       const [rtx,rty]=TR.raceLine[lookI];
@@ -750,6 +891,12 @@ function update(){
       c.aiSpd=corner*c.rubberMul;
       gas = c.speed < c.aiSpd;
       brake = c.speed > c.aiSpd*D.overspeed;
+
+      // ERS deploy: a sharper tier (higher ersSkill) saves its battery for
+      // when it actually matters — an overtake/defend fight or a straight —
+      // instead of spending it the instant it's available.
+      c.ersActive = c.battery>25 && (blockerFound||attackerFound||Math.abs(curvNow)<0.008)
+        && Math.random()<(0.35+0.5*D.ersSkill);
     }
 
     const near=nearestOnPath(TR.PATH,c.x,c.y);
@@ -786,7 +933,18 @@ function update(){
 
     const DRSon = c.isPlayer ? (drsKey && inDRSZone(c.curProg)) : inDRSZone(c.curProg);
     c.drsActive = DRSon;
-    let MAX=(c.isPlayer?4.8:c.aiSpd)*(DRSon?1.12:1);
+
+    // battery/ERS: drains while deployed, recharges while braking (fast) or
+    // simply lifting off the throttle (slow) — real hybrid energy management,
+    // not a free boost. c.ersActive was already decided above (player: Shift
+    // key + battery>0; AI: its own deploy decision) — here we just apply it.
+    const ersOn = c.ersActive && c.battery>0;
+    c.ersActive = ersOn;
+    if(ersOn) c.battery=Math.max(0,c.battery-1.1);
+    else if(brake) c.battery=Math.min(100,c.battery+0.75);
+    else if(!gas) c.battery=Math.min(100,c.battery+0.3);
+
+    let MAX=(c.isPlayer?4.8:c.aiSpd)*(DRSon?1.12:1)*(ersOn?1.08:1);
     let GRIP=0.82, accelMul=1, dragMul=1;
     if(c.offtrack){
       accelMul = deepOff? 0.28 : 0.45;
@@ -796,6 +954,7 @@ function update(){
       if(Math.random()<.6) dust(c.x-Math.cos(c.angle)*8,c.y-Math.sin(c.angle)*8, deepOff?'rgba(122,108,84,.8)':'rgba(70,110,60,.7)');
       if(c.isPlayer) raceTime += 1.0; // time penalty: lose extra time off-track
     }
+    if(ersOn) accelMul*=1.18;
 
     if(gas)    c.speed=Math.min(MAX,c.speed+.17*accelMul);
     else       c.speed*=.978;
@@ -834,6 +993,11 @@ function update(){
     if(c.drsActive && Math.random()<.4){
       const a=c.angle+Math.PI+(Math.random()-.5)*.5;
       particles.push({x:c.x,y:c.y,vx:Math.cos(a)*1.4,vy:Math.sin(a)*1.4,life:.6,d:.04,r:1.8,clr:'#c084fc'});
+    }
+    // ERS deploy spark — cyan, distinct from the purple DRS spark
+    if(c.ersActive && Math.random()<.5){
+      const a=c.angle+Math.PI+(Math.random()-.5)*.5;
+      particles.push({x:c.x,y:c.y,vx:Math.cos(a)*1.6,vy:Math.sin(a)*1.6,life:.6,d:.04,r:1.8,clr:'#38bdf8'});
     }
 
     // progress / lap / sector tracking
@@ -903,28 +1067,34 @@ function update(){
 // DRAW
 // ══════════════════════════════════════════════════════════════════
 function drawCar(c){
+  // player's car renders its chosen SKIN livery instead of the team colours
+  // whenever a non-default skin is picked; AI always races in team colours.
+  const skin = c.isPlayer ? SKINS[skinSel] : null;
+  const col = (skin && skin.color) || c.team.color;
+  const dark = (skin && skin.dark) || c.team.dark;
   c.trail.forEach(t=>{ ctx.globalAlpha=t.life*.22; ctx.fillStyle='#0a0a12'; ctx.beginPath(); ctx.arc(t.x,t.y,2.6,0,Math.PI*2); ctx.fill(); });
   ctx.globalAlpha=1;
   ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.angle);
   ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(-12,5,24,6); // shadow
   // rear wing
-  ctx.fillStyle=c.team.dark; ctx.fillRect(-13,-8,3,16);
+  ctx.fillStyle=dark; ctx.fillRect(-13,-8,3,16);
   // rear tires
   ctx.fillStyle='#111'; ctx.fillRect(-9,-8,5,5); ctx.fillRect(-9,3,5,5);
   // body
-  ctx.fillStyle=c.team.color;
+  ctx.fillStyle=col;
   ctx.beginPath();
   ctx.moveTo(13,0); ctx.lineTo(7,-3.2); ctx.lineTo(-10,-4.2); ctx.lineTo(-11,4.2); ctx.lineTo(7,3.2);
   ctx.closePath(); ctx.fill();
   // sidepods
-  ctx.fillStyle=c.team.dark; ctx.fillRect(-6,-4.6,6,2); ctx.fillRect(-6,2.6,6,2);
+  ctx.fillStyle=dark; ctx.fillRect(-6,-4.6,6,2); ctx.fillRect(-6,2.6,6,2);
   // halo/cockpit
   ctx.fillStyle='#111'; ctx.beginPath(); ctx.ellipse(1,0,3.2,2.1,0,0,Math.PI*2); ctx.fill();
   // front wing
-  ctx.fillStyle=c.team.dark; ctx.fillRect(11,-6,2.4,12);
+  ctx.fillStyle=dark; ctx.fillRect(11,-6,2.4,12);
   // front tires
   ctx.fillStyle='#111'; ctx.fillRect(5,-7,4,4); ctx.fillRect(5,3,4,4);
   if(c.drsActive){ ctx.fillStyle='rgba(192,132,252,.9)'; ctx.fillRect(-13,-7,3,14); }
+  if(c.ersActive){ ctx.fillStyle='rgba(56,189,248,.85)'; ctx.fillRect(-6,-5.2,6,2.4); ctx.fillRect(-6,2.8,6,2.4); }
   if(!c.isPlayer){
     ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(-3,-3,7,6);
     ctx.fillStyle='#fff'; ctx.font='bold 5px Courier New'; ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -986,7 +1156,7 @@ function draw(){
     ctx.fillStyle='#e10600'; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
     ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · 6 baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer',W/2,H/2-122);
     ctx.fillStyle='#334155'; ctx.font='10px Courier New';
-    [['↑ / W','Gass'],['↓ / S','Brems'],['← → / A D','Styr'],['SPC / SHIFT','DRS i grønn/lilla zone']].forEach(([k,v],i)=>{
+    [['↑ / W','Gass'],['↓ / S','Brems'],['← → / A D','Styr'],['SPACE','DRS i lilla sone'],['SHIFT','ERS-boost (batteri)']].forEach(([k,v],i)=>{
       ctx.fillStyle='#e10600'; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-70+i*20);
       ctx.fillStyle='#64748b'; ctx.textAlign='left'; ctx.fillText(v,W/2+6,H/2-70+i*20);
     });
@@ -1042,6 +1212,19 @@ function draw(){
       ctx.fillText(t.info,ccx,by0+ph+58);
       ctx.fillText(`Bredde ${t.TW*2}  ·  DRS-zoner ${t.drsZones.length}`,ccx,by0+ph+74);
     });
+    // ── distance (laps) selector ──
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Q E bytt rundelengde',W/2,598);
+    ctx.fillStyle='#facc15'; ctx.font='bold 12px Courier New'; ctx.fillText(`DISTANSE: ${LAPS} RUNDER`,W/2,614);
+    // ── skin selector ──
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Z X bytt bil-skin',W/2,632);
+    {
+      const sk=SKINS[skinSel], swCol=sk.color||TEAMS[0].color;
+      ctx.fillStyle='#f1f5f9'; ctx.font='bold 12px Courier New'; ctx.textAlign='right';
+      ctx.fillText(`SKIN: ${sk.name}`,W/2+34,648);
+      ctx.fillStyle=swCol; ctx.fillRect(W/2+44,641,16,10);
+      ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(W/2+44,641,16,10);
+      ctx.textAlign='center';
+    }
     ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H-16);
     ctx.restore(); return;
   }
@@ -1090,9 +1273,13 @@ function draw(){
   ctx.fillText(`${spd} km/t  G${gear}`,W-8,HY/2-8);
   // DRS indicator
   const drsReady=inDRSZone(player.curProg);
-  ctx.font='bold 10px Courier New';
+  ctx.font='bold 10px Courier New'; ctx.textAlign='right';
   ctx.fillStyle = player.drsActive?'#c084fc' : drsReady?'rgba(168,85,247,.5)':'#334155';
   ctx.fillText('DRS',W-8,HY/2+9);
+  // ERS/battery indicator
+  const ersPct=Math.round(player.battery);
+  ctx.fillStyle = player.ersActive?'#38bdf8' : ersPct>50?'#4ade80' : ersPct>20?'#f97316':'#ef4444';
+  ctx.fillText(`ERS ${ersPct}%`,W-46,HY/2+9);
 
   // off-track indicator
   if((state==='playing'||state==='practice') && player.offtrack){
@@ -1162,7 +1349,7 @@ function draw(){
   ctx.closePath(); ctx.stroke();
   cars.forEach(c=>{
     const [mcx,mcy]=mmPt(c.x,c.y);
-    ctx.fillStyle=c.team.color; ctx.globalAlpha=c.isPlayer?1:.8;
+    ctx.fillStyle=c.isPlayer?(SKINS[skinSel].color||c.team.color):c.team.color; ctx.globalAlpha=c.isPlayer?1:.8;
     ctx.beginPath(); ctx.arc(mcx,mcy,c.isPlayer?3.2:2,0,Math.PI*2); ctx.fill();
   });
   ctx.globalAlpha=1;
@@ -1236,6 +1423,10 @@ document.addEventListener('keydown',e=>{
     if(e.key==='ArrowUp') difficulty=(difficulty+DIFFICULTIES.length-1)%DIFFICULTIES.length;
     if(e.key==='ArrowDown') difficulty=(difficulty+1)%DIFFICULTIES.length;
     if(e.key==='p'||e.key==='P') startPractice();
+    if(e.key==='q'||e.key==='Q'){ lapsIdx=(lapsIdx+LAP_OPTIONS.length-1)%LAP_OPTIONS.length; LAPS=LAP_OPTIONS[lapsIdx]; }
+    if(e.key==='e'||e.key==='E'){ lapsIdx=(lapsIdx+1)%LAP_OPTIONS.length; LAPS=LAP_OPTIONS[lapsIdx]; }
+    if(e.key==='z'||e.key==='Z') skinSel=(skinSel+SKINS.length-1)%SKINS.length;
+    if(e.key==='x'||e.key==='X') skinSel=(skinSel+1)%SKINS.length;
   }
   if(state==='win' && (e.key==='t'||e.key==='T')) state='trackselect';
   if(state==='practice'){
