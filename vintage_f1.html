@@ -219,40 +219,194 @@ function buildTrack(cfg){
   });
   bx.globalAlpha=1;
 
+  // ── terrain decoration, themed per track ──
+  // scattered only where they're clearly clear of the tarmac+gravel (a 26px
+  // buffer beyond the pace-neutral gravel edge), so they read purely as
+  // scenery — never mistakable for part of the drivable surface. Drawn last,
+  // on top of the fully-finished track render, so there's zero chance of a
+  // decoration bleeding onto an edge line or curb.
+  function distToPath(x,y){
+    let best=1e15;
+    for(let i=0;i<PN;i++){
+      const dx=x-PATH[i][0], dy=y-PATH[i][1];
+      const d=dx*dx+dy*dy;
+      if(d<best) best=d;
+    }
+    return Math.sqrt(best);
+  }
+  const CLEAR=cfg.TW+GRAVEL_SAFE+26;
+  function scatterTerrain(count,minSpace,draw){
+    const pts=[]; let tries=0;
+    while(pts.length<count && tries<count*16){
+      tries++;
+      const x=Math.random()*bw, y=Math.random()*bh;
+      if(distToPath(x-ox,y-oy)<CLEAR) continue;
+      if(pts.some(p=>{const dx=p[0]-x,dy=p[1]-y;return dx*dx+dy*dy<minSpace*minSpace;})) continue;
+      pts.push([x,y]);
+      draw(x,y);
+    }
+  }
+  function dTree(x,y,s){
+    bx.save(); bx.translate(x,y);
+    const shades=['#14532d','#1b6b3a','#0f3d22'];
+    for(let k=0;k<3;k++){
+      bx.fillStyle=shades[k%shades.length];
+      bx.beginPath(); bx.arc((Math.random()-.5)*6*s,(Math.random()-.5)*6*s-4*s,7*s+Math.random()*3*s,0,Math.PI*2); bx.fill();
+    }
+    bx.fillStyle='#4a3420'; bx.fillRect(-1.5*s,2*s,3*s,6*s);
+    bx.restore();
+  }
+  function dRock(x,y,s,tint){
+    bx.save(); bx.translate(x,y);
+    bx.fillStyle=tint||(Math.random()<.5?'#5b5b63':'#6b6b74');
+    bx.beginPath();
+    const n=5+Math.floor(Math.random()*2);
+    for(let k=0;k<n;k++){
+      const a=k/n*Math.PI*2, r=(6+Math.random()*4)*s;
+      const px=Math.cos(a)*r, py=Math.sin(a)*r*.8;
+      k===0?bx.moveTo(px,py):bx.lineTo(px,py);
+    }
+    bx.closePath(); bx.fill();
+    bx.strokeStyle='rgba(255,255,255,.08)'; bx.lineWidth=1; bx.stroke();
+    bx.restore();
+  }
+  function dHedge(x,y,s){
+    bx.save(); bx.translate(x,y); bx.rotate(Math.random()*Math.PI);
+    bx.fillStyle='#1d5a35';
+    const w=14*s,h=9*s;
+    bx.beginPath();
+    if(bx.roundRect) bx.roundRect(-w/2,-h/2,w,h,3); else bx.rect(-w/2,-h/2,w,h);
+    bx.fill();
+    bx.fillStyle='rgba(255,255,255,.07)'; bx.fillRect(-w/2,-h/2,w,h*0.3);
+    bx.restore();
+  }
+  function dBush(x,y,s){
+    bx.save(); bx.translate(x,y);
+    bx.fillStyle=Math.random()<.5?'#7a7a42':'#8a8350';
+    bx.beginPath(); bx.arc(0,0,5*s,0,Math.PI*2); bx.fill();
+    bx.fillStyle='#5f5c33';
+    bx.beginPath(); bx.arc(3*s,1*s,3*s,0,Math.PI*2); bx.fill();
+    bx.restore();
+  }
+  function dLavaRock(x,y,s){
+    bx.save(); bx.translate(x,y);
+    bx.fillStyle='#2b2320';
+    bx.beginPath();
+    const n=5+Math.floor(Math.random()*2);
+    for(let k=0;k<n;k++){
+      const a=k/n*Math.PI*2, r=(6+Math.random()*5)*s;
+      const px=Math.cos(a)*r, py=Math.sin(a)*r*.85;
+      k===0?bx.moveTo(px,py):bx.lineTo(px,py);
+    }
+    bx.closePath(); bx.fill();
+    if(Math.random()<.35){ bx.fillStyle='rgba(249,115,22,.75)'; bx.beginPath(); bx.arc(0,0,1.6*s,0,Math.PI*2); bx.fill(); }
+    bx.restore();
+  }
+  function dLavaPool(x,y,s){
+    bx.save(); bx.translate(x,y);
+    bx.fillStyle='rgba(40,20,15,.85)'; bx.beginPath(); bx.arc(0,0,9*s,0,Math.PI*2); bx.fill();
+    bx.fillStyle='rgba(234,88,12,.85)'; bx.beginPath(); bx.arc(0,0,6*s,0,Math.PI*2); bx.fill();
+    bx.fillStyle='rgba(253,186,116,.6)'; bx.beginPath(); bx.arc(-1.5*s,-1.5*s,2.4*s,0,Math.PI*2); bx.fill();
+    bx.restore();
+  }
+  function dGrandstand(x,y,ang,w,h){
+    bx.save(); bx.translate(x,y); bx.rotate(ang);
+    bx.fillStyle='#2b2b33'; bx.fillRect(-w/2,-h/2,w,h);
+    bx.fillStyle='#3a3a44'; bx.fillRect(-w/2,-h/2,w,h*0.3);
+    const cols=['#ef4444','#38bdf8','#eab308','#f1f5f9'];
+    for(let r=0;r<3;r++) for(let c=0;c<Math.floor(w/7);c++){
+      bx.fillStyle=cols[(r+c)%cols.length];
+      bx.fillRect(-w/2+4+c*7, -h/2+6+r*7, 3,3);
+    }
+    bx.restore();
+  }
+  const terrain=cfg.terrain||'forest';
+  if(terrain==='mountain'){
+    scatterTerrain(75,22,(x,y)=>dRock(x,y,0.9+Math.random()*0.6));
+    scatterTerrain(42,26,(x,y)=>dTree(x,y,0.65+Math.random()*0.35));
+  } else if(terrain==='forest'){
+    scatterTerrain(120,20,(x,y)=>dTree(x,y,0.8+Math.random()*0.5));
+    scatterTerrain(20,24,(x,y)=>dRock(x,y,0.8+Math.random()*0.4));
+  } else if(terrain==='parkland'){
+    scatterTerrain(75,24,(x,y)=>dTree(x,y,0.7+Math.random()*0.4));
+  } else if(terrain==='hedge'){
+    scatterTerrain(95,22,(x,y)=>dHedge(x,y,0.9+Math.random()*0.3));
+  } else if(terrain==='arid'){
+    scatterTerrain(80,18,(x,y)=>dBush(x,y,0.8+Math.random()*0.5));
+    scatterTerrain(36,22,(x,y)=>dRock(x,y,0.7+Math.random()*0.5,'#8a7a66'));
+  } else if(terrain==='volcanic'){
+    scatterTerrain(90,18,(x,y)=>dLavaRock(x,y,0.8+Math.random()*0.6));
+    scatterTerrain(14,40,(x,y)=>dLavaPool(x,y,1.1+Math.random()*0.5));
+  }
+  // grandstands flank the start/finish straight on the high-speed temple track
+  if(cfg.name==='AUTODROMO'){
+    const standOffs=cfg.TW+GRAVEL_SAFE+40;
+    [1,-1].forEach(side=>{
+      const px=sfx+Math.cos(sfPerp)*standOffs*side, py=sfy+Math.sin(sfPerp)*standOffs*side;
+      dGrandstand(px+ox,py+oy, sfAng, 120, 26);
+    });
+  }
+
   return {CP,PATH,PN,heading,smoothCurv,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
     drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy};
 }
 
+// The three original tracks are redesigned around real circuit-design
+// vocabulary (researched: racetrackdesign.com's design-principles guide, and
+// corner-sequence writeups of Spa-Francorchamps/Monza) instead of generic
+// procedural wobble — each is deliberately an entry/mid/exit corner sequence
+// with real low-curvature straights between the features, not just a blob:
+//  - MONTE SPIRA: a tight mountain pass — kink out of the line, a fast sweep
+//    into the signature tightening hairpin ("spira"), a quick esses pair,
+//    a flowing mid-speed sweeper, then a second slower hairpin into the line.
+//  - ARDENNE: Spa-flavoured — a hairpin off the line, a fast uphill esses
+//    complex right after it (Eau Rouge/Raidillon-style), a long straight,
+//    then a trio of broad high-speed sweepers (Les Combes/Pouhon/Blanchimont)
+//    back to the line.
+//  - AUTODROMO: Monza-flavoured "temple of speed" — three snappy chicane
+//    pairs and a connected double-apex (Lesmo-style) breaking up long flat
+//    straights, finished off by one big increasing-radius sweeper
+//    (Parabolica-style) onto the pit straight.
+// Background wobble amplitude/frequency is kept low on all three now so the
+// gaps between features read as genuine straights, not constant undulation.
 const TRACKS=[
-  buildTrack({name:'MONTE SPIRA', info:'Trangt · Hårnålskurver', ncp:30, R0:1144, cx:1240, cy:1240,
-    wobbleAmp:52, wobbleFreq:5, wobblePhase:.4, TW:48,
+  buildTrack({name:'MONTE SPIRA', info:'Trangt · Hårnålskurver', ncp:34, R0:1144, cx:1240, cy:1240,
+    wobbleAmp:24, wobbleFreq:2, wobblePhase:.3, TW:48, terrain:'mountain',
     features:[
-      {a0:.10*Math.PI*2,width:.05*Math.PI*2,depth:-624},
-      {a0:.28*Math.PI*2,width:.07*Math.PI*2,depth:364},
-      {a0:.45*Math.PI*2,width:.04*Math.PI*2,depth:-780},
-      {a0:.62*Math.PI*2,width:.06*Math.PI*2,depth:-468},
-      {a0:.80*Math.PI*2,width:.05*Math.PI*2,depth:312}
+      {a0:.06*Math.PI*2,width:.025*Math.PI*2,depth:170},
+      {a0:.17*Math.PI*2,width:.045*Math.PI*2,depth:-560},
+      {a0:.29*Math.PI*2,width:.027*Math.PI*2,depth:-600},
+      {a0:.39*Math.PI*2,width:.018*Math.PI*2,depth:300},
+      {a0:.45*Math.PI*2,width:.016*Math.PI*2,depth:-260},
+      {a0:.63*Math.PI*2,width:.060*Math.PI*2,depth:240},
+      {a0:.81*Math.PI*2,width:.028*Math.PI*2,depth:-500}
     ],
     drsCount:2
   }),
-  buildTrack({name:'ARDENNE', info:'Flytende · Lange svinger', ncp:32, R0:1664, cx:1760, cy:1680,
-    wobbleAmp:94, wobbleFreq:3, wobblePhase:1.1, TW:68,
+  buildTrack({name:'ARDENNE', info:'Flytende · Lange svinger', ncp:34, R0:1664, cx:1760, cy:1680,
+    wobbleAmp:20, wobbleFreq:2, wobblePhase:.2, TW:68, terrain:'forest',
     features:[
-      {a0:.08*Math.PI*2,width:.09*Math.PI*2,depth:286},
-      {a0:.18*Math.PI*2,width:.035*Math.PI*2,depth:-364},
-      {a0:.50*Math.PI*2,width:.10*Math.PI*2,depth:-520},
-      {a0:.78*Math.PI*2,width:.08*Math.PI*2,depth:338}
+      {a0:.03*Math.PI*2,width:.020*Math.PI*2,depth:-460},
+      {a0:.11*Math.PI*2,width:.018*Math.PI*2,depth:260},
+      {a0:.15*Math.PI*2,width:.018*Math.PI*2,depth:-300},
+      {a0:.45*Math.PI*2,width:.050*Math.PI*2,depth:-220},
+      {a0:.60*Math.PI*2,width:.090*Math.PI*2,depth:260},
+      {a0:.75*Math.PI*2,width:.070*Math.PI*2,depth:-260}
     ],
     drsCount:3
   }),
-  buildTrack({name:'AUTODROMO', info:'Høy fart · Lange rettstrekk', ncp:30, R0:1872, cx:1720, cy:1720,
-    wobbleAmp:42, wobbleFreq:2, wobblePhase:0, TW:74,
+  buildTrack({name:'AUTODROMO', info:'Høy fart · Lange rettstrekk', ncp:40, R0:1872, cx:1720, cy:1720,
+    wobbleAmp:14, wobbleFreq:2, wobblePhase:0, TW:74, terrain:'parkland',
     features:[
-      {a0:.05*Math.PI*2,width:.025*Math.PI*2,depth:-676},
-      {a0:.12*Math.PI*2,width:.025*Math.PI*2,depth:260},
-      {a0:.45*Math.PI*2,width:.05*Math.PI*2,depth:-728},
-      {a0:.60*Math.PI*2,width:.03*Math.PI*2,depth:-520},
-      {a0:.66*Math.PI*2,width:.03*Math.PI*2,depth:312}
+      {a0:.075*Math.PI*2,width:.016*Math.PI*2,depth:170},
+      {a0:.105*Math.PI*2,width:.016*Math.PI*2,depth:-190},
+      {a0:.275*Math.PI*2,width:.016*Math.PI*2,depth:-200},
+      {a0:.305*Math.PI*2,width:.016*Math.PI*2,depth:170},
+      {a0:.470*Math.PI*2,width:.035*Math.PI*2,depth:-340},
+      {a0:.510*Math.PI*2,width:.035*Math.PI*2,depth:-280},
+      {a0:.700*Math.PI*2,width:.016*Math.PI*2,depth:180},
+      {a0:.730*Math.PI*2,width:.016*Math.PI*2,depth:-210},
+      {a0:.900*Math.PI*2,width:.080*Math.PI*2,depth:360}
     ],
     drsCount:3
   }),
@@ -261,7 +415,7 @@ const TRACKS=[
   // a fast-but-narrow track with sudden decreasing-radius hairpins, and a
   // relentless, barely-any-straight technical gauntlet.
   buildTrack({name:'LABIRINTO', info:'Trangt · Evig sikk-sakk', ncp:36, R0:980, cx:1180, cy:1180,
-    wobbleAmp:30, wobbleFreq:6, wobblePhase:.2, TW:40,
+    wobbleAmp:30, wobbleFreq:6, wobblePhase:.2, TW:40, terrain:'hedge',
     features:[
       {a0:.06*Math.PI*2,width:.030*Math.PI*2,depth:-340},
       {a0:.19*Math.PI*2,width:.028*Math.PI*2,depth:280},
@@ -275,7 +429,7 @@ const TRACKS=[
     drsCount:1
   }),
   buildTrack({name:'SERPENTINA', info:'Smalt · Brå strammere', ncp:34, R0:1500, cx:1600, cy:1500,
-    wobbleAmp:70, wobbleFreq:4, wobblePhase:.6, TW:44,
+    wobbleAmp:70, wobbleFreq:4, wobblePhase:.6, TW:44, terrain:'arid',
     features:[
       {a0:.08*Math.PI*2,width:.090*Math.PI*2,depth:220},
       {a0:.22*Math.PI*2,width:.020*Math.PI*2,depth:-560},
@@ -287,7 +441,7 @@ const TRACKS=[
     drsCount:2
   }),
   buildTrack({name:'VULCANO', info:'Smalest · Ingen pause', ncp:38, R0:1260, cx:1350, cy:1400,
-    wobbleAmp:46, wobbleFreq:7, wobblePhase:.9, TW:36,
+    wobbleAmp:46, wobbleFreq:7, wobblePhase:.9, TW:36, terrain:'volcanic',
     features:[
       {a0:.04*Math.PI*2,width:.035*Math.PI*2,depth:-420},
       {a0:.15*Math.PI*2,width:.030*Math.PI*2,depth:300},
@@ -370,7 +524,7 @@ let cars=[],player,state='menu',raceTime=0,keys={},particles=[],texts=[];
 let shake=0, confetti=[], winTimer=0, toasts=[];
 let trackSel=0, cntTimer=0;
 let camX=0,camY=0,camAngle=0;
-const LAPS=3;
+const LAPS=5;
 const CHASE_Y = HY+(H-HY)*0.68; // chase-cam anchor: car sits lower on screen, more track visible ahead
 let bestSector=[Infinity,Infinity,Infinity];
 
