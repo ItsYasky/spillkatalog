@@ -2,7 +2,7 @@
 <html lang="no">
 <head>
 <meta charset="UTF-8">
-<title>GRAND PRIX</title>
+<title>GRAND PRIX: REALISTISK</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 body{background:#05070a;display:flex;align-items:center;justify-content:center;height:100vh;}
@@ -29,6 +29,19 @@ const OVERTAKE_RANGE=70, OVERTAKE_CONE=0.6;
 // means "almost dead straight behind", not just "somewhere ahead-ish" like
 // the wider overtake cone above) — see the slipstream block in update().
 const SLIP_RANGE=95, SLIP_CONE=0.92;
+
+// ══════════════════════════════════════════════════════════════════
+// REALISTIC-VERSION PHYSICS: this file forks from vintage_f1.html with a
+// much higher top speed (PLAYER_MAX) and a genuine, universal grip-loss
+// mechanic (PHYS_K / turnPenalty / gripPenalty, wired into update() below)
+// that did not exist in the base game — there, steering alone could always
+// carry any corner at any speed. Here, carrying too much speed into a bend
+// relative to its actual curvature costs you steering authority AND grip,
+// so you run wide/lose the car if you don't brake — for player and AI alike.
+// ══════════════════════════════════════════════════════════════════
+const PLAYER_MAX=6.8;   // up from 4.8 in the base game ("mye kjappere")
+const PHYS_K=2.6;       // how hard curvature clamps the shared safe-speed ceiling
+const TURN_BASE=0.046;  // full steering-rack rate available under the safe speed
 
 // ══════════════════════════════════════════════════════════════════
 // TRACK GENERATION — star-shaped polar curve => guaranteed simple loop
@@ -746,10 +759,10 @@ const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 // track to keep off-track time near 0% while still giving each tier a
 // clearly distinct *feel* to race against, without a dominant pace gap.
 const DIFFICULTIES=[
-  {name:'ENKEL',     clr:'#4ade80', baseMax:5.00, curveK:16,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03, defendSkill:.10, overtakeCommit:.55, ersSkill:.30},
-  {name:'MIDDELS',   clr:'#38bdf8', baseMax:5.12, curveK:8,   overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05, defendSkill:.40, overtakeCommit:.72, ersSkill:.55},
-  {name:'VANSKELIG', clr:'#f97316', baseMax:5.22, curveK:3.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08, defendSkill:.72, overtakeCommit:.88, ersSkill:.80},
-  {name:'ULTRA',     clr:'#ef4444', baseMax:5.32, curveK:2.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12, defendSkill:1.0, overtakeCommit:1.0, ersSkill:1.0}
+  {name:'ENKEL',     clr:'#4ade80', baseMax:7.10, curveK:32,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03, defendSkill:.10, overtakeCommit:.55, ersSkill:.30},
+  {name:'MIDDELS',   clr:'#38bdf8', baseMax:7.27, curveK:16,  overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05, defendSkill:.40, overtakeCommit:.72, ersSkill:.55},
+  {name:'VANSKELIG', clr:'#f97316', baseMax:7.41, curveK:6.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08, defendSkill:.72, overtakeCommit:.88, ersSkill:.80},
+  {name:'ULTRA',     clr:'#ef4444', baseMax:7.55, curveK:4.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12, defendSkill:1.0, overtakeCommit:1.0, ersSkill:1.0}
 ];
 let difficulty=1;
 
@@ -1124,6 +1137,7 @@ function update(){
     // it genuinely rewards lining up behind someone rather than being beside
     // them. Applies to player and AI alike, and only on reasonably straight
     // ground — a mid-corner "tow" isn't realistic so curvature kills it off.
+    const curvHere=Math.abs(TR.smoothCurv[Math.floor(c.curProg*TR.PN)]||0);
     let slipStrength=0, slipTarget=null;
     {
       const cosA2=Math.cos(c.angle), sinA2=Math.sin(c.angle);
@@ -1137,14 +1151,24 @@ function update(){
         const s=Math.max(0,Math.min(1,(SLIP_RANGE-d)/(SLIP_RANGE-16)));
         if(s>slipStrength){ slipStrength=s; slipTarget=o; }
       }
-      const curvHere=Math.abs(TR.smoothCurv[Math.floor(c.curProg*TR.PN)]||0);
       if(curvHere>0.02) slipStrength*=Math.max(0,1-(curvHere-0.02)*60);
     }
     c.slipstreamActive = slipStrength>0.05;
     c.slipTarget = c.slipstreamActive ? slipTarget : null;
     c.slipstreamT = c.slipstreamActive ? Math.min(1,c.slipstreamT+0.15) : Math.max(0,c.slipstreamT-0.08);
 
-    let MAX=(c.isPlayer?4.8:c.aiSpd)*(DRSon?1.12:1)*(ersOn?1.08:1)*(1+slipStrength*0.10);
+    // universal physical grip-loss: a shared safe-speed ceiling grounded in
+    // the track's actual curvature right under the car, applied to player
+    // AND AI alike. Go in hotter than this and you genuinely start losing
+    // the car — reduced steering authority and reduced grip — no matter how
+    // good your reflexes are. The AI avoids this by braking to its own
+    // (lower, smarter) target speed; the player gets no such safety net.
+    const physSafe=PLAYER_MAX/(1+curvHere*PHYS_K);
+    const overRatio=Math.max(0,c.speed/physSafe-1);
+    const turnPenalty=1/(1+overRatio*2.4);
+    const gripPenalty=1/(1+overRatio*1.3);
+
+    let MAX=(c.isPlayer?PLAYER_MAX:c.aiSpd)*(DRSon?1.12:1)*(ersOn?1.08:1)*(1+slipStrength*0.10);
     let GRIP=0.82, accelMul=1, dragMul=1;
     if(c.offtrack){
       accelMul = deepOff? 0.28 : 0.45;
@@ -1154,21 +1178,24 @@ function update(){
       if(Math.random()<.6) dust(c.x-Math.cos(c.angle)*8,c.y-Math.sin(c.angle)*8, deepOff?'rgba(122,108,84,.8)':'rgba(70,110,60,.7)');
       if(c.isPlayer) raceTime += 1.0; // time penalty: lose extra time off-track
     }
+    GRIP*=gripPenalty;
     if(ersOn) accelMul*=1.18;
     if(slipStrength>0) accelMul*=(1+slipStrength*0.12);
 
-    if(gas)    c.speed=Math.min(MAX,c.speed+.17*accelMul);
-    else       c.speed*=.978;
-    if(brake)  c.speed*=.86;
+    if(gas)    c.speed=Math.min(MAX,c.speed+.24*accelMul);
+    else       c.speed*=.992;
+    if(brake)  c.speed*=.82;
     c.speed*=dragMul;
     c.speed=Math.max(0,Math.min(c.speed,MAX*1.02));
 
     // smoothed steering: instead of snapping the heading by a fixed amount
     // the instant a key is down, ease an angular velocity toward a target —
-    // real steering-rack inertia instead of a twitchy on/off turn. Max rate
-    // is the same ballpark as before (scaled down slightly) so cornering
-    // capability doesn't change, it just arrives/decays smoothly.
-    const maxTurn=0.040*(0.32+0.68*Math.min(1,c.speed/((c.isPlayer?4.8:c.aiSpd))));
+    // real steering-rack inertia instead of a twitchy on/off turn. Full rate
+    // is available any time the car is under the physical safe-speed ceiling
+    // above; overspeeding into a corner costs steering authority on top of
+    // the grip loss, so a car that didn't brake enough genuinely can't just
+    // steer its way out of it.
+    const maxTurn=TURN_BASE*turnPenalty;
     const steerTarget=(steerR?1:0)-(steerL?1:0);
     c.steerVel=c.steerVel*0.80+steerTarget*maxTurn*0.20;
     c.angle+=c.steerVel;
@@ -1386,16 +1413,16 @@ function draw(){
 
   if(state==='menu'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle='#e10600'; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
-    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · 6 baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer',W/2,H/2-122);
+    ctx.fillStyle='#f59e0b'; ctx.font='bold 36px Courier New'; ctx.fillText('GRAND PRIX: REALISTISK',W/2,H/2-150);
+    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('mye høyere toppfart · ekte dekkgrep · 6 baner · 20 sjåfører · 4 AI-nivåer',W/2,H/2-122);
     ctx.fillStyle='#334155'; ctx.font='10px Courier New';
-    [['↑ / W','Gass'],['↓ / S','Brems'],['← → / A D','Styr'],['SPACE','DRS i lilla sone'],['SHIFT','ERS-boost (batteri)'],['(auto)','Slipstream tett bak andre']].forEach(([k,v],i)=>{
-      ctx.fillStyle='#e10600'; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-74+i*18);
+    [['↑ / W','Gass'],['↓ / S','Brems — kreves før svinger!'],['← → / A D','Styr'],['SPACE','DRS i lilla sone'],['SHIFT','ERS-boost (batteri)'],['(auto)','Slipstream tett bak andre']].forEach(([k,v],i)=>{
+      ctx.fillStyle='#f59e0b'; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-74+i*18);
       ctx.fillStyle='#64748b'; ctx.textAlign='left'; ctx.fillText(v,W/2+6,H/2-74+i*18);
     });
     ctx.fillStyle='#94a3b8'; ctx.font='11px Courier New'; ctx.textAlign='center';
-    ctx.fillText('Utenfor banen = du mister fart og tid.',W/2,H/2+42);
-    ctx.fillStyle='#e10600'; ctx.font='bold 14px Courier New';
+    ctx.fillText('For mye fart inn i en sving = du mister grepet og kjører av.',W/2,H/2+42);
+    ctx.fillStyle='#f59e0b'; ctx.font='bold 14px Courier New';
     ctx.fillText('ENTER — velg bane',W/2,H/2+78);
     ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H-20);
     ctx.restore(); return;
