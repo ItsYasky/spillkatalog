@@ -1409,8 +1409,15 @@ function draw(){
   ctx.restore();
 }
 
+// store letter/digit keys case-normalized (modifier-independent) so that
+// holding Shift (ERS) doesn't cause a "stuck key": without this, releasing
+// e.g. W while Shift is still held fires keyup with e.key==='W' (uppercase),
+// which would never clear the keys['w'] set by the original lowercase
+// keydown — leaving gas/steer/brake permanently stuck on. Arrow keys, Space,
+// Shift, Escape, Enter etc. are untouched (their e.key isn't case-shifted).
+function normKey(k){ return k.length===1 ? k.toLowerCase() : k; }
 document.addEventListener('keydown',e=>{
-  keys[e.key]=true;
+  keys[normKey(e.key)]=true;
   if(e.key==='Escape'){window.location.href='index.html';return;}
   if(e.key==='Enter'){
     if(state==='menu') state='trackselect';
@@ -1435,7 +1442,7 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key===' ')e.preventDefault();
 });
-document.addEventListener('keyup',e=>{keys[e.key]=false;});
+document.addEventListener('keyup',e=>{keys[normKey(e.key)]=false;});
 
 function loop(){update();draw();requestAnimationFrame(loop);}
 loop();
