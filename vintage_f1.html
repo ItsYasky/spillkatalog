@@ -13,6 +13,17 @@ body{background:#05070a;display:flex;align-items:center;justify-content:center;h
 <script>
 const cv=document.getElementById('g'),ctx=cv.getContext('2d');
 const W=520,H=680,HY=50;
+// the gravel/runoff fringe drawn around every track (see buildTrack) extends
+// a flat 23px beyond the tarmac on each side, regardless of that track's TW.
+// It used to be treated as fully off-track the instant you touched it; now
+// it's a genuinely usable, pace-neutral part of the surface, so cars (player
+// and AI alike) can run wide through fast corners without being punished —
+// true "off track" now only starts once you're past the gravel, in the grass.
+const GRAVEL_SAFE=23;
+// how far ahead (px) an AI car looks for a blocker to set up a pass on, and
+// how wide a forward cone (as a fraction of distance, ~53° half-angle) counts
+// as "ahead" rather than beside/behind — see the overtaking logic in update().
+const OVERTAKE_RANGE=70, OVERTAKE_CONE=0.6;
 
 // ══════════════════════════════════════════════════════════════════
 // TRACK GENERATION — star-shaped polar curve => guaranteed simple loop
@@ -244,18 +255,71 @@ const TRACKS=[
       {a0:.66*Math.PI*2,width:.03*Math.PI*2,depth:312}
     ],
     drsCount:3
+  }),
+  // ── the three hard tracks: each pushes a different kind of difficulty,
+  // not just "more of the same" — a tight constant-direction-change maze,
+  // a fast-but-narrow track with sudden decreasing-radius hairpins, and a
+  // relentless, barely-any-straight technical gauntlet.
+  buildTrack({name:'LABIRINTO', info:'Trangt · Evig sikk-sakk', ncp:36, R0:980, cx:1180, cy:1180,
+    wobbleAmp:30, wobbleFreq:6, wobblePhase:.2, TW:40,
+    features:[
+      {a0:.06*Math.PI*2,width:.030*Math.PI*2,depth:-340},
+      {a0:.19*Math.PI*2,width:.028*Math.PI*2,depth:280},
+      {a0:.32*Math.PI*2,width:.030*Math.PI*2,depth:-360},
+      {a0:.45*Math.PI*2,width:.027*Math.PI*2,depth:300},
+      {a0:.58*Math.PI*2,width:.030*Math.PI*2,depth:-320},
+      {a0:.71*Math.PI*2,width:.028*Math.PI*2,depth:260},
+      {a0:.84*Math.PI*2,width:.030*Math.PI*2,depth:-380},
+      {a0:.97*Math.PI*2,width:.026*Math.PI*2,depth:240}
+    ],
+    drsCount:1
+  }),
+  buildTrack({name:'SERPENTINA', info:'Smalt · Brå strammere', ncp:34, R0:1500, cx:1600, cy:1500,
+    wobbleAmp:70, wobbleFreq:4, wobblePhase:.6, TW:44,
+    features:[
+      {a0:.08*Math.PI*2,width:.090*Math.PI*2,depth:220},
+      {a0:.22*Math.PI*2,width:.020*Math.PI*2,depth:-560},
+      {a0:.40*Math.PI*2,width:.100*Math.PI*2,depth:260},
+      {a0:.55*Math.PI*2,width:.025*Math.PI*2,depth:-500},
+      {a0:.70*Math.PI*2,width:.060*Math.PI*2,depth:-340},
+      {a0:.88*Math.PI*2,width:.030*Math.PI*2,depth:300}
+    ],
+    drsCount:2
+  }),
+  buildTrack({name:'VULCANO', info:'Smalest · Ingen pause', ncp:38, R0:1260, cx:1350, cy:1400,
+    wobbleAmp:46, wobbleFreq:7, wobblePhase:.9, TW:36,
+    features:[
+      {a0:.04*Math.PI*2,width:.035*Math.PI*2,depth:-420},
+      {a0:.15*Math.PI*2,width:.030*Math.PI*2,depth:300},
+      {a0:.26*Math.PI*2,width:.025*Math.PI*2,depth:-480},
+      {a0:.37*Math.PI*2,width:.045*Math.PI*2,depth:260},
+      {a0:.48*Math.PI*2,width:.028*Math.PI*2,depth:-440},
+      {a0:.59*Math.PI*2,width:.033*Math.PI*2,depth:320},
+      {a0:.70*Math.PI*2,width:.022*Math.PI*2,depth:-500},
+      {a0:.81*Math.PI*2,width:.038*Math.PI*2,depth:280},
+      {a0:.92*Math.PI*2,width:.026*Math.PI*2,depth:-460}
+    ],
+    drsCount:1
   })
 ];
 
 // ══════════════════════════════════════════════════════════════════
 // TEAMS / CARS
 // ══════════════════════════════════════════════════════════════════
+// 10 constructors × 2 cars = a full 20-car grid, F1-style.
 const TEAMS=[
   {name:'ROSSO',   color:'#e10600', dark:'#7a0000'},
   {name:'SILVER',  color:'#c9d4dc', dark:'#5c666e'},
   {name:'AZZURRO', color:'#1e6fd9', dark:'#0d3a73'},
-  {name:'ORANGE',  color:'#ff8700', dark:'#a85900'}
+  {name:'ORANGE',  color:'#ff8700', dark:'#a85900'},
+  {name:'VERDE',   color:'#22c55e', dark:'#14532d'},
+  {name:'VIOLA',   color:'#c026d3', dark:'#701a75'},
+  {name:'GIALLO',  color:'#eab308', dark:'#713f12'},
+  {name:'CYAN',    color:'#22d3ee', dark:'#155e63'},
+  {name:'BRONZO',  color:'#b45309', dark:'#78350f'},
+  {name:'CORALLO', color:'#fb7185', dark:'#9f1239'}
 ];
+const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 
 // AI difficulty tiers — each AI car plans its own corner speed from real track
 // curvature (braking for upcoming corners, not just an elastic band to the
@@ -274,10 +338,10 @@ const TEAMS=[
 // calibrated via automated lap testing across all 3 tracks to keep off-track
 // time near 0% while still giving a clear, monotonic pace gap per tier.
 const DIFFICULTIES=[
-  {name:'ENKEL',     clr:'#4ade80', baseMax:3.75, curveK:22, overspeed:1.18, mistakeChance:.0030, steerPrec:.095, lookAhead:11, rubberRate:.015, rubberThresh:.03},
-  {name:'MIDDELS',   clr:'#38bdf8', baseMax:4.25, curveK:12, overspeed:1.12, mistakeChance:.0010, steerPrec:.075, lookAhead:11, rubberRate:.010, rubberThresh:.05},
-  {name:'VANSKELIG', clr:'#f97316', baseMax:4.70, curveK:4,  overspeed:1.07, mistakeChance:.0002, steerPrec:.055, lookAhead:11, rubberRate:.006, rubberThresh:.07},
-  {name:'ULTRA',     clr:'#ef4444', baseMax:5.25, curveK:3,  overspeed:1.03, mistakeChance:0,     steerPrec:.040, lookAhead:11, rubberRate:.003, rubberThresh:.10}
+  {name:'ENKEL',     clr:'#4ade80', baseMax:4.10, curveK:16,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03},
+  {name:'MIDDELS',   clr:'#38bdf8', baseMax:4.75, curveK:8,   overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05},
+  {name:'VANSKELIG', clr:'#f97316', baseMax:5.45, curveK:3.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08},
+  {name:'ULTRA',     clr:'#ef4444', baseMax:6.20, curveK:2.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12}
 ];
 let difficulty=1;
 
@@ -287,11 +351,14 @@ class Car{
     this.vx=0;this.vy=0;this.speed=0;
     this.team=team;this.isPlayer=isPlayer;
     this.lap=0;this.curProg=0;this.prevProg=0;this.seenHalf=false;
+    this.raceDist=0; // continuous, wrap-aware distance-since-start — see buildCars()
     this.sectorIdx=0;this.sectorStartT=0;this.lapStartT=0;this.lapTimes=[];
     this.aiIdx=0;this.aiSpd=2.25+Math.random()*.45;
-    this.skillVar=0.94+Math.random()*0.12; // per-car variance so AI aren't identical clones
+    this.skillVar=0.94+Math.random()*0.12; // overwritten per grid slot for AI, see buildCars()
+    this.num=1; // driver number within the team (1 or 2)
     this.rubberMul=1; this.mistakeT=0;
     this.stuckRefDist=0; this.stuckT=180; // stuck-in-gravel recovery bookkeeping (AI only)
+    this.overtakeSide=0; this.overtakeT=0; // which way (and for how long) this AI is currently swinging out to pass a blocker ahead
     this.trail=[];this.finished=false;this.place=1;
     this.offtrack=false;this.drsActive=false;
   }
@@ -325,24 +392,83 @@ function dust(x,y,clr){
 
 function buildCars(){
   cars=[];
-  // shuffle which team occupies which grid slot, so the player doesn't
-  // always start in pole position — real overtaking becomes necessary.
-  const order=[0,1,2,3];
-  for(let i=order.length-1;i>0;i--){
+  const PN=TR.PN;
+  // full 20-car identity pool (10 teams × 2 drivers), shuffled so grid
+  // colours/numbers vary race to race — then the PLAYER is always pulled
+  // out for the very last grid slot, and the 19 AI identities fill the
+  // slots ahead in the shuffled order. Real overtaking through the whole
+  // field is therefore mandatory, every single race.
+  const pool=[];
+  TEAMS.forEach(t=>{ for(let n=1;n<=DRIVERS_PER_TEAM;n++) pool.push({team:t,num:n}); });
+  for(let i=pool.length-1;i>0;i--){
     const j=Math.floor(Math.random()*(i+1));
-    [order[i],order[j]]=[order[j],order[i]];
+    [pool[i],pool[j]]=[pool[j],pool[i]];
   }
-  const slots=[[-1,0],[1,0],[-1,1],[1,1]];
-  const behind=TR.sfAng+Math.PI;
-  slots.forEach(([col,row],i)=>{
-    const idx=order[i];
-    const gx=TR.sfx+Math.cos(TR.sfAng+Math.PI/2)*col*16+Math.cos(behind)*row*28;
-    const gy=TR.sfy+Math.sin(TR.sfAng+Math.PI/2)*col*16+Math.sin(behind)*row*28;
-    const c=new Car(gx,gy,TR.sfAng,TEAMS[idx],idx===0);
+  const playerId=pool.pop(); // removed from the AI pool entirely
+
+  // Grid slots are placed by walking BACKWARD along the actual track path
+  // (not a straight-line projection from the start point), so the grid
+  // stays glued to the real geometry even on a tight track where the
+  // pre-start straight curves. The 19 AI cars fill two-wide rows 0-8 plus
+  // a lone car in row 9; the player then gets its OWN row 10, strictly
+  // further back than every AI car. This has to be a physical placement,
+  // not a one-off progress-value override: curProg gets recomputed from
+  // the car's real (x,y) every single frame once the race is live (see
+  // the nearestOnPath call in the main update loop below), so anything
+  // that doesn't come from genuinely being further back on the tarmac
+  // gets silently overwritten the instant the lights go out. A dedicated
+  // last row is the only thing that survives that recompute, which is
+  // what actually guarantees the player is always dead last at the start.
+  const ROW_IDX_STEP=2, COL_OFFSET=14;
+  function gridPose(row,col){
+    const idx=((0-row*ROW_IDX_STEP)%PN+PN)%PN;
+    const [px,py]=TR.PATH[idx], h=TR.heading[idx];
+    const nx=-Math.sin(h), ny=Math.cos(h);
+    return {x:px+nx*col*COL_OFFSET, y:py+ny*col*COL_OFFSET, ang:h};
+  }
+  // Grid rows parked behind the start/finish line land at raw path-progress
+  // close to 1.0 (idx counts backward from the line toward PN), while pole
+  // position sits at progress≈0 right on the line. Left as-is, that makes
+  // raceDist/place sort the whole grid BACKWARDS at the green light — the
+  // deeper in the field a car starts, the LARGER its raw progress number,
+  // so it would rank ahead of cars in front of it. Un-wrap it once here:
+  // anything parked behind the line (progress>0.5) is still finishing a
+  // lap that never really happened, so treat it as slightly negative
+  // instead, preserving true grid order from pole all the way back.
+  function initRaceDist(c){
+    c.raceDist = c.curProg>0.5 ? c.curProg-1 : c.curProg;
+    c.stuckRefDist=c.raceDist; // so the first stuck-check window measures from each car's real start, not a shared 0
+  }
+
+  const AI_COUNT=NUM_CARS-1; // 19
+  for(let p=0;p<AI_COUNT;p++){
+    const id=pool[p];
+    const row=Math.floor(p/2), col=(p%2===0)?-1:1;
+    const {x,y,ang}=gridPose(row,col);
+    const c=new Car(x,y,ang,id.team,false);
+    c.num=id.num;
     c.curProg=nearestOnPath(TR.PATH,c.x,c.y).progress;
     c.prevProg=c.curProg;
+    initRaceDist(c);
+    // pace spread across the grid: pole-sitters are the tiers' strongest
+    // drivers, backmarkers (just ahead of the player) are its weakest —
+    // so starting last means picking off easy traffic first before facing
+    // real resistance up front, instead of 19 identical clones.
+    const posFactor=1.08-0.22*(p/(AI_COUNT-1));
+    c.skillVar=posFactor*(0.97+Math.random()*0.06);
     cars.push(c);
-  });
+  }
+  {
+    const lastAiRow=Math.floor((AI_COUNT-1)/2);
+    const row=lastAiRow+1, col=0;
+    const {x,y,ang}=gridPose(row,col);
+    const c=new Car(x,y,ang,playerId.team,true);
+    c.num=playerId.num;
+    c.curProg=nearestOnPath(TR.PATH,c.x,c.y).progress;
+    c.prevProg=c.curProg;
+    initRaceDist(c);
+    cars.push(c);
+  }
   player=cars.find(c=>c.isPlayer);
   camX=player.x; camY=player.y; camAngle=player.angle;
 }
@@ -401,8 +527,43 @@ function update(){
       const PN=TR.PN;
       const D=DIFFICULTIES[difficulty];
       const li=Math.floor(c.curProg*PN);
+
+      // overtaking: scan for the closest car in a forward cone ahead. If one
+      // is found, commit to passing it on one side for a short persistent
+      // window (so the choice doesn't flip-flop frame to frame), and nudge
+      // the steering target laterally so this car actually swings around the
+      // blocker instead of just nose-to-tailing it via collision-separation.
+      const cosA=Math.cos(c.angle), sinA=Math.sin(c.angle);
+      let blockerLat=0, blockerFound=false, blockerD=Infinity;
+      for(let bi=0;bi<cars.length;bi++){
+        const o=cars[bi];
+        if(o===c||o.finished) continue;
+        const dx=o.x-c.x, dy=o.y-c.y, d=Math.hypot(dx,dy);
+        if(d>OVERTAKE_RANGE) continue;
+        const fwd=dx*cosA+dy*sinA;
+        if(fwd<=0||fwd<d*OVERTAKE_CONE) continue; // must be mostly ahead, not beside/behind
+        if(d<blockerD){ blockerD=d; blockerLat=-dx*sinA+dy*cosA; blockerFound=true; }
+      }
+      if(c.overtakeT>0) c.overtakeT--;
+      if(blockerFound){
+        if(c.overtakeT<=0){
+          // swing away from whichever side the blocker currently sits on; if
+          // it's dead-center ahead, fall back to a stable per-car side bias
+          // (driver #1 of each team defaults right, #2 defaults left).
+          c.overtakeSide = Math.abs(blockerLat)>2 ? -Math.sign(blockerLat) : (c.num===1?1:-1);
+        }
+        c.overtakeT=45;
+      }
+      const curvNow=Math.abs(TR.smoothCurv[li]);
+      const curvAllow=1/(1+curvNow*D.curveK*1.5); // ease the swing off deep in tight corners
+      const ramp=Math.min(1,c.overtakeT/20);
+      const maxOvertakeOffset=TR.TW*0.5;
+      const lateralOffset = c.overtakeT>0 ? c.overtakeSide*maxOvertakeOffset*curvAllow*ramp : 0;
+
       const lookI=(li+D.lookAhead)%PN;
-      const [tx,ty]=TR.raceLine[lookI];
+      const [rtx,rty]=TR.raceLine[lookI];
+      const hd=TR.heading[lookI];
+      const tx=rtx-Math.sin(hd)*lateralOffset, ty=rty+Math.cos(hd)*lateralOffset;
       const da=Math.atan2(ty-c.y,tx-c.x);
       let diff=wrapPi(da-c.angle);
       steerL=diff<-D.steerPrec; steerR=diff>D.steerPrec;
@@ -429,7 +590,7 @@ function update(){
       // light rubber-band: keeps the pack from drifting absurdly far apart
       // over a full race, but it's now a small multiplier on top of genuine
       // skill-based pace rather than the main driver of AI speed.
-      const gap=c.totalDist-player.totalDist;
+      const gap=c.raceDist-player.raceDist;
       c.rubberMul=Math.max(.85,Math.min(1.18,c.rubberMul+(gap>D.rubberThresh?-D.rubberRate:gap<-D.rubberThresh?D.rubberRate:0)));
 
       c.aiSpd=corner*c.rubberMul;
@@ -440,8 +601,11 @@ function update(){
     const near=nearestOnPath(TR.PATH,c.x,c.y);
     const dist=near.dist;
     const wasOff=c.offtrack;
-    c.offtrack = dist>TR.TW;
-    const deepOff = dist>TR.TW*2.3;
+    // the gravel/runoff fringe (GRAVEL_SAFE px beyond the tarmac, see top of
+    // file) is now a genuinely usable, pace-neutral part of the surface —
+    // true off-track only starts once you're past the gravel, in the grass.
+    c.offtrack = dist>TR.TW+GRAVEL_SAFE;
+    const deepOff = dist>TR.TW*2.3+GRAVEL_SAFE;
     if(c.offtrack && !wasOff && c.isPlayer){
       toast('UTENFOR BANEN — taper fart!','#ef4444');
     }
@@ -456,13 +620,13 @@ function update(){
     if(!c.isPlayer){
       c.stuckT--;
       if(c.stuckT<=0){
-        if(c.totalDist-c.stuckRefDist<0.015){
+        if(c.raceDist-c.stuckRefDist<0.015){
           const [px,py]=TR.PATH[near.idx];
           c.x=px; c.y=py; c.angle=TR.heading[near.idx];
           c.speed=1.2; c.vx=Math.cos(c.angle)*1.2; c.vy=Math.sin(c.angle)*1.2;
           c.offtrack=false;
         }
-        c.stuckRefDist=c.totalDist; c.stuckT=180;
+        c.stuckRefDist=c.raceDist; c.stuckT=180;
       }
     }
 
@@ -494,7 +658,7 @@ function update(){
     const preX=c.x+c.vx, preY=c.y+c.vy;
     // soft outer wall far beyond gravel
     const farD=Math.hypot(preX-TR.PATH[near.idx][0],preY-TR.PATH[near.idx][1]);
-    if(farD>TR.TW*3.0){
+    if(farD>TR.TW*3.0+GRAVEL_SAFE){
       c.speed*=0.5; c.vx*=0.35; c.vy*=0.35;
       if(c.isPlayer) addShake(Math.min(9,c.speed*1.6));
       for(let i=0;i<6;i++){
@@ -520,6 +684,12 @@ function update(){
 
     // progress / lap / sector tracking
     const pr=near.progress;
+    // continuous wrap-aware distance tracker for ranking/gap/stuck checks —
+    // unlike lap+curProg, this never jumps at the start/finish crossing, so
+    // it stays honest even before the anti-cheese seenHalf lap-gate below
+    // has registered a real lap (see initRaceDist() in buildCars()).
+    let dRace=pr-c.prevProg; if(dRace<-0.5)dRace+=1; else if(dRace>0.5)dRace-=1;
+    c.raceDist+=dRace;
     c.curProg=pr;
     if(pr>.38&&pr<.62)c.seenHalf=true;
     const sOf=Math.min(2,Math.floor(pr*3));
@@ -569,7 +739,7 @@ function update(){
     }
   }
 
-  [...cars].sort((a,b)=>b.totalDist-a.totalDist).forEach((c,i)=>c.place=i+1);
+  [...cars].sort((a,b)=>b.raceDist-a.raceDist).forEach((c,i)=>c.place=i+1);
   camX+=(player.x-camX)*.14;
   camY+=(player.y-camY)*.14;
   camAngle+=wrapPi(player.angle-camAngle)*.12;
@@ -660,7 +830,7 @@ function draw(){
   if(state==='menu'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle='#e10600'; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
-    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · tre store baner · øvingsmodus · 4 AI-nivåer',W/2,H/2-122);
+    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · 6 baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer',W/2,H/2-122);
     ctx.fillStyle='#334155'; ctx.font='10px Courier New';
     [['↑ / W','Gass'],['↓ / S','Brems'],['← → / A D','Styr'],['SPC / SHIFT','DRS i grønn/lilla zone']].forEach(([k,v],i)=>{
       ctx.fillStyle='#e10600'; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-70+i*20);
@@ -683,10 +853,16 @@ function draw(){
       const D=DIFFICULTIES[difficulty];
       ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('↑ ↓ bytt vanskelighetsgrad',W/2,124);
       ctx.fillStyle=D.clr; ctx.font='bold 12px Courier New'; ctx.fillText(`AI: ${D.name}`,W/2,140);
+      ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText(`BANE ${trackSel+1} / ${TRACKS.length}  ·  20 sjåfører på startgrid`,W/2,152);
     }
-    TRACKS.forEach((t,i)=>{
-      const sel=i===trackSel;
-      const bx0=60+i*150, by0=158, bw0=130, bh0=420;
+    // carousel: only render prev/current/next out of all TRACKS, so the
+    // 6-track (and growing) roster still fits the 520px-wide canvas.
+    const N=TRACKS.length;
+    [-1,0,1].forEach(d=>{
+      const ti=((trackSel+d)%N+N)%N;
+      const t=TRACKS[ti];
+      const sel=d===0;
+      const bx0=60+(d+1)*150, by0=158, bw0=130, bh0=420;
       ctx.fillStyle=sel?'rgba(225,6,0,.12)':'rgba(255,255,255,.03)';
       ctx.fillRect(bx0,by0,bw0,bh0);
       ctx.strokeStyle=sel?'#e10600':'#1e293b'; ctx.lineWidth=sel?2.5:1;
@@ -744,9 +920,9 @@ function draw(){
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
     ctx.fillText(`RUNDE ${player.lap+1}  ·  ${TR.name}`,W/2,HY/2-9);
   } else {
-    const posLbl=['P1','P2','P3','P4'][player.place-1]||'';
-    const posClr=[,'#4ade80','#38bdf8','#f97316','#ef4444'][player.place];
-    ctx.fillStyle=posClr; ctx.font='bold 22px Courier New'; ctx.textAlign='left'; ctx.fillText(posLbl,8,HY/2);
+    const posLbl=`P${player.place}`;
+    const posClr=player.place===1?'#4ade80':player.place===2?'#38bdf8':player.place===3?'#f97316':player.place<=10?'#f1f5f9':'#64748b';
+    ctx.fillStyle=posClr; ctx.font='bold '+(player.place>=10?18:22)+'px Courier New'; ctx.textAlign='left'; ctx.fillText(posLbl,8,HY/2);
     const displayLap=Math.min(player.lap+1,LAPS);
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
     ctx.fillText(`RUNDE ${displayLap}/${LAPS}  ·  ${TR.name}  ·  ${DIFFICULTIES[difficulty].name}`,W/2,HY/2-9);
@@ -788,17 +964,28 @@ function draw(){
     else { ctx.fillStyle='#4ade80'; ctx.font='bold 56px Courier New'; ctx.fillText('LIGHTS OUT!',W/2,H/2); }
   }
 
-  // ── leaderboard panel (top-right) ──
+  // ── leaderboard panel (top-right) ── with 20 cars on track, show only the
+  // top 5 plus the player's own row (with a "···" gap) instead of all 20.
   if(state!=='practice'){
-    const lbX=W-108, lbY=HY+8, lbW=100;
-    ctx.fillStyle='rgba(5,7,10,.78)'; ctx.fillRect(lbX,lbY,lbW,18+cars.length*16);
-    ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(lbX,lbY,lbW,18+cars.length*16);
+    const ordered=[...cars].sort((a,b)=>a.place-b.place);
+    const top=ordered.slice(0,5);
+    const rows = player.place<=5 ? top.map((c,i)=>({c,rank:i+1})) :
+      [...top.map((c,i)=>({c,rank:i+1})), {gap:true}, {c:player,rank:player.place}];
+    const lbX=W-116, lbY=HY+8, lbW=108;
+    ctx.fillStyle='rgba(5,7,10,.78)'; ctx.fillRect(lbX,lbY,lbW,18+rows.length*16);
+    ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(lbX,lbY,lbW,18+rows.length*16);
     ctx.fillStyle='#475569'; ctx.font='bold 8px Courier New'; ctx.textAlign='left'; ctx.fillText('LEDERTAVLE',lbX+6,lbY+11);
-    [...cars].sort((a,b)=>a.place-b.place).forEach((c,i)=>{
+    rows.forEach((row,i)=>{
       const ry=lbY+24+i*16;
+      if(row.gap){
+        ctx.fillStyle='#334155'; ctx.font='bold 9px Courier New'; ctx.textAlign='center';
+        ctx.fillText('···',lbX+lbW/2,ry); ctx.textAlign='left';
+        return;
+      }
+      const c=row.c;
       ctx.fillStyle=c.team.color; ctx.fillRect(lbX+6,ry-5,8,8);
       ctx.fillStyle=c.isPlayer?'#f1f5f9':'#94a3b8'; ctx.font='bold 9px Courier New';
-      ctx.fillText(`${i+1}. ${c.team.name}`,lbX+18,ry);
+      ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':c.team.name+' '+c.num}`,lbX+18,ry);
     });
   } else {
     ctx.fillStyle='rgba(5,7,10,.7)'; ctx.font='bold 8px Courier New'; ctx.textAlign='right';
@@ -845,16 +1032,29 @@ function draw(){
       ctx.fillStyle='#334155'; ctx.font='10px Courier New';
       ctx.fillText(`Runde ${i+1}: ${lt}s`,W/2,H/2-88+i*18);
     });
-    ctx.fillStyle='#1e293b'; ctx.font='9px Courier New';
-    [...cars].sort((a,b)=>a.place-b.place).forEach((c,i)=>{
-      ctx.fillStyle=c.team.color;
-      ctx.fillText(`${i+1}. ${c.isPlayer?'DU':c.team.name}`,W/2,H/2-10+i*16);
-    });
-    ctx.fillStyle='#e10600'; ctx.font='bold 12px Courier New';
-    ctx.fillText('ENTER — kjør igjen',W/2,H/2+90);
-    ctx.fillStyle='#38bdf8'; ctx.font='bold 11px Courier New';
-    ctx.fillText('T — velg bane',W/2,H/2+112);
-    ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H/2+134);
+    // compact final standings: top 5 + the player's own row (20-car field
+    // is too long to list in full on a 680px-tall canvas).
+    ctx.font='9px Courier New';
+    {
+      const ordered=[...cars].sort((a,b)=>a.place-b.place);
+      const top=ordered.slice(0,5);
+      const rows = player.place<=5 ? top.map((c,i)=>({c,rank:i+1})) :
+        [...top.map((c,i)=>({c,rank:i+1})), {gap:true}, {c:player,rank:player.place}];
+      rows.forEach((row,i)=>{
+        const ry=H/2-10+i*16;
+        if(row.gap){ ctx.fillStyle='#334155'; ctx.fillText('···',W/2,ry); return; }
+        const c=row.c;
+        ctx.fillStyle=c.team.color;
+        ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':c.team.name+' '+c.num}`,W/2,ry);
+      });
+      const listRows=rows.length;
+      const promptY=H/2-10+listRows*16+22;
+      ctx.fillStyle='#e10600'; ctx.font='bold 12px Courier New';
+      ctx.fillText('ENTER — kjør igjen',W/2,promptY);
+      ctx.fillStyle='#38bdf8'; ctx.font='bold 11px Courier New';
+      ctx.fillText('T — velg bane',W/2,promptY+22);
+      ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,promptY+44);
+    }
 
     confetti.forEach(f=>{
       ctx.save(); ctx.translate(f.x,f.y); ctx.rotate(f.rot); ctx.globalAlpha=Math.min(1,f.life);
