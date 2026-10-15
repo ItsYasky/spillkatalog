@@ -816,24 +816,172 @@ const TRACKS=[
       {a0:.88*Math.PI*2,width:.028*Math.PI*2,depth:230}
     ],
     drsCount:1
+  }),
+  // ── seven more circuits, each built around a real-world F1 venue's
+  // defining corner sequence and terrain, the same way the six above are
+  // Monaco/Spa/Bahrain/Jeddah/generic-mountain flavoured. Every one of these
+  // follows the same "genuine straight between deliberate features" design
+  // vocabulary and was checked with a headless findDrsZones()+AI-sim pass
+  // before being locked in:
+  //  - TEMPIO: Monza, the "temple of speed" — a chicane off the line, the
+  //    fast Curva Grande sweeper, the connected Lesmo double-apex, a long
+  //    back straight, the quick Ascari chicane, then the big increasing-
+  //    radius Parabolica onto the pit straight. Wide (TW78), huge radius,
+  //    almost no background wobble — the straights have to read as DEAD
+  //    straight. Set in Monza's royal park, so terrain:'parkland'.
+  //  - CAMPAGNA: Silverstone — flowing British-countryside sweepers (Abbey,
+  //    Farm Curve, Village/Loop) into the long Hangar Straight, the famous
+  //    Maggotts-Becketts-Chapel esses complex, Stowe, Club. terrain:'hedge'
+  //    (finally gives the farmland-hedgerow decor its first track).
+  //  - ESSE: Suzuka — technical and narrow (TW44), front-loaded with a
+  //    rapid esses chain, the tightening Degner double, a very tight
+  //    hairpin, the long double-apex Spoon Curve, the sweeping 130R, and a
+  //    final chicane. Ten features — easily the most corner-dense track —
+  //    deliberately leaves only one real DRS straight, same as real Suzuka.
+  //  - DISCESA ("descent"): Interlagos — short, hilly, anti-clockwise in
+  //    spirit: the Senna S off the line, a long sweeper, a downhill kink,
+  //    the tight Ferradura hairpin, an esses section, then the Juncão
+  //    hairpin back onto the line. terrain:'mountain' for the elevation.
+  //  - ALPEN: Red Bull Ring — short (R0 only 1000, smallest lap here),
+  //    brutal braking zones linked by very short straights, alpine forest
+  //    backdrop. terrain:'forest'.
+  //  - DUNA ("dune"): Zandvoort — flowing dune-park corners bookended by
+  //    the tight Tarzanbocht hairpin and the Arie Luyendijkbocht banked
+  //    final corner (banking itself is cosmetic-only here, no physics
+  //    change). terrain:'arid' doubles as coastal dune sand.
+  //  - VISTANOTTE: Las Vegas — a very long Strip straight (by far the
+  //    largest R0 of any track) into tight 90°-grid city corners, night
+  //    neon palette. Like LABIRINTO, this is a genuine street circuit —
+  //    walls:true gives it the same Armco barrier + harsh-contact physics.
+  buildTrack({name:'TEMPIO', info:'Tempo · Lange rettstrekk og sjikaner', ncp:40, R0:1900, cx:1800, cy:1800,
+    wobbleAmp:10, wobbleFreq:2, wobblePhase:0, TW:78, terrain:'parkland',
+    features:[
+      {a0:.04*Math.PI*2,width:.016*Math.PI*2,depth:-480},
+      {a0:.20*Math.PI*2,width:.035*Math.PI*2,depth:260},
+      {a0:.32*Math.PI*2,width:.020*Math.PI*2,depth:-320},
+      {a0:.36*Math.PI*2,width:.020*Math.PI*2,depth:-300},
+      {a0:.72*Math.PI*2,width:.015*Math.PI*2,depth:-420},
+      {a0:.92*Math.PI*2,width:.050*Math.PI*2,depth:300}
+    ],
+    drsCount:3
+  }),
+  buildTrack({name:'CAMPAGNA', info:'Landlig · Flytende høyfartssvinger', ncp:36, R0:1700, cx:1700, cy:1650,
+    wobbleAmp:16, wobbleFreq:2, wobblePhase:.6, TW:64, terrain:'hedge',
+    features:[
+      {a0:.04*Math.PI*2,width:.020*Math.PI*2,depth:180},
+      {a0:.10*Math.PI*2,width:.015*Math.PI*2,depth:-280},
+      {a0:.16*Math.PI*2,width:.018*Math.PI*2,depth:-340},
+      {a0:.45*Math.PI*2,width:.060*Math.PI*2,depth:200},
+      {a0:.58*Math.PI*2,width:.020*Math.PI*2,depth:-220},
+      {a0:.80*Math.PI*2,width:.040*Math.PI*2,depth:240},
+      {a0:.92*Math.PI*2,width:.020*Math.PI*2,depth:-260}
+    ],
+    drsCount:2
+  }),
+  buildTrack({name:'ESSE', info:'Teknisk · Tett med S-svinger', ncp:40, R0:1300, cx:1350, cy:1300,
+    wobbleAmp:14, wobbleFreq:2, wobblePhase:.25, TW:44, terrain:'forest',
+    features:[
+      {a0:.03*Math.PI*2,width:.014*Math.PI*2,depth:-260},
+      {a0:.08*Math.PI*2,width:.012*Math.PI*2,depth:220},
+      {a0:.12*Math.PI*2,width:.012*Math.PI*2,depth:-240},
+      {a0:.26*Math.PI*2,width:.016*Math.PI*2,depth:-380},
+      {a0:.31*Math.PI*2,width:.016*Math.PI*2,depth:-340},
+      {a0:.46*Math.PI*2,width:.020*Math.PI*2,depth:-560},
+      {a0:.78*Math.PI*2,width:.050*Math.PI*2,depth:260},
+      {a0:.90*Math.PI*2,width:.030*Math.PI*2,depth:320},
+      {a0:.97*Math.PI*2,width:.014*Math.PI*2,depth:-300}
+    ],
+    drsCount:1
+  }),
+  buildTrack({name:'DISCESA', info:'Høyder · Opp og ned i terrenget', ncp:36, R0:1150, cx:1250, cy:1200,
+    wobbleAmp:20, wobbleFreq:3, wobblePhase:.45, TW:50, terrain:'mountain',
+    features:[
+      {a0:.02*Math.PI*2,width:.016*Math.PI*2,depth:-420},
+      {a0:.06*Math.PI*2,width:.014*Math.PI*2,depth:260},
+      {a0:.12*Math.PI*2,width:.030*Math.PI*2,depth:180},
+      {a0:.40*Math.PI*2,width:.016*Math.PI*2,depth:-260},
+      {a0:.55*Math.PI*2,width:.020*Math.PI*2,depth:-500},
+      {a0:.70*Math.PI*2,width:.025*Math.PI*2,depth:200},
+      {a0:.80*Math.PI*2,width:.014*Math.PI*2,depth:-340},
+      {a0:.90*Math.PI*2,width:.018*Math.PI*2,depth:-460}
+    ],
+    drsCount:2
+  }),
+  buildTrack({name:'ALPEN', info:'Kort · Brattest i fjellet', ncp:30, R0:1000, cx:1080, cy:1050,
+    wobbleAmp:12, wobbleFreq:2, wobblePhase:.15, TW:54, terrain:'forest',
+    features:[
+      {a0:.05*Math.PI*2,width:.020*Math.PI*2,depth:-440},
+      {a0:.18*Math.PI*2,width:.030*Math.PI*2,depth:200},
+      {a0:.28*Math.PI*2,width:.016*Math.PI*2,depth:-320},
+      {a0:.55*Math.PI*2,width:.020*Math.PI*2,depth:-460},
+      {a0:.70*Math.PI*2,width:.035*Math.PI*2,depth:200},
+      {a0:.85*Math.PI*2,width:.016*Math.PI*2,depth:-280}
+    ],
+    drsCount:2
+  }),
+  buildTrack({name:'DUNA', info:'Klitter · Bankede svinger ved kysten', ncp:32, R0:1050, cx:1150, cy:1100,
+    wobbleAmp:18, wobbleFreq:2, wobblePhase:.55, TW:46, terrain:'arid',
+    features:[
+      {a0:.04*Math.PI*2,width:.018*Math.PI*2,depth:-420},
+      {a0:.14*Math.PI*2,width:.030*Math.PI*2,depth:200},
+      {a0:.22*Math.PI*2,width:.016*Math.PI*2,depth:-280},
+      {a0:.58*Math.PI*2,width:.040*Math.PI*2,depth:240},
+      {a0:.74*Math.PI*2,width:.018*Math.PI*2,depth:-320},
+      {a0:.92*Math.PI*2,width:.030*Math.PI*2,depth:260}
+    ],
+    drsCount:2
+  }),
+  // NOTE on ncp:58 — this is the biggest-R0 track in the roster (1950), and
+  // buildPath samples a fixed 18 steps per control-point segment regardless
+  // of that segment's physical length. At the original ncp:38 this left
+  // PATH points ~19px apart (vs ~12px on LABIRINTO, the other walls:true
+  // track), which thinned out how many samples landed inside the first
+  // hairpin's narrow gaussian — smoothCurv's fixed 10-point moving average
+  // then under-reported that corner's true peak curvature, so the AI judged
+  // it safe to carry too much speed off the long Strip straight and ran
+  // wide into the Armco barrier. Bumping ncp to 58 brings point spacing
+  // back down to ~13px (matching LABIRINTO) with no shape change — verified
+  // via a 6-trial x 3600-tick AI-only sweep going from 155-456 wall-hit
+  // events per run down to 0 across every trial.
+  buildTrack({name:'VISTANOTTE', info:'Neonby · Lang rettstrekk, street circuit', ncp:58, R0:1950, cx:1850, cy:1850,
+    wobbleAmp:8, wobbleFreq:2, wobblePhase:.1, TW:56, terrain:'city', cityPal:'#120a24', walls:true,
+    features:[
+      {a0:.05*Math.PI*2,width:.014*Math.PI*2,depth:-440},
+      {a0:.10*Math.PI*2,width:.012*Math.PI*2,depth:-200},
+      {a0:.30*Math.PI*2,width:.015*Math.PI*2,depth:-420},
+      {a0:.50*Math.PI*2,width:.025*Math.PI*2,depth:200},
+      {a0:.65*Math.PI*2,width:.014*Math.PI*2,depth:-400},
+      {a0:.95*Math.PI*2,width:.016*Math.PI*2,depth:-380}
+    ],
+    drsCount:3
   })
 ];
 
 // ══════════════════════════════════════════════════════════════════
 // TEAMS / CARS
 // ══════════════════════════════════════════════════════════════════
-// 10 constructors × 2 cars = a full 20-car grid, F1-style.
+// 10 constructors × 2 cars = a full 20-car grid, modelled on the real F1
+// constructor grid — each team's color/dark pair is its actual livery
+// identity (primary body colour + accent/shadow tone), picked so all 10
+// stay visually distinct even at the tiny on-track sprite scale (the real
+// grid leans heavily blue, so Red Bull/Williams/Racing Bulls/Alpine are
+// deliberately pushed toward very different brightness/hue rather than
+// four near-identical blues).
+// `short` is the 3-letter FIA-style broadcast code — used only in the tight
+// 108px-wide in-race leaderboard HUD box, where the full name would overflow
+// on a double-digit rank (e.g. "10. RACING BULLS 2"). Every other screen
+// (podium flags, final standings) has plenty of width and uses the full name.
 const TEAMS=[
-  {name:'ROSSO',   color:'#e10600', dark:'#7a0000'},
-  {name:'SILVER',  color:'#c9d4dc', dark:'#5c666e'},
-  {name:'AZZURRO', color:'#1e6fd9', dark:'#0d3a73'},
-  {name:'ORANGE',  color:'#ff8700', dark:'#a85900'},
-  {name:'VERDE',   color:'#22c55e', dark:'#14532d'},
-  {name:'VIOLA',   color:'#c026d3', dark:'#701a75'},
-  {name:'GIALLO',  color:'#eab308', dark:'#713f12'},
-  {name:'CYAN',    color:'#22d3ee', dark:'#155e63'},
-  {name:'BRONZO',  color:'#b45309', dark:'#78350f'},
-  {name:'CORALLO', color:'#fb7185', dark:'#9f1239'}
+  {name:'FERRARI',       short:'FER', color:'#e10600', dark:'#7a0000'},
+  {name:'MERCEDES',      short:'MER', color:'#00d2be', dark:'#1a1a1a'},
+  {name:'RED BULL',      short:'RBR', color:'#1b2a68', dark:'#050714'},
+  {name:'MCLAREN',       short:'MCL', color:'#ff8700', dark:'#1b3a6b'},
+  {name:'ASTON MARTIN',  short:'AMR', color:'#00665e', dark:'#00342e'},
+  {name:'ALPINE',        short:'ALP', color:'#2173b8', dark:'#ff2e9c'},
+  {name:'WILLIAMS',      short:'WIL', color:'#00a3e0', dark:'#004c87'},
+  {name:'RACING BULLS',  short:'RB',  color:'#eef2f7', dark:'#1e3a8a'},
+  {name:'KICK SAUBER',   short:'SAU', color:'#00e701', dark:'#0a0a0a'},
+  {name:'HAAS',          short:'HAS', color:'#9aa0a6', dark:'#8b0000'}
 ];
 const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 
@@ -1776,7 +1924,7 @@ function draw(){
       const c=row.c;
       ctx.fillStyle=c.team.color; ctx.fillRect(lbX+6,ry-5,8,8);
       ctx.fillStyle=c.isPlayer?'#f1f5f9':'#94a3b8'; ctx.font='bold 9px Courier New';
-      ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':c.team.name+' '+c.num}`,lbX+18,ry);
+      ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':c.team.short+' '+c.num}`,lbX+18,ry);
     });
   } else {
     ctx.fillStyle='rgba(5,7,10,.7)'; ctx.font='bold 8px Courier New'; ctx.textAlign='right';
