@@ -2507,8 +2507,56 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>{keys[normKey(e.key)]=false;});
 
-function loop(){update();draw();requestAnimationFrame(loop);}
-loop();
+// ══════════════════════════════════════════════════════════════════
+// FAST TIDSSTEG (Glenn Fiedler «Fix Your Timestep», akkumulator-metoden)
+// ══════════════════════════════════════════════════════════════════
+// update() over kaller raceTime++ én gang per kall og alle fysikk-/AI-/
+// tidtakingskonstanter (speed, GRIP, D.baseMax, osv.) er tunet med den
+// forutsetningen at update() kjøres nøyaktig 60 ganger i sekundet. Før
+// denne fiksen ble update() kalt én gang per requestAnimationFrame — på
+// en 120 Hz- eller 144 Hz-skjerm kjører rAF 2–2,4x oftere enn 60/s, så
+// hele spillet (fart, styring, AI, rundetider) gikk like mye for fort og
+// raceTime/60 ga feil sekundtall. Løsningen: mål ekte forløpt tid mellom
+// frames med performance.now() (tidsstempelet rAF selv gir callbacken),
+// legg den i en akkumulator, og kjør update() i faste 1000/60 ms-biter
+// så lenge akkumulatoren har nok tid liggende — resten tas med videre
+// til neste frame. draw() tegnes fortsatt nøyaktig én gang per frame,
+// uavhengig av hvor mange update()-steg som kjørte.
+const STEP_MS = 1000/60;
+const MAX_STEPS_PER_FRAME = 5; // tak per frame, så en hengende maskin ikke går i en "spiral of death" av flere og flere steg
+let lastFrameT = null, accumulator = 0;
+
+function loop(t){
+  if(lastFrameT===null) lastFrameT=t; // første frame: ingen delta å spille inn ennå
+  let frameDt = t - lastFrameT;
+  lastFrameT = t;
+  // etter en ekte lang pause (fanen har vært skjult, maskinen hang i over
+  // 250ms, e.l.) skal vi IKKE spille inn den tapte tiden — det ville gitt
+  // et skippete byks av mange update()-steg i ett jafs når man kommer
+  // tilbake. Nullstill i stedet og fortsett i realtid fra akkurat nå.
+  if(frameDt>250 || frameDt<0) frameDt=0;
+  accumulator += frameDt;
+  let steps=0;
+  while(accumulator>=STEP_MS && steps<MAX_STEPS_PER_FRAME){
+    update();
+    accumulator -= STEP_MS;
+    steps++;
+  }
+  // maskinen hang så mye at vi traff taket over — kast resten av den
+  // oppsamlede tiden i stedet for å la den henge igjen og kreve enda
+  // flere steg neste frame også (det er selve "spiral of death"-faren).
+  if(steps>=MAX_STEPS_PER_FRAME) accumulator=0;
+  draw();
+  requestAnimationFrame(loop);
+}
+// samme nullstilling når fanen blir skjult og synlig igjen — uten dette
+// ville tiden fanen var borte blitt stående i akkumulatoren og brukt opp
+// i et stort byks av update()-kall (begrenset av MAX_STEPS_PER_FRAME,
+// men fortsatt synlig som et hopp) i det fanen blir aktiv igjen.
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden){ lastFrameT=null; accumulator=0; }
+});
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
