@@ -732,6 +732,14 @@ function buildTrack(cfg){
   // look lopsided. This replaces the old Autodromo-only special case: every
   // circuit now gets genuine spectator presence, not just the "temple of
   // speed" track.
+  // standRects/flagPoles/marshalPosts/floodlights are all stored in WORLD
+  // space (no +ox/+oy — that offset only applies when baking pixels into the
+  // bg canvas) because, unlike the grandstands/trees/etc. above, these are
+  // drawn LIVE every frame in drawTrackScene() straight into the same world-
+  // space transform cars and the race line already use. That's what lets
+  // them animate (flags flutter, floodlights glow, crowds flash) instead of
+  // being frozen into the one-time prerendered background.
+  const standRects=[], flagPoles=[], marshalPosts=[];
   {
     const standOffs=cfg.TW+GRAVEL_SAFE+40;
     [1,-1].forEach(side=>{
@@ -739,6 +747,10 @@ function buildTrack(cfg){
       // pit straight, so flipping one would stack two stands on one side.
       const r=clearFootprint(sfx,sfy,sfAng,side,60,standOffs,cfg.TW+GRAVEL_SAFE+14);
       dGrandstand(r.cx+ox,r.cy+oy, sfAng, r.halfLen*2, 26);
+      standRects.push({x:r.cx,y:r.cy,ang:sfAng,w:r.halfLen*2,h:26});
+      // checkered flag pole at the outer end of each start/finish stand
+      const tx=Math.cos(sfAng), ty=Math.sin(sfAng);
+      flagPoles.push({x:r.cx+tx*(r.halfLen+6),y:r.cy+ty*(r.halfLen+6),checkered:true});
     });
     const curvSamples=[]; const cstep=5;
     for(let i=0;i<PN;i+=cstep) curvSamples.push({i,c:Math.abs(smoothCurv[i])});
@@ -762,11 +774,53 @@ function buildTrack(cfg){
       // this is the main place clearFootprint earns its keep.
       const r=clearFootprint(px,py,h,side,w/2,baseOffs,cfg.TW+GRAVEL_SAFE+14,{allowFlip:true});
       dGrandstand(r.cx+ox,r.cy+oy, h, r.halfLen*2, 22);
+      standRects.push({x:r.cx,y:r.cy,ang:h,w:r.halfLen*2,h:22});
+      // team-neutral pennant at each corner stand's near end
+      const tx=Math.cos(h), ty=Math.sin(h);
+      flagPoles.push({x:r.cx-tx*(r.halfLen+5)*(idx%2===0?1:-1),y:r.cy-ty*(r.halfLen+5)*(idx%2===0?1:-1),checkered:false});
     });
+  }
+  // marshal posts: yellow-flag waypoints dropped at the highest-severity
+  // corners on the lap (same severity metric runoff areas/AI hairpin caution
+  // use) — real circuits post marshals exactly where incidents are most
+  // likely, so this reuses data already computed above instead of guessing.
+  {
+    const sevSamples=[]; const sstep=5;
+    for(let i=0;i<PN;i+=sstep) sevSamples.push({i,v:severity[i]});
+    sevSamples.sort((a,b)=>b.v-a.v);
+    const chosen=[];
+    for(const s of sevSamples){
+      if(chosen.length>=5) break;
+      if(s.v<0.045) break;
+      if(chosen.some(p=>Math.abs(p.i-s.i)<PN*0.08)) continue;
+      chosen.push(s);
+    }
+    chosen.forEach(s=>{
+      const h=heading[s.i], [px,py]=PATH[s.i];
+      const side=Math.random()<0.5?1:-1;
+      const offs=(cfg.walls&&wallOffsArr?wallOffsArr[s.i]:cfg.TW+GRAVEL_SAFE+14)+9;
+      const nx=-Math.sin(h), ny=Math.cos(h);
+      marshalPosts.push({x:px+nx*offs*side,y:py+ny*offs*side});
+    });
+  }
+  // floodlight pylons, spaced evenly around the whole lap, alternating
+  // sides — only drawn/lit when a NATT (night) race is selected, see
+  // drawTrackScene. Computed once here rather than every frame.
+  const floodlights=[];
+  {
+    const fstep=Math.max(6,Math.floor(PN/26));
+    for(let i=0,k=0;i<PN;i+=fstep,k++){
+      const h=heading[i], [px,py]=PATH[i];
+      const nx=-Math.sin(h), ny=Math.cos(h);
+      const side=k%2===0?1:-1;
+      const offs=(cfg.walls&&wallOffsArr?wallOffsArr[i]:cfg.TW+GRAVEL_SAFE+30)+14;
+      floodlights.push({x:px+nx*offs*side,y:py+ny*offs*side});
+    }
   }
 
   return {CP,PATH,PN,heading,smoothCurv,severity,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
-    drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr};
+    drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,
+    terrain,standRects,flagPoles,marshalPosts,floodlights};
 }
 
 // The three original tracks are redesigned around real circuit-design
@@ -1059,17 +1113,25 @@ const TRACKS=[
 // 108px-wide in-race leaderboard HUD box, where the full name would overflow
 // on a double-digit rank (e.g. "10. RACING BULLS 2"). Every other screen
 // (podium flags, final standings) has plenty of width and uses the full name.
+// accent: a third livery-detail colour (nose tip, halo hoop, sponsor stripe,
+// wing-tip plates — see drawCar) layered ON TOP of the existing color/dark
+// pair. color/dark are left untouched on purpose — they're what the tiny HUD
+// swatches, minimap dots and leaderboard rows key off, and those need to stay
+// exactly as legible as before. accent is picked to echo each team's real
+// 2024/25 livery trim (Ferrari's shield yellow, Red Bull's gold, Aston
+// Martin's lime stripe, etc.) so the extra detail actually reads as "that
+// team's car", not a random highlight colour.
 const TEAMS=[
-  {name:'FERRARI',       short:'FER', color:'#e10600', dark:'#7a0000'},
-  {name:'MERCEDES',      short:'MER', color:'#00d2be', dark:'#1a1a1a'},
-  {name:'RED BULL',      short:'RBR', color:'#1b2a68', dark:'#050714'},
-  {name:'MCLAREN',       short:'MCL', color:'#ff8700', dark:'#1b3a6b'},
-  {name:'ASTON MARTIN',  short:'AMR', color:'#00665e', dark:'#00342e'},
-  {name:'ALPINE',        short:'ALP', color:'#2173b8', dark:'#ff2e9c'},
-  {name:'WILLIAMS',      short:'WIL', color:'#00a3e0', dark:'#004c87'},
-  {name:'RACING BULLS',  short:'RB',  color:'#eef2f7', dark:'#1e3a8a'},
-  {name:'KICK SAUBER',   short:'SAU', color:'#00e701', dark:'#0a0a0a'},
-  {name:'HAAS',          short:'HAS', color:'#9aa0a6', dark:'#8b0000'}
+  {name:'FERRARI',       short:'FER', color:'#e10600', dark:'#7a0000', accent:'#ffd400'},
+  {name:'MERCEDES',      short:'MER', color:'#00d2be', dark:'#1a1a1a', accent:'#c0c0c0'},
+  {name:'RED BULL',      short:'RBR', color:'#1b2a68', dark:'#050714', accent:'#fdb913'},
+  {name:'MCLAREN',       short:'MCL', color:'#ff8700', dark:'#1b3a6b', accent:'#ffffff'},
+  {name:'ASTON MARTIN',  short:'AMR', color:'#00665e', dark:'#00342e', accent:'#cedc00'},
+  {name:'ALPINE',        short:'ALP', color:'#2173b8', dark:'#ff2e9c', accent:'#ffffff'},
+  {name:'WILLIAMS',      short:'WIL', color:'#00a3e0', dark:'#004c87', accent:'#ffffff'},
+  {name:'RACING BULLS',  short:'RB',  color:'#eef2f7', dark:'#1e3a8a', accent:'#e8112d'},
+  {name:'KICK SAUBER',   short:'SAU', color:'#00e701', dark:'#0a0a0a', accent:'#ffffff'},
+  {name:'HAAS',          short:'HAS', color:'#9aa0a6', dark:'#8b0000', accent:'#ffffff'}
 ];
 const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 
@@ -1129,15 +1191,43 @@ let difficulty=1;
 // Player-selectable cosmetic liveries for the F1 car — entirely independent
 // of the randomly-assigned team identity (SKINS[0] "STANDARD" just falls
 // back to whatever team colours the player got that race via color:null).
+// Each skin now carries a third accent colour (same idea as TEAMS.accent —
+// see drawCar) PLUS a render pattern:
+//   'solid'    — flat body fill, accent used only for trim detail (the base
+//                look every livery already had)
+//   'stripe'   — a bold accent-coloured centre racing stripe down the body,
+//                Gulf/Martini style
+//   'gradient' — the body fill itself is a linear gradient from the base
+//                colour into a lighter/contrasting tone, for a premium
+//                fade/chrome paint job instead of a flat fill
+// STANDARD keeps color/dark/accent all null so drawCar falls all the way
+// back to the player's actual team livery, same as before.
 const SKINS=[
-  {name:'STANDARD', color:null,      dark:null},
-  {name:'KARBON',    color:'#1a1a1f', dark:'#000000'},
-  {name:'ARKTISK',   color:'#e2e8f0', dark:'#64748b'},
-  {name:'NEON',      color:'#39ff88', dark:'#0a3d1f'},
-  {name:'GULL',      color:'#facc15', dark:'#78350f'},
-  {name:'MAGENTA',   color:'#ec4899', dark:'#701a3d'}
+  {name:'STANDARD',  color:null,      dark:null,      accent:null,     pattern:'solid'},
+  {name:'KARBON',    color:'#1a1a1f', dark:'#000000', accent:'#8a8a94',pattern:'solid'},
+  {name:'ARKTISK',   color:'#e2e8f0', dark:'#64748b', accent:'#38bdf8',pattern:'gradient'},
+  {name:'NEON',      color:'#39ff88', dark:'#0a3d1f', accent:'#0a0a0a',pattern:'stripe'},
+  {name:'GULL',      color:'#facc15', dark:'#78350f', accent:'#fff7cc',pattern:'gradient'},
+  {name:'MAGENTA',   color:'#ec4899', dark:'#701a3d', accent:'#ffffff',pattern:'stripe'},
+  {name:'SØLVPIL',   color:'#c0c0c0', dark:'#1a1a1a', accent:'#f1f5f9',pattern:'gradient'},
+  {name:'BRITISK',   color:'#004225', dark:'#001a0e', accent:'#f1f5f9',pattern:'stripe'},
+  {name:'SOLOPPGANG',color:'#fb7185', dark:'#7c2d12', accent:'#fde047',pattern:'gradient'},
+  {name:'MIDNATT',   color:'#0f172a', dark:'#020617', accent:'#38bdf8',pattern:'gradient'},
+  {name:'FLAMME',    color:'#dc2626', dark:'#7c2d12', accent:'#fb923c',pattern:'gradient'},
+  {name:'TIGER',     color:'#f97316', dark:'#1c1917', accent:'#0a0a0a',pattern:'stripe'}
 ];
 let skinSel=0;
+
+// Selectable time-of-day — purely atmospheric (lighting overlay + night
+// floodlights/headlights, see drawTrackScene/drawCar), no effect on physics.
+// DAG is an explicit, named option (not just "the only look there is") so
+// picking a day race is as deliberate a choice as picking a night race.
+const TOD=[
+  {name:'DAG',         clr:'#facc15', night:false, overlay:null},
+  {name:'SOLNEDGANG',  clr:'#fb923c', night:false, overlay:'rgba(120,45,10,0.22)'},
+  {name:'NATT',        clr:'#818cf8', night:true,  overlay:'rgba(5,8,20,0.58)'}
+];
+let todIdx=0;
 
 // Selectable race distance — replaces the old hardcoded 5-lap race. LAPS is
 // kept as the live value everything else reads (finish check + HUD), while
@@ -1725,30 +1815,88 @@ function update(){
 function drawCar(c){
   // player's car renders its chosen SKIN livery instead of the team colours
   // whenever a non-default skin is picked; AI always races in team colours.
+  // Both now resolve to a full {col,dark,accent,pattern} tuple instead of
+  // just two tones — accent drives the extra livery detail below (nose tip,
+  // halo hoop, sponsor stripe, wing endplates), pattern picks how the body
+  // itself is filled (flat/stripe/gradient). AI cars always fall back to
+  // 'solid' (TEAMS entries carry no pattern field), so only player-chosen
+  // skins can be stripe/gradient — team liveries stay flat-filled but gain
+  // all the same accent detailing.
   const skin = c.isPlayer ? SKINS[skinSel] : null;
-  const col = (skin && skin.color) || c.team.color;
-  const dark = (skin && skin.dark) || c.team.dark;
+  const col     = (skin && skin.color)   || c.team.color;
+  const dark    = (skin && skin.dark)    || c.team.dark;
+  const accent  = (skin && skin.accent)  || c.team.accent;
+  const pattern = (skin && skin.pattern) || 'solid';
+  const night = TOD[todIdx].night;
   c.trail.forEach(t=>{ ctx.globalAlpha=t.life*.22; ctx.fillStyle='#0a0a12'; ctx.beginPath(); ctx.arc(t.x,t.y,2.6,0,Math.PI*2); ctx.fill(); });
   ctx.globalAlpha=1;
   ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.angle);
   ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(-12,5,24,6); // shadow
-  // rear wing
+  // rear wing + accent endplate tips
   ctx.fillStyle=dark; ctx.fillRect(-13,-8,3,16);
+  ctx.fillStyle=accent; ctx.fillRect(-13,-8,3,2); ctx.fillRect(-13,6,3,2);
   // rear tires
   ctx.fillStyle='#111'; ctx.fillRect(-9,-8,5,5); ctx.fillRect(-9,3,5,5);
-  // body
-  ctx.fillStyle=col;
+  // body — flat fill for solid/stripe, a nose-to-tail linear gradient
+  // (dark→base→accent) for 'gradient' skins, reading as a premium fade/
+  // chrome paint job instead of one flat tone
+  if(pattern==='gradient'){
+    const grad=ctx.createLinearGradient(-11,0,13,0);
+    grad.addColorStop(0,dark); grad.addColorStop(0.55,col); grad.addColorStop(1,accent);
+    ctx.fillStyle=grad;
+  } else {
+    ctx.fillStyle=col;
+  }
   ctx.beginPath();
   ctx.moveTo(13,0); ctx.lineTo(7,-3.2); ctx.lineTo(-10,-4.2); ctx.lineTo(-11,4.2); ctx.lineTo(7,3.2);
   ctx.closePath(); ctx.fill();
+  // gloss highlight along the upper body edge — a thin pale stroke just
+  // inside the real outline, reading as a sheen on the paint rather than a
+  // flat matte fill.
+  ctx.strokeStyle='rgba(255,255,255,.3)'; ctx.lineWidth=.7;
+  ctx.beginPath(); ctx.moveTo(12,-.6); ctx.lineTo(6,-3); ctx.lineTo(-9,-3.9); ctx.stroke();
+  // centre racing stripe — 'stripe' skins only, a bold accent band straight
+  // down the middle of the body, Gulf/Martini style
+  if(pattern==='stripe'){ ctx.fillStyle=accent; ctx.fillRect(-9,-1.1,20,2.2); }
+  // diagonal sponsor-block stripe across the engine cover, between the
+  // cockpit and the rear wing — every real F1 livery has some version of
+  // this, and it's what actually sells "team livery" vs. "car painted one
+  // colour" at a glance.
+  ctx.save(); ctx.globalAlpha=.85; ctx.fillStyle=accent;
+  ctx.beginPath(); ctx.moveTo(-1.5,-2.2); ctx.lineTo(-0.3,-2.2); ctx.lineTo(-5.3,2.2); ctx.lineTo(-6.5,2.2);
+  ctx.closePath(); ctx.fill(); ctx.restore();
+  // nose-tip accent highlight
+  ctx.fillStyle=accent;
+  ctx.beginPath(); ctx.moveTo(13,0); ctx.lineTo(9,-1.6); ctx.lineTo(9,1.6); ctx.closePath(); ctx.fill();
   // sidepods
   ctx.fillStyle=dark; ctx.fillRect(-6,-4.6,6,2); ctx.fillRect(-6,2.6,6,2);
+  // halo — an accent-coloured hoop around the cockpit so the halo reads as
+  // its own structural piece instead of disappearing into the body colour
+  ctx.strokeStyle=accent; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.ellipse(1,0,3.8,2.6,0,0,Math.PI*2); ctx.stroke();
   // halo/cockpit
   ctx.fillStyle='#111'; ctx.beginPath(); ctx.ellipse(1,0,3.2,2.1,0,0,Math.PI*2); ctx.fill();
-  // front wing
+  // front wing + accent endplate tips
   ctx.fillStyle=dark; ctx.fillRect(11,-6,2.4,12);
+  ctx.fillStyle=accent; ctx.fillRect(11,-6,2.4,1.6); ctx.fillRect(11,4.4,2.4,1.6);
   // front tires
   ctx.fillStyle='#111'; ctx.fillRect(5,-7,4,4); ctx.fillRect(5,3,4,4);
+  if(night){
+    // headlight beam + glowing lamps, brighter rear light glow — the night
+    // livery pass; purely visual, reacts to the globally-selected TOD, not
+    // per-car state.
+    ctx.save(); ctx.globalAlpha=.3; ctx.fillStyle='rgba(255,255,255,.4)';
+    ctx.beginPath(); ctx.moveTo(13,0); ctx.lineTo(32,-6); ctx.lineTo(32,6); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.shadowColor='#fff'; ctx.shadowBlur=5; ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(13,-2,1,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(13,2,1,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.shadowColor='#ff2222'; ctx.shadowBlur=5; ctx.fillStyle='#ff4444';
+    ctx.beginPath(); ctx.arc(-13,-5,1,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-13,5,1,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
   if(c.drsActive){ ctx.fillStyle='rgba(192,132,252,.9)'; ctx.fillRect(-13,-7,3,14); }
   if(c.ersActive){
     // ERS/battery deploy: hot white sidepod glow with a blue rim. A 1.1px
@@ -1802,6 +1950,59 @@ function drawTrackScene(){
   ctx.translate(-camX,-camY);
 
   ctx.drawImage(TR.bg, TR.bgMinX, TR.bgMinY);
+
+  // ── track "life" layer: everything here is drawn fresh every frame in
+  // world space (unlike the grandstands/trees/etc. baked into TR.bg once),
+  // which is what lets it actually move — flags flutter, floodlights glow,
+  // marshals wave, crowds flash cameras. Positions come from TR.flagPoles/
+  // marshalPosts/floodlights/standRects, computed once in buildTrack.
+  if(TOD[todIdx].night && TR.floodlights) TR.floodlights.forEach(f=>{
+    ctx.save();
+    const glow=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,46);
+    glow.addColorStop(0,'rgba(255,250,220,.35)'); glow.addColorStop(1,'rgba(255,250,220,0)');
+    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(f.x,f.y,46,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#1b1f29'; ctx.fillRect(f.x-1.6,f.y-26,3.2,26);
+    ctx.fillStyle='#fff7cc'; ctx.beginPath(); ctx.arc(f.x,f.y-26,3,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+  if(TR.flagPoles) TR.flagPoles.forEach((f,i)=>{
+    ctx.save(); ctx.translate(f.x,f.y);
+    ctx.strokeStyle='#cbd5e1'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.moveTo(0,2); ctx.lineTo(0,-20); ctx.stroke();
+    const wave=Math.sin(raceTime*0.15+i*1.7)*2.5;
+    ctx.beginPath();
+    ctx.moveTo(0,-20); ctx.lineTo(13,-19+wave*0.4); ctx.lineTo(10,-16+wave);
+    ctx.lineTo(13,-13+wave*0.4); ctx.lineTo(0,-12); ctx.closePath();
+    if(f.checkered){
+      ctx.save(); ctx.clip();
+      for(let r=0;r<4;r++) for(let c=0;c<3;c++){
+        ctx.fillStyle=(r+c)%2===0?'#f1f5f9':'#0a0a0a';
+        ctx.fillRect(c*4.5,-20+r*2,4.5,2);
+      }
+      ctx.restore();
+    } else { ctx.fillStyle=TR.walls?'#e10600':'#38bdf8'; ctx.fill(); }
+    ctx.restore();
+  });
+  if(TR.marshalPosts) TR.marshalPosts.forEach((m,i)=>{
+    ctx.save(); ctx.translate(m.x,m.y);
+    ctx.fillStyle='#fde68a'; ctx.beginPath(); ctx.arc(0,-10,2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ea580c'; ctx.fillRect(-2,-8,4,7);
+    const wv=Math.sin(raceTime*0.3+i*2.3)*4;
+    ctx.strokeStyle='#78350f'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(2,-9); ctx.lineTo(6,-13+wv*0.3); ctx.stroke();
+    ctx.fillStyle='#facc15';
+    ctx.beginPath(); ctx.moveTo(6,-13+wv*0.3); ctx.lineTo(11,-12+wv); ctx.lineTo(6,-9+wv*0.3); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  });
+  if(TR.standRects) TR.standRects.forEach(r=>{
+    if(Math.random()<0.018){
+      const lx=(Math.random()-0.5)*r.w*0.8, ly=(Math.random()-0.5)*r.h*0.6;
+      const tx=Math.cos(r.ang), ty=Math.sin(r.ang), nx=-Math.sin(r.ang), ny=Math.cos(r.ang);
+      ctx.save(); ctx.globalAlpha=0.8; ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(r.x+tx*lx+nx*ly, r.y+ty*lx+ny*ly,1.4,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  });
 
   // animated racing line overlay
   ctx.save();
@@ -1929,24 +2130,66 @@ function draw(){
       ctx.fillText(`Bredde ${t.TW*2}  ·  DRS-zoner ${t.drsZones.length}`,ccx,by0+ph+74);
     });
     // ── distance (laps) selector ──
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Q E bytt rundelengde',W/2,598);
-    ctx.fillStyle='#facc15'; ctx.font='bold 12px Courier New'; ctx.fillText(`DISTANSE: ${LAPS} RUNDER`,W/2,614);
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Q E bytt rundelengde',W/2,592);
+    ctx.fillStyle='#facc15'; ctx.font='bold 12px Courier New'; ctx.fillText(`DISTANSE: ${LAPS} RUNDER`,W/2,606);
     // ── skin selector ──
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Z X bytt bil-skin',W/2,632);
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Z X bytt bil-skin',W/2,620);
     {
-      const sk=SKINS[skinSel], swCol=sk.color||TEAMS[0].color;
+      const sk=SKINS[skinSel], swCol=sk.color||TEAMS[0].color, swAcc=sk.accent||TEAMS[0].accent;
       ctx.fillStyle='#f1f5f9'; ctx.font='bold 12px Courier New'; ctx.textAlign='right';
-      ctx.fillText(`SKIN: ${sk.name}`,W/2+34,648);
-      ctx.fillStyle=swCol; ctx.fillRect(W/2+44,641,16,10);
-      ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(W/2+44,641,16,10);
+      ctx.fillText(`SKIN: ${sk.name}`,W/2+34,634);
+      ctx.fillStyle=swCol; ctx.fillRect(W/2+44,627,16,10);
+      ctx.fillStyle=swAcc; ctx.fillRect(W/2+44,627,16,3); // accent trim preview strip
+      ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(W/2+44,627,16,10);
       ctx.textAlign='center';
     }
-    ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H-16);
+    // ── time-of-day selector ──
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('C V bytt tid på døgnet',W/2,648);
+    {
+      const td=TOD[todIdx];
+      ctx.fillStyle=td.clr; ctx.font='bold 12px Courier New';
+      ctx.fillText(`TID: ${td.name}`,W/2,662);
+    }
+    ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H-6);
     ctx.restore(); return;
   }
 
   // ── racing scene ──
   drawTrackScene();
+
+  // time-of-day wash — screen-space (drawn after the camera-rotated world
+  // content is done, so it's unaffected by camera rotation), clipped to just
+  // the track viewport so it never tints the HUD bar above it.
+  if(TOD[todIdx].overlay){
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0,HY,W,H-HY); ctx.clip();
+    ctx.fillStyle=TOD[todIdx].overlay; ctx.fillRect(0,HY,W,H-HY);
+    ctx.restore();
+  }
+
+  // ambient life: drifting birds over forest/mountain tracks, rising heat-
+  // shimmer wisps over arid ones — screen-space, driven purely by raceTime
+  // (no particle state to manage), so they just keep looping for free.
+  if(TR.terrain==='forest'||TR.terrain==='mountain'){
+    for(let i=0;i<3;i++){
+      const t=raceTime*0.5+i*260;
+      const bx2=((t)%(W+200))-100;
+      const by2=HY+26+i*22+Math.sin(raceTime*0.04+i*2)*8;
+      const flap=Math.sin(raceTime*0.35+i)*4;
+      ctx.save(); ctx.globalAlpha=.55; ctx.strokeStyle='#1b1b22'; ctx.lineWidth=1.3; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(bx2-5,by2+flap*.4); ctx.lineTo(bx2,by2-flap); ctx.lineTo(bx2+5,by2+flap*.4); ctx.stroke();
+      ctx.restore();
+    }
+  } else if(TR.terrain==='arid'){
+    for(let i=0;i<4;i++){
+      const cyc=4200, ph=(raceTime*8+i*(cyc/4))%cyc, prog=ph/cyc;
+      const hx=60+i*120+Math.sin(raceTime*0.02+i*3)*20;
+      const hy=(H-14)-prog*(H-HY-30);
+      ctx.save(); ctx.globalAlpha=(1-prog)*.18; ctx.fillStyle='#fcd9a8';
+      ctx.beginPath(); ctx.ellipse(hx,hy,9+prog*10,4+prog*5,0,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
+  }
 
   // speed-lines vignette
   if(state==='playing'||state==='practice'){
@@ -2132,12 +2375,23 @@ function draw(){
       ctx.fillStyle='rgba(255,255,255,.18)'; ctx.font='bold 34px Courier New';
       ctx.fillText(String(slot.rank),slot.cx,top+slot.h/2+12);
       if(!car) return;
+      // podium blob now resolves the same livery tuple drawCar uses — the
+      // player's chosen skin if this is the player, team colours otherwise —
+      // so the podium actually shows the livery you raced with, not just a
+      // flat team-colour placeholder.
+      const pSkin = car.isPlayer ? SKINS[skinSel] : null;
+      const pCol    = (pSkin && pSkin.color)   || car.team.color;
+      const pDark   = (pSkin && pSkin.dark)    || car.team.dark;
+      const pAccent = (pSkin && pSkin.accent)  || car.team.accent;
       // team-colour car blob standing on the block
       ctx.save(); ctx.translate(slot.cx,top-14);
-      ctx.fillStyle=car.team.dark;
+      ctx.fillStyle=pDark;
       if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(-10,-15,20,28,5); ctx.fill(); } else ctx.fillRect(-10,-15,20,28);
-      ctx.fillStyle=car.team.color;
+      ctx.fillStyle=pCol;
       if(ctx.roundRect){ ctx.beginPath(); ctx.roundRect(-7,-12,14,20,4); ctx.fill(); } else ctx.fillRect(-7,-12,14,20);
+      // accent sponsor stripe + halo ring, echoing the in-race livery detail
+      ctx.fillStyle=pAccent; ctx.fillRect(-7,-2,14,2.6);
+      ctx.strokeStyle=pAccent; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(0,-7,4.4,3.4,0,0,Math.PI*2); ctx.stroke();
       ctx.fillStyle='#fff'; ctx.font='bold 8px Courier New'; ctx.fillText(String(car.num),0,0);
       ctx.restore();
       // team flag on the block's outer edge
@@ -2241,6 +2495,8 @@ document.addEventListener('keydown',e=>{
     if(e.key==='e'||e.key==='E'){ lapsIdx=(lapsIdx+1)%LAP_OPTIONS.length; LAPS=LAP_OPTIONS[lapsIdx]; }
     if(e.key==='z'||e.key==='Z') skinSel=(skinSel+SKINS.length-1)%SKINS.length;
     if(e.key==='x'||e.key==='X') skinSel=(skinSel+1)%SKINS.length;
+    if(e.key==='c'||e.key==='C') todIdx=(todIdx+TOD.length-1)%TOD.length;
+    if(e.key==='v'||e.key==='V') todIdx=(todIdx+1)%TOD.length;
   }
   if(state==='win' && (e.key==='t'||e.key==='T')) state='trackselect';
   if(state==='practice'){
