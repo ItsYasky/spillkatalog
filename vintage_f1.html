@@ -31,6 +31,22 @@ const OVERTAKE_RANGE=70, OVERTAKE_CONE=0.6;
 const SLIP_RANGE=95, SLIP_CONE=0.92;
 
 // ══════════════════════════════════════════════════════════════════
+// GAME MODE: CASUAL vs REALISTISK — chosen on the main menu before you ever
+// touch the track-select screen. CASUAL is the original, forgiving feel
+// (steering alone can carry any corner). REALISTISK is a straight-up higher
+// top speed PLUS a genuine, universal grip-loss mechanic (PHYS_K/turnPenalty/
+// gripPenalty, wired into update() below) that does not exist in casual —
+// carry too much speed into a bend relative to its actual curvature and you
+// lose steering authority AND grip, so you run wide/lose the car if you
+// don't brake, for player and AI alike. This used to be a separate file
+// (f1_realistic.html); it's now just a mode switch on the same game.
+// ══════════════════════════════════════════════════════════════════
+let REALISTIC=false;
+const PLAYER_MAX_CASUAL=4.8,     PLAYER_MAX_REALISTIC=6.8;
+const PHYS_K=2.6;       // how hard curvature clamps the realistic safe-speed ceiling
+const TURN_BASE=0.046;  // full steering-rack rate available under the safe speed (realistic)
+
+// ══════════════════════════════════════════════════════════════════
 // TRACK GENERATION — star-shaped polar curve => guaranteed simple loop
 // ══════════════════════════════════════════════════════════════════
 function wrapPi(a){ while(a>Math.PI)a-=Math.PI*2; while(a<-Math.PI)a+=Math.PI*2; return a; }
@@ -151,9 +167,14 @@ function buildTrack(cfg){
   const bg=document.createElement('canvas'); bg.width=bw; bg.height=bh;
   const bx=bg.getContext('2d');
   const ox=-minX, oy=-minY; // world -> bg canvas offset
-  bx.fillStyle='#0d1a0f'; bx.fillRect(0,0,bw,bh);
+  // desert tracks get a sandy base instead of grass — speckle colour/shape
+  // switches too (soft dune grain, not grass blades), so "ørken" reads from
+  // the ground up, not just from the scattered bushes/rocks on top.
+  const isArid=cfg.terrain==='arid';
+  bx.fillStyle = isArid ? '#3a2e1c' : '#0d1a0f'; bx.fillRect(0,0,bw,bh);
   for(let i=0;i<1400;i++){
-    bx.fillStyle=`rgba(${20+Math.random()*26},${60+Math.random()*40},${20+Math.random()*18},.55)`;
+    if(isArid) bx.fillStyle=`rgba(${150+Math.random()*70},${118+Math.random()*55},${65+Math.random()*40},.4)`;
+    else bx.fillStyle=`rgba(${20+Math.random()*26},${60+Math.random()*40},${20+Math.random()*18},.55)`;
     bx.fillRect(Math.random()*bw,Math.random()*bh,1+Math.random(),2+Math.random()*5);
   }
   function tPath(ctxr){
@@ -242,6 +263,38 @@ function buildTrack(cfg){
       bx.fillRect(-4,-6,8,12);
       bx.restore();
     });
+  }
+  // street-circuit Armco barrier: a continuous wall hugging both sides of
+  // the whole lap, right outside the gravel apron — Monaco-style, not just
+  // "decoration at the hard corners" like the curbs above. Triple-stroke
+  // (dark shadow + silver rail + bright top highlight) reads as a 3D guard
+  // rail at this scale, plus red/white marker blocks at intervals like real
+  // barrier end-plates. Only tracks with cfg.walls:true get this — see the
+  // matching harsh wall-collision physics in update() (TR.walls).
+  if(cfg.walls){
+    const wallOffs=cfg.TW+GRAVEL_SAFE+8;
+    [1,-1].forEach(side=>{
+      bx.beginPath();
+      for(let i=0;i<PN;i++){
+        const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
+        const px=PATH[i][0]+nx*side*wallOffs+ox, py=PATH[i][1]+ny*side*wallOffs+oy;
+        i===0?bx.moveTo(px,py):bx.lineTo(px,py);
+      }
+      bx.closePath();
+      bx.strokeStyle='#15161b'; bx.lineWidth=9; bx.stroke();
+      bx.strokeStyle='#8a94a3'; bx.lineWidth=6; bx.stroke();
+      bx.strokeStyle='rgba(255,255,255,.35)'; bx.lineWidth=2; bx.stroke();
+    });
+    for(let i=0;i<PN;i+=5){
+      const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
+      [1,-1].forEach(side=>{
+        const px=PATH[i][0]+nx*side*wallOffs+ox, py=PATH[i][1]+ny*side*wallOffs+oy;
+        bx.save(); bx.translate(px,py); bx.rotate(h);
+        bx.fillStyle=(Math.floor(i/5)%2===0)?'#d63a2e':'#f1f5f9';
+        bx.fillRect(-3,-4,6,8);
+        bx.restore();
+      });
+    }
   }
   // start/finish checker
   const sfAng=heading[0], sfPerp=sfAng+Math.PI/2, [sfx,sfy]=PATH[0];
@@ -373,6 +426,69 @@ function buildTrack(cfg){
     bx.fillStyle='rgba(253,186,116,.6)'; bx.beginPath(); bx.arc(-1.5*s,-1.5*s,2.4*s,0,Math.PI*2); bx.fill();
     bx.restore();
   }
+  // a stand/cliff is a long rectangle drawn tangent-aligned (its "width"
+  // runs parallel to the track direction at the single point it was sampled
+  // from). A plain normal-offset from that one point is only safe if the
+  // track stays straight across the whole footprint — but these are
+  // deliberately placed at the SHARPEST curvature points, exactly where the
+  // track bends fastest, so the footprint's far ends can swing back and
+  // land on top of the track (or even the opposite side of a hairpin) while
+  // the center point looks clear. Fix: sample several points along the
+  // footprint's tangent span against the real track geometry, and if
+  // anything's still too close, push the whole thing further out along the
+  // normal and recheck — repeat until genuinely clear (or give up after a
+  // reasonable number of tries so a pathological spot can't loop forever).
+  // opts.allowFlip: if the requested side can't be cleared within the push-out
+  // budget, try the OPPOSITE side too (a pathological bend — e.g. a nearby
+  // switchback folding back close by on just one side — doesn't necessarily
+  // affect the other). Only used for corner stands/cliffs, not the
+  // start/finish stands (which are explicitly placed on both sides and must
+  // stay there). If NEITHER side clears even after the push-out budget on
+  // every shrink step, this is a genuinely pathological spot (seen on
+  // LABIRINTO's tightest city hairpins) — rather than loop forever or leave
+  // it sitting on the track, progressively shrink the footprint's tangent
+  // span (a shorter stand/cliff is much easier to tuck into a tight gap than
+  // a long one) and return the best candidate found, with its actual
+  // halfLen, so the caller draws it at the size that was actually verified.
+  function clearFootprint(px,py,h,side,halfLen,baseOffs,minClear,opts){
+    opts=opts||{};
+    const nx=-Math.sin(h), ny=Math.cos(h);
+    const tx=Math.cos(h), ty=Math.sin(h);
+    function tryClear(s,hl){
+      let offs=baseOffs, cx=px, cy=py, minD=0;
+      for(let iter=0;iter<16;iter++){
+        cx=px+nx*offs*s; cy=py+ny*offs*s;
+        minD=1e9;
+        for(let k=-1;k<=1;k+=0.2){
+          const sx=cx+tx*hl*k, sy=cy+ty*hl*k;
+          const d=nearestOnPath(PATH,sx,sy).dist;
+          if(d<minD) minD=d;
+        }
+        if(minD>=minClear) return {cx,cy,minD,ok:true,side:s,halfLen:hl};
+        offs+=16;
+      }
+      return {cx,cy,minD,ok:false,side:s,halfLen:hl};
+    }
+    let best=tryClear(side,halfLen);
+    if(best.ok) return best;
+    if(opts.allowFlip){
+      const opp=tryClear(-side,halfLen);
+      if(opp.ok) return opp;
+      if(opp.minD>best.minD) best=opp;
+    }
+    for(const shrink of [0.7,0.5,0.35,0.22]){
+      const hl=halfLen*shrink;
+      const a=tryClear(side,hl);
+      if(a.ok) return a;
+      if(a.minD>best.minD) best=a;
+      if(opts.allowFlip){
+        const b=tryClear(-side,hl);
+        if(b.ok) return b;
+        if(b.minD>best.minD) best=b;
+      }
+    }
+    return best;
+  }
   // walk the path at a fixed stride, dropping a decoration hugging the
   // trackside edge (alternating left/right if asked) — for stuff that
   // belongs right at the barrier line (lamps) rather than scattered loosely
@@ -401,14 +517,17 @@ function buildTrack(cfg){
     }
     chosen.forEach(s=>{
       const h=heading[s.i], [px,py]=PATH[s.i];
-      const nx=-Math.sin(h), ny=Math.cos(h);
       const side=s.c>=0?-1:1;
+      const w=64+Math.random()*28;
       // sit well past the grandstand ring (~TW+GRAVEL_SAFE+36..47) so the
       // cliff reads as a rock backdrop behind the scenery, not a smear over
       // the gravel fringe — and flip the draw angle by side so the jagged
       // silhouette always grows AWAY from the track, never back toward it.
-      const offs=cfg.TW+GRAVEL_SAFE+58;
-      dCliff(px+ox+nx*offs*side, py+oy+ny*offs*side, h+(side>0?Math.PI:0), 64+Math.random()*28);
+      // clearFootprint nudges it further out if its tangent-aligned span
+      // would otherwise clip back over the track on this sharp a bend.
+      const baseOffs=cfg.TW+GRAVEL_SAFE+58;
+      const r=clearFootprint(px,py,h,side,w/2,baseOffs,cfg.TW+GRAVEL_SAFE+20,{allowFlip:true});
+      dCliff(r.cx+ox,r.cy+oy, h+(r.side>0?Math.PI:0), r.halfLen*2);
     });
   }
   function dGrandstand(x,y,ang,w,h){
@@ -545,8 +664,10 @@ function buildTrack(cfg){
   {
     const standOffs=cfg.TW+GRAVEL_SAFE+40;
     [1,-1].forEach(side=>{
-      const px=sfx+Math.cos(sfPerp)*standOffs*side, py=sfy+Math.sin(sfPerp)*standOffs*side;
-      dGrandstand(px+ox,py+oy, sfAng, 120, 26);
+      // no allowFlip here — these are explicitly placed on both sides of the
+      // pit straight, so flipping one would stack two stands on one side.
+      const r=clearFootprint(sfx,sfy,sfAng,side,60,standOffs,cfg.TW+GRAVEL_SAFE+14);
+      dGrandstand(r.cx+ox,r.cy+oy, sfAng, r.halfLen*2, 26);
     });
     const curvSamples=[]; const cstep=5;
     for(let i=0;i<PN;i+=cstep) curvSamples.push({i,c:Math.abs(smoothCurv[i])});
@@ -561,15 +682,20 @@ function buildTrack(cfg){
     }
     standSpots.forEach((s,idx)=>{
       const h=heading[s.i], [px,py]=PATH[s.i];
-      const nx=-Math.sin(h), ny=Math.cos(h);
       const side=idx%2===0?1:-1;
-      const offs=cfg.TW+GRAVEL_SAFE+36;
-      dGrandstand(px+ox+nx*offs*side,py+oy+ny*offs*side, h, 85+Math.random()*35, 22);
+      const w=85+Math.random()*35;
+      const baseOffs=cfg.TW+GRAVEL_SAFE+36;
+      // these sit at the sharpest curvature points on the whole track BY
+      // DESIGN (most dramatic corner to watch from) — exactly where a plain
+      // single-point normal offset is most likely to misjudge clearance, so
+      // this is the main place clearFootprint earns its keep.
+      const r=clearFootprint(px,py,h,side,w/2,baseOffs,cfg.TW+GRAVEL_SAFE+14,{allowFlip:true});
+      dGrandstand(r.cx+ox,r.cy+oy, h, r.halfLen*2, 22);
     });
   }
 
   return {CP,PATH,PN,heading,smoothCurv,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
-    drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy};
+    drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy,walls:!!cfg.walls};
 }
 
 // The three original tracks are redesigned around real circuit-design
@@ -616,8 +742,8 @@ const TRACKS=[
     ],
     drsCount:3
   }),
-  buildTrack({name:'AUTODROMO', info:'Høy fart · Lange rettstrekk', ncp:40, R0:1872, cx:1720, cy:1720,
-    wobbleAmp:14, wobbleFreq:2, wobblePhase:0, TW:74, terrain:'parkland',
+  buildTrack({name:'DESERTO', info:'Ørken · Høy fart, lange rettstrekk', ncp:40, R0:1872, cx:1720, cy:1720,
+    wobbleAmp:14, wobbleFreq:2, wobblePhase:0, TW:74, terrain:'arid',
     features:[
       {a0:.075*Math.PI*2,width:.016*Math.PI*2,depth:170},
       {a0:.105*Math.PI*2,width:.016*Math.PI*2,depth:-190},
@@ -653,8 +779,8 @@ const TRACKS=[
   // gap between feature centers, not just "some space". Verified via a
   // headless measurement pass before locking these in, so every track below
   // genuinely delivers the DRS zone count it declares.
-  buildTrack({name:'LABIRINTO', info:'Bygater · Trange hårnåler', ncp:36, R0:1020, cx:1180, cy:1180,
-    wobbleAmp:10, wobbleFreq:2, wobblePhase:.4, TW:40, terrain:'city', cityPal:'#2d3344', graffiti:true,
+  buildTrack({name:'LABIRINTO', info:'Street circuit · Vegger langs hele banen', ncp:36, R0:1020, cx:1180, cy:1180,
+    wobbleAmp:10, wobbleFreq:2, wobblePhase:.4, TW:40, terrain:'city', cityPal:'#2d3344', graffiti:true, walls:true,
     features:[
       {a0:.06*Math.PI*2,width:.018*Math.PI*2,depth:-460},
       {a0:.14*Math.PI*2,width:.013*Math.PI*2,depth:230},
@@ -745,12 +871,23 @@ const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 // All of the above was recalibrated via automated lap testing across every
 // track to keep off-track time near 0% while still giving each tier a
 // clearly distinct *feel* to race against, without a dominant pace gap.
-const DIFFICULTIES=[
+// two full tables — one per game mode (see REALISTIC above). REALISTISK's
+// much higher baseMax/curveK pair with the player's higher PLAYER_MAX and
+// the universal grip-loss mechanic so the AI stays competitive at the new
+// pace instead of being trivially outrun or (if undertuned) off constantly.
+const DIFFICULTIES_CASUAL=[
   {name:'ENKEL',     clr:'#4ade80', baseMax:5.00, curveK:16,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03, defendSkill:.10, overtakeCommit:.55, ersSkill:.30},
   {name:'MIDDELS',   clr:'#38bdf8', baseMax:5.12, curveK:8,   overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05, defendSkill:.40, overtakeCommit:.72, ersSkill:.55},
   {name:'VANSKELIG', clr:'#f97316', baseMax:5.22, curveK:3.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08, defendSkill:.72, overtakeCommit:.88, ersSkill:.80},
   {name:'ULTRA',     clr:'#ef4444', baseMax:5.32, curveK:2.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12, defendSkill:1.0, overtakeCommit:1.0, ersSkill:1.0}
 ];
+const DIFFICULTIES_REALISTIC=[
+  {name:'ENKEL',     clr:'#4ade80', baseMax:7.10, curveK:32,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03, defendSkill:.10, overtakeCommit:.55, ersSkill:.30},
+  {name:'MIDDELS',   clr:'#38bdf8', baseMax:7.27, curveK:16,  overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05, defendSkill:.40, overtakeCommit:.72, ersSkill:.55},
+  {name:'VANSKELIG', clr:'#f97316', baseMax:7.41, curveK:6.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08, defendSkill:.72, overtakeCommit:.88, ersSkill:.80},
+  {name:'ULTRA',     clr:'#ef4444', baseMax:7.55, curveK:4.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12, defendSkill:1.0, overtakeCommit:1.0, ersSkill:1.0}
+];
+let DIFFICULTIES=DIFFICULTIES_CASUAL;
 let difficulty=1;
 
 // Player-selectable cosmetic liveries for the F1 car — entirely independent
@@ -788,7 +925,7 @@ class Car{
     this.overtakeSide=0; this.overtakeT=0; // which way (and for how long) this AI is currently swinging out to pass a blocker ahead
     this.defendSide=0; this.defendT=0; // which way (and for how long) this AI is currently covering to defend against an attacker from behind
     this.trail=[];this.finished=false;this.place=1;
-    this.offtrack=false;this.drsActive=false;
+    this.offtrack=false;this.drsActive=false;this.wallHit=false; // street-circuit barrier contact — see update()
     this.battery=100; this.ersActive=false; // ERS/battery: 0-100%, see update()
     this.steerVel=0; // smoothed angular velocity — see turnRate in update()
     this.slipstreamActive=false; this.slipstreamT=0; this.slipTarget=null; // draft tow — see update()
@@ -1144,7 +1281,20 @@ function update(){
     c.slipTarget = c.slipstreamActive ? slipTarget : null;
     c.slipstreamT = c.slipstreamActive ? Math.min(1,c.slipstreamT+0.15) : Math.max(0,c.slipstreamT-0.08);
 
-    let MAX=(c.isPlayer?4.8:c.aiSpd)*(DRSon?1.12:1)*(ersOn?1.08:1)*(1+slipStrength*0.10);
+    const PLAYER_MAX=REALISTIC?PLAYER_MAX_REALISTIC:PLAYER_MAX_CASUAL;
+    const curvForPhys=Math.abs(TR.smoothCurv[Math.floor(c.curProg*TR.PN)]||0);
+    // REALISTISK adds a universal physical grip-loss: a shared safe-speed
+    // ceiling grounded in the track's actual curvature right under the car,
+    // applied to player AND AI alike. Go in hotter than this and you
+    // genuinely start losing the car — reduced steering authority and
+    // reduced grip — no matter how good your reflexes are. CASUAL has no
+    // such ceiling: steering alone can always carry the corner.
+    const physSafe=PLAYER_MAX/(1+curvForPhys*PHYS_K);
+    const overRatio=REALISTIC?Math.max(0,c.speed/physSafe-1):0;
+    const turnPenalty=1/(1+overRatio*2.4);
+    const gripPenalty=1/(1+overRatio*1.3);
+
+    let MAX=(c.isPlayer?PLAYER_MAX:c.aiSpd)*(DRSon?1.12:1)*(ersOn?1.08:1)*(1+slipStrength*0.10);
     let GRIP=0.82, accelMul=1, dragMul=1;
     if(c.offtrack){
       accelMul = deepOff? 0.28 : 0.45;
@@ -1154,21 +1304,32 @@ function update(){
       if(Math.random()<.6) dust(c.x-Math.cos(c.angle)*8,c.y-Math.sin(c.angle)*8, deepOff?'rgba(122,108,84,.8)':'rgba(70,110,60,.7)');
       if(c.isPlayer) raceTime += 1.0; // time penalty: lose extra time off-track
     }
+    if(REALISTIC) GRIP*=gripPenalty;
     if(ersOn) accelMul*=1.18;
     if(slipStrength>0) accelMul*=(1+slipStrength*0.12);
 
-    if(gas)    c.speed=Math.min(MAX,c.speed+.17*accelMul);
-    else       c.speed*=.978;
-    if(brake)  c.speed*=.86;
+    if(REALISTIC){
+      if(gas)    c.speed=Math.min(MAX,c.speed+.24*accelMul);
+      else       c.speed*=.992;
+      if(brake)  c.speed*=.82;
+    } else {
+      if(gas)    c.speed=Math.min(MAX,c.speed+.17*accelMul);
+      else       c.speed*=.978;
+      if(brake)  c.speed*=.86;
+    }
     c.speed*=dragMul;
     c.speed=Math.max(0,Math.min(c.speed,MAX*1.02));
 
     // smoothed steering: instead of snapping the heading by a fixed amount
     // the instant a key is down, ease an angular velocity toward a target —
-    // real steering-rack inertia instead of a twitchy on/off turn. Max rate
-    // is the same ballpark as before (scaled down slightly) so cornering
-    // capability doesn't change, it just arrives/decays smoothly.
-    const maxTurn=0.040*(0.32+0.68*Math.min(1,c.speed/((c.isPlayer?4.8:c.aiSpd))));
+    // real steering-rack inertia instead of a twitchy on/off turn.
+    // CASUAL: max rate just ramps in with current speed (no curvature-based
+    // penalty). REALISTISK: full rate is available any time the car is under
+    // the physical safe-speed ceiling above; overspeeding into a corner costs
+    // steering authority on top of the grip loss, so a car that didn't brake
+    // enough genuinely can't just steer its way out of it.
+    const maxTurn=REALISTIC ? TURN_BASE*turnPenalty
+      : 0.040*(0.32+0.68*Math.min(1,c.speed/((c.isPlayer?PLAYER_MAX:c.aiSpd))));
     const steerTarget=(steerR?1:0)-(steerL?1:0);
     c.steerVel=c.steerVel*0.80+steerTarget*maxTurn*0.20;
     c.angle+=c.steerVel;
@@ -1176,16 +1337,33 @@ function update(){
     c.vx+=(Math.cos(c.angle)*c.speed-c.vx)*GRIP;
     c.vy+=(Math.sin(c.angle)*c.speed-c.vy)*GRIP;
     const preX=c.x+c.vx, preY=c.y+c.vy;
-    // soft outer wall far beyond gravel
+    // outer boundary: a genuine Armco barrier right past the gravel on
+    // street circuits (TR.walls) — much tighter and far more punishing than
+    // the generic "soft outer wall" every other track still uses way out at
+    // TW*3.0. Scraping the barrier kills speed hard and visibly throws
+    // orange sparks instead of the usual dust-coloured "ran out of grass".
     const farD=Math.hypot(preX-TR.PATH[near.idx][0],preY-TR.PATH[near.idx][1]);
-    if(farD>TR.TW*3.0+GRAVEL_SAFE){
-      c.speed*=0.5; c.vx*=0.35; c.vy*=0.35;
-      if(c.isPlayer) addShake(Math.min(9,c.speed*1.6));
-      for(let i=0;i<6;i++){
-        const a=Math.random()*Math.PI*2, s=Math.random()*2.2+.5;
-        particles.push({x:c.x,y:c.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,d:.05,r:Math.random()*1.6+.6,clr:'#fde68a'});
+    const wallThresh = TR.walls ? TR.TW+GRAVEL_SAFE+6 : TR.TW*3.0+GRAVEL_SAFE;
+    if(farD>wallThresh){
+      if(TR.walls){
+        c.speed*=0.22; c.vx*=0.12; c.vy*=0.12;
+        if(c.isPlayer) addShake(Math.min(14,c.speed*2.4+4));
+        for(let i=0;i<10;i++){
+          const a=Math.random()*Math.PI*2, s=Math.random()*3+1;
+          particles.push({x:c.x,y:c.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,d:.045,r:Math.random()*1.8+.8,clr:Math.random()<.5?'#fb923c':'#f1f5f9'});
+        }
+        if(!c.wallHit && c.isPlayer) toast('VEGGKONTAKT!','#f97316');
+        c.wallHit=true;
+      } else {
+        c.speed*=0.5; c.vx*=0.35; c.vy*=0.35;
+        if(c.isPlayer) addShake(Math.min(9,c.speed*1.6));
+        for(let i=0;i<6;i++){
+          const a=Math.random()*Math.PI*2, s=Math.random()*2.2+.5;
+          particles.push({x:c.x,y:c.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,d:.05,r:Math.random()*1.6+.6,clr:'#fde68a'});
+        }
       }
     } else {
+      c.wallHit=false;
       c.x=preX; c.y=preY;
     }
 
@@ -1301,15 +1479,31 @@ function drawCar(c){
   // front tires
   ctx.fillStyle='#111'; ctx.fillRect(5,-7,4,4); ctx.fillRect(5,3,4,4);
   if(c.drsActive){ ctx.fillStyle='rgba(192,132,252,.9)'; ctx.fillRect(-13,-7,3,14); }
-  if(c.ersActive){ ctx.fillStyle='rgba(56,189,248,.85)'; ctx.fillRect(-6,-5.2,6,2.4); ctx.fillRect(-6,2.8,6,2.4); }
+  if(c.ersActive){
+    // ERS/battery deploy: hot white sidepod glow with a blue rim. A 1.1px
+    // blue margin behind a full-opacity white fill — wide enough to survive
+    // anti-aliasing at this tiny car scale (a sub-pixel margin just blurs
+    // away), while the white fill stays fully crisp on top.
+    ctx.fillStyle='#38bdf8'; ctx.fillRect(-7.1,-6.3,8.2,4.6); ctx.fillRect(-7.1,1.7,8.2,4.6);
+    ctx.fillStyle='#f8fbff'; ctx.fillRect(-6,-5.2,6,2.4); ctx.fillRect(-6,2.8,6,2.4);
+  }
   if(c.slipstreamT>0.05){
+    // slipstream/draft: the SAME sidepod-glow treatment as ERS above, but
+    // pure white (no blue rim — this is drag, not a power deploy) and
+    // scaled by how strong the current tow is, so catching a draft reads as
+    // unmistakably as using ERS does, not just a faint HUD number.
+    ctx.save();
+    ctx.globalAlpha=c.slipstreamT*0.85;
+    ctx.fillStyle='#ffffff';
+    ctx.fillRect(-6,-5.2,6,2.4); ctx.fillRect(-6,2.8,6,2.4);
+    ctx.restore();
     // air being dragged off the car ahead — short streak-lines trailing
     // straight back off the rear wing, flickering for a sense of airflow.
-    ctx.strokeStyle='#e2f4ff'; ctx.lineWidth=1;
+    ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.2;
     for(let k=0;k<3;k++){
-      ctx.globalAlpha=c.slipstreamT*(0.3+Math.random()*0.5);
+      ctx.globalAlpha=c.slipstreamT*(0.35+Math.random()*0.55);
       const yy=(k-1)*3.4;
-      ctx.beginPath(); ctx.moveTo(-13,yy); ctx.lineTo(-18-Math.random()*5,yy+(Math.random()-.5)*2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-13,yy); ctx.lineTo(-19-Math.random()*6,yy+(Math.random()-.5)*2); ctx.stroke();
     }
     ctx.globalAlpha=1;
   }
@@ -1363,7 +1557,7 @@ function drawTrackScene(){
     if(c.slipstreamT>0.05 && c.slipTarget && !c.slipTarget.finished){
       ctx.save();
       ctx.globalAlpha=c.slipstreamT*0.4*(0.7+0.3*Math.sin(raceTime*0.4+c.num));
-      ctx.strokeStyle='#e2f4ff'; ctx.lineWidth=2.2;
+      ctx.strokeStyle='#ffffff'; ctx.lineWidth=2.2;
       ctx.setLineDash([3,5]); ctx.lineDashOffset=-raceTime*1.3;
       ctx.beginPath(); ctx.moveTo(c.x,c.y); ctx.lineTo(c.slipTarget.x,c.slipTarget.y); ctx.stroke();
       ctx.setLineDash([]);
@@ -1386,17 +1580,30 @@ function draw(){
 
   if(state==='menu'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle='#e10600'; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
-    ctx.fillStyle='#64748b'; ctx.font='10px Courier New'; ctx.fillText('ekte F1-stil · 6 baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer',W/2,H/2-122);
+    const accent=REALISTIC?'#f59e0b':'#e10600';
+    ctx.fillStyle=accent; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
+    ctx.fillStyle='#64748b'; ctx.font='10px Courier New';
+    ctx.fillText(REALISTIC
+      ? 'mye høyere toppfart · ekte dekkgrep · 6 baner · 20 sjåfører · 4 AI-nivåer'
+      : 'ekte F1-stil · 6 baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer', W/2,H/2-122);
+    // mode toggle — picked here on the main menu, before you ever touch
+    // track-select, exactly where "before you enter the game" belongs.
+    ctx.fillStyle='rgba(255,255,255,.04)'; ctx.fillRect(W/2-120,H/2-104,240,22);
+    ctx.strokeStyle=accent; ctx.lineWidth=1.4; ctx.strokeRect(W/2-120,H/2-104,240,22);
+    ctx.fillStyle=accent; ctx.font='bold 12px Courier New';
+    ctx.fillText(`MODUS: ${REALISTIC?'REALISTISK':'CASUAL'}`,W/2,H/2-93);
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('TAB — bytt modus',W/2,H/2-76);
     ctx.fillStyle='#334155'; ctx.font='10px Courier New';
-    [['↑ / W','Gass'],['↓ / S','Brems'],['← → / A D','Styr'],['SPACE','DRS i lilla sone'],['SHIFT','ERS-boost (batteri)'],['(auto)','Slipstream tett bak andre']].forEach(([k,v],i)=>{
-      ctx.fillStyle='#e10600'; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-74+i*18);
-      ctx.fillStyle='#64748b'; ctx.textAlign='left'; ctx.fillText(v,W/2+6,H/2-74+i*18);
+    [['↑ / W','Gass'],['↓ / S',REALISTIC?'Brems — kreves før svinger!':'Brems'],['← → / A D','Styr'],['SPACE','DRS i lilla sone'],['SHIFT','ERS-boost (batteri)'],['(auto)','Slipstream tett bak andre']].forEach(([k,v],i)=>{
+      ctx.fillStyle=accent; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-50+i*17);
+      ctx.fillStyle='#64748b'; ctx.textAlign='left'; ctx.fillText(v,W/2+6,H/2-50+i*17);
     });
     ctx.fillStyle='#94a3b8'; ctx.font='11px Courier New'; ctx.textAlign='center';
-    ctx.fillText('Utenfor banen = du mister fart og tid.',W/2,H/2+42);
-    ctx.fillStyle='#e10600'; ctx.font='bold 14px Courier New';
-    ctx.fillText('ENTER — velg bane',W/2,H/2+78);
+    ctx.fillText(REALISTIC
+      ? 'For mye fart inn i en sving = du mister grepet og kjører av.'
+      : 'Utenfor banen = du mister fart og tid.', W/2,H/2+56);
+    ctx.fillStyle=accent; ctx.font='bold 14px Courier New';
+    ctx.fillText('ENTER — velg bane',W/2,H/2+84);
     ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H-20);
     ctx.restore(); return;
   }
@@ -1404,6 +1611,11 @@ function draw(){
   if(state==='trackselect'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('VELG BANE',W/2,70);
+    // mode reminder — chosen back on the main menu, just a small corner tag here
+    ctx.textAlign='right'; ctx.font='bold 9px Courier New';
+    ctx.fillStyle=REALISTIC?'#f59e0b':'#38bdf8';
+    ctx.fillText(REALISTIC?'MODUS: REALISTISK':'MODUS: CASUAL',W-12,22);
+    ctx.textAlign='center';
     ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('← → bytt   ENTER kjør løp',W/2,94);
     ctx.fillStyle='#38bdf8'; ctx.fillText('P — øvingskjøring (ingen motstandere)',W/2,110);
     {
@@ -1515,7 +1727,7 @@ function draw(){
   ctx.fillText(`ERS ${ersPct}%`,W-46,HY/2+9);
   // slipstream/tow indicator
   if(player.slipstreamT>0.05){
-    ctx.fillStyle=`rgba(226,244,255,${0.5+0.5*player.slipstreamT})`;
+    ctx.fillStyle=`rgba(255,255,255,${0.5+0.5*player.slipstreamT})`;
     ctx.fillText('TOW',W-104,HY/2+9);
   }
 
@@ -1734,6 +1946,11 @@ document.addEventListener('keydown',e=>{
     if(state==='menu') state='trackselect';
     else if(state==='trackselect') startRace();
     else if(state==='win') startRace();
+  }
+  if(state==='menu' && e.key==='Tab'){
+    e.preventDefault(); // Tab normally shifts page focus — this is a game control
+    REALISTIC=!REALISTIC;
+    DIFFICULTIES=REALISTIC?DIFFICULTIES_REALISTIC:DIFFICULTIES_CASUAL;
   }
   if(state==='trackselect'){
     if(e.key==='ArrowLeft') trackSel=(trackSel+TRACKS.length-1)%TRACKS.length;
