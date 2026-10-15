@@ -104,7 +104,20 @@ function computeHeadingCurv(PATH){
     let s=0; for(let k=-WIN;k<=WIN;k++) s+=rawCurv[(i+k+PN)%PN];
     smoothCurv[i]=s/(WIN*2+1);
   }
-  return {heading,smoothCurv};
+  // severity: unsigned local turning intensity — a short window SUM of
+  // |rawCurv| around each point, instead of a wide SIGNED average like
+  // smoothCurv. A tight chicane (sharp left immediately followed by a sharp
+  // right) can net out close to zero in smoothCurv's signed average, which
+  // is exactly wrong for "how much is actually happening here" — severity
+  // doesn't cancel, so it stays high through a whole chicane just like it
+  // does through a sustained hairpin. Used for runoff-area sizing on
+  // walled tracks (buildTrack) and the AI's hairpin-caution braking (update()).
+  const SWIN=6, severity=new Array(PN);
+  for(let i=0;i<PN;i++){
+    let s=0; for(let k=-SWIN;k<=SWIN;k++) s+=Math.abs(rawCurv[(i+k+PN)%PN]);
+    severity[i]=s/(SWIN*2+1);
+  }
+  return {heading,smoothCurv,severity};
 }
 function buildRaceLine(PATH,heading,smoothCurv,TW){
   const PN=PATH.length, GAIN=34, maxOff=TW*0.64;
@@ -155,7 +168,7 @@ function buildTrack(cfg){
   const CP=genCP(cfg);
   const PATH=buildPath(CP,18);
   const PN=PATH.length;
-  const {heading,smoothCurv}=computeHeadingCurv(PATH);
+  const {heading,smoothCurv,severity}=computeHeadingCurv(PATH);
   const raceLine=buildRaceLine(PATH,heading,smoothCurv,cfg.TW);
   let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
   PATH.forEach(([x,y])=>{minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);});
@@ -169,11 +182,23 @@ function buildTrack(cfg){
   const ox=-minX, oy=-minY; // world -> bg canvas offset
   // desert tracks get a sandy base instead of grass — speckle colour/shape
   // switches too (soft dune grain, not grass blades), so "ørken" reads from
-  // the ground up, not just from the scattered bushes/rocks on top.
+  // the ground up, not just from the scattered bushes/rocks on top. Several
+  // tracks share the same broad terrain TYPE (forest/mountain/arid each
+  // appear 2-3x across the roster) — cfg.groundBase/cfg.speckle let each of
+  // those tracks still get its own distinct ground colour/grain (snowy
+  // alpine, autumn forest floor, dry Mediterranean hillside, coastal dune
+  // sand...) on top of the shared terrain-type dispatch below, same idea as
+  // cityPal already does for the city tracks.
   const isArid=cfg.terrain==='arid';
-  bx.fillStyle = isArid ? '#3a2e1c' : '#0d1a0f'; bx.fillRect(0,0,bw,bh);
+  const groundBase = cfg.groundBase || (isArid ? '#3a2e1c' : '#0d1a0f');
+  const speckle = cfg.speckle || (isArid ? 'arid' : 'grass');
+  bx.fillStyle = groundBase; bx.fillRect(0,0,bw,bh);
   for(let i=0;i<1400;i++){
-    if(isArid) bx.fillStyle=`rgba(${150+Math.random()*70},${118+Math.random()*55},${65+Math.random()*40},.4)`;
+    if(speckle==='arid') bx.fillStyle=`rgba(${150+Math.random()*70},${118+Math.random()*55},${65+Math.random()*40},.4)`;
+    else if(speckle==='dune') bx.fillStyle=`rgba(${205+Math.random()*40},${160+Math.random()*45},${120+Math.random()*35},.4)`;
+    else if(speckle==='snow') bx.fillStyle=`rgba(${195+Math.random()*45},${205+Math.random()*35},${215+Math.random()*30},.3)`;
+    else if(speckle==='autumn') bx.fillStyle=`rgba(${110+Math.random()*70},${60+Math.random()*40},${18+Math.random()*22},.5)`;
+    else if(speckle==='dry') bx.fillStyle=`rgba(${100+Math.random()*50},${95+Math.random()*45},${40+Math.random()*30},.45)`;
     else bx.fillStyle=`rgba(${20+Math.random()*26},${60+Math.random()*40},${20+Math.random()*18},.55)`;
     bx.fillRect(Math.random()*bw,Math.random()*bh,1+Math.random(),2+Math.random()*5);
   }
@@ -253,6 +278,7 @@ function buildTrack(cfg){
   bx.strokeStyle='rgba(241,245,249,.55)'; bx.lineWidth=2.4; tPath(bx); bx.stroke();
   // curbs on hard corners (red/white)
   const CURB_T=0.034;
+  let wallOffsArr=null; // populated below for cfg.walls tracks, exposed on the returned TR object
   for(let i=0;i<PN;i+=2){
     if(Math.abs(smoothCurv[i])<CURB_T) continue;
     const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
@@ -271,13 +297,57 @@ function buildTrack(cfg){
   // rail at this scale, plus red/white marker blocks at intervals like real
   // barrier end-plates. Only tracks with cfg.walls:true get this — see the
   // matching harsh wall-collision physics in update() (TR.walls).
+  // The barrier offset is NOT a flat constant any more: severity[] (the
+  // unsigned local-turning-intensity metric from computeHeadingCurv) pushes
+  // the wall further back from the racing line at chicanes/hairpins/hard
+  // corners, carving out a genuine runoff buffer there — like a real street
+  // circuit gives more margin at a tight chicane than along a dead-straight
+  // stretch where the wall can safely hug close. Both the rendered barrier
+  // AND the collision threshold in update() read from this same per-point
+  // array (TR.wallOffsArr) so what you see is exactly what you hit.
   if(cfg.walls){
-    const wallOffs=cfg.TW+GRAVEL_SAFE+8;
+    const RUNOFF_BASE=8, RUNOFF_MAX=46, RUNOFF_LO=0.075, RUNOFF_HI=0.15;
+    const rawOffs=new Array(PN);
+    for(let i=0;i<PN;i++){
+      const t=Math.max(0,Math.min(1,(severity[i]-RUNOFF_LO)/(RUNOFF_HI-RUNOFF_LO)));
+      const st=t*t*(3-2*t); // smoothstep — eases the runoff bulge in/out instead of a hard edge
+      rawOffs[i]=cfg.TW+GRAVEL_SAFE+RUNOFF_BASE+st*RUNOFF_MAX;
+    }
+    // one more light smoothing pass so the barrier polygon's offset doesn't
+    // jump point-to-point (the geometry amplifies any raw discretization
+    // right where curvature is already highest) — purely cosmetic, doesn't
+    // change which corners get runoff, just how smoothly it blends in.
+    wallOffsArr=new Array(PN); const SW=4;
+    for(let i=0;i<PN;i++){
+      let s=0; for(let k=-SW;k<=SW;k++) s+=rawOffs[(i+k+PN)%PN];
+      wallOffsArr[i]=s/(SW*2+1);
+    }
+    const GRAV_EDGE=cfg.TW+GRAVEL_SAFE;
+    // extended gravel apron: fills the gap between the normal gravel edge
+    // and the pulled-back barrier at runoff zones, so the extra buffer reads
+    // as a real paved/gravel runoff area instead of the wall floating out in
+    // open grass with a bare strip behind it.
     [1,-1].forEach(side=>{
       bx.beginPath();
       for(let i=0;i<PN;i++){
         const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
-        const px=PATH[i][0]+nx*side*wallOffs+ox, py=PATH[i][1]+ny*side*wallOffs+oy;
+        const px=PATH[i][0]+nx*side*GRAV_EDGE+ox, py=PATH[i][1]+ny*side*GRAV_EDGE+oy;
+        i===0?bx.moveTo(px,py):bx.lineTo(px,py);
+      }
+      for(let i=PN-1;i>=0;i--){
+        const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
+        const px=PATH[i][0]+nx*side*wallOffsArr[i]+ox, py=PATH[i][1]+ny*side*wallOffsArr[i]+oy;
+        bx.lineTo(px,py);
+      }
+      bx.closePath();
+      bx.fillStyle='#7a6c54';
+      bx.fill();
+    });
+    [1,-1].forEach(side=>{
+      bx.beginPath();
+      for(let i=0;i<PN;i++){
+        const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
+        const px=PATH[i][0]+nx*side*wallOffsArr[i]+ox, py=PATH[i][1]+ny*side*wallOffsArr[i]+oy;
         i===0?bx.moveTo(px,py):bx.lineTo(px,py);
       }
       bx.closePath();
@@ -288,7 +358,7 @@ function buildTrack(cfg){
     for(let i=0;i<PN;i+=5){
       const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
       [1,-1].forEach(side=>{
-        const px=PATH[i][0]+nx*side*wallOffs+ox, py=PATH[i][1]+ny*side*wallOffs+oy;
+        const px=PATH[i][0]+nx*side*wallOffsArr[i]+ox, py=PATH[i][1]+ny*side*wallOffsArr[i]+oy;
         bx.save(); bx.translate(px,py); bx.rotate(h);
         bx.fillStyle=(Math.floor(i/5)%2===0)?'#d63a2e':'#f1f5f9';
         bx.fillRect(-3,-4,6,8);
@@ -363,9 +433,9 @@ function buildTrack(cfg){
       draw(x,y);
     }
   }
-  function dTree(x,y,s){
+  function dTree(x,y,s,tint){
     bx.save(); bx.translate(x,y);
-    const shades=['#14532d','#1b6b3a','#0f3d22'];
+    const shades=tint||['#14532d','#1b6b3a','#0f3d22'];
     for(let k=0;k<3;k++){
       bx.fillStyle=shades[k%shades.length];
       bx.beginPath(); bx.arc((Math.random()-.5)*6*s,(Math.random()-.5)*6*s-4*s,7*s+Math.random()*3*s,0,Math.PI*2); bx.fill();
@@ -397,11 +467,12 @@ function buildTrack(cfg){
     bx.fillStyle='rgba(255,255,255,.07)'; bx.fillRect(-w/2,-h/2,w,h*0.3);
     bx.restore();
   }
-  function dBush(x,y,s){
+  function dBush(x,y,s,tint){
     bx.save(); bx.translate(x,y);
-    bx.fillStyle=Math.random()<.5?'#7a7a42':'#8a8350';
+    const t=tint||['#7a7a42','#8a8350','#5f5c33'];
+    bx.fillStyle=Math.random()<.5?t[0]:t[1];
     bx.beginPath(); bx.arc(0,0,5*s,0,Math.PI*2); bx.fill();
-    bx.fillStyle='#5f5c33';
+    bx.fillStyle=t[2];
     bx.beginPath(); bx.arc(3*s,1*s,3*s,0,Math.PI*2); bx.fill();
     bx.restore();
   }
@@ -632,19 +703,19 @@ function buildTrack(cfg){
   }
   const terrain=cfg.terrain||'forest';
   if(terrain==='mountain'){
-    scatterTerrain(75,22,(x,y)=>dRock(x,y,0.9+Math.random()*0.6));
-    scatterTerrain(42,26,(x,y)=>dTree(x,y,0.65+Math.random()*0.35));
+    scatterTerrain(75,22,(x,y)=>dRock(x,y,0.9+Math.random()*0.6,cfg.rockTint));
+    scatterTerrain(42,26,(x,y)=>dTree(x,y,0.65+Math.random()*0.35,cfg.treeTint));
     placeCliffs(5);
   } else if(terrain==='forest'){
-    scatterTerrain(120,20,(x,y)=>dTree(x,y,0.8+Math.random()*0.5));
-    scatterTerrain(20,24,(x,y)=>dRock(x,y,0.8+Math.random()*0.4));
+    scatterTerrain(120,20,(x,y)=>dTree(x,y,0.8+Math.random()*0.5,cfg.treeTint));
+    scatterTerrain(20,24,(x,y)=>dRock(x,y,0.8+Math.random()*0.4,cfg.rockTint));
   } else if(terrain==='parkland'){
-    scatterTerrain(75,24,(x,y)=>dTree(x,y,0.7+Math.random()*0.4));
+    scatterTerrain(75,24,(x,y)=>dTree(x,y,0.7+Math.random()*0.4,cfg.treeTint));
   } else if(terrain==='hedge'){
     scatterTerrain(95,22,(x,y)=>dHedge(x,y,0.9+Math.random()*0.3));
   } else if(terrain==='arid'){
-    scatterTerrain(80,18,(x,y)=>dBush(x,y,0.8+Math.random()*0.5));
-    scatterTerrain(36,22,(x,y)=>dRock(x,y,0.7+Math.random()*0.5,'#8a7a66'));
+    scatterTerrain(80,18,(x,y)=>dBush(x,y,0.8+Math.random()*0.5,cfg.bushTint));
+    scatterTerrain(36,22,(x,y)=>dRock(x,y,0.7+Math.random()*0.5,cfg.rockTint||'#8a7a66'));
   } else if(terrain==='volcanic'){
     scatterTerrain(90,18,(x,y)=>dLavaRock(x,y,0.8+Math.random()*0.6));
     scatterTerrain(14,40,(x,y)=>dLavaPool(x,y,1.1+Math.random()*0.5));
@@ -694,8 +765,8 @@ function buildTrack(cfg){
     });
   }
 
-  return {CP,PATH,PN,heading,smoothCurv,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
-    drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy,walls:!!cfg.walls};
+  return {CP,PATH,PN,heading,smoothCurv,severity,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
+    drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr};
 }
 
 // The three original tracks are redesigned around real circuit-design
@@ -878,8 +949,12 @@ const TRACKS=[
     ],
     drsCount:2
   }),
+  // terrain variant: autumn forest (golden/amber canopy, warm dry-leaf
+  // ground) — distinguishes ESSE from ARDENNE/ALPEN which also use
+  // terrain:'forest' but keep the default deep summer-green look.
   buildTrack({name:'ESSE', info:'Teknisk · Tett med S-svinger', ncp:40, R0:1300, cx:1350, cy:1300,
     wobbleAmp:14, wobbleFreq:2, wobblePhase:.25, TW:44, terrain:'forest',
+    treeTint:['#7a4a1f','#b8722a','#5c3315'], rockTint:'#7a6b58', groundBase:'#1f160a', speckle:'autumn',
     features:[
       {a0:.03*Math.PI*2,width:.014*Math.PI*2,depth:-260},
       {a0:.08*Math.PI*2,width:.012*Math.PI*2,depth:220},
@@ -893,8 +968,12 @@ const TRACKS=[
     ],
     drsCount:1
   }),
+  // terrain variant: warm reddish-brown Mediterranean hillside — distinguishes
+  // DISCESA from MONTE SPIRA, which also uses terrain:'mountain' but keeps
+  // the default cool grey rock.
   buildTrack({name:'DISCESA', info:'Høyder · Opp og ned i terrenget', ncp:36, R0:1150, cx:1250, cy:1200,
     wobbleAmp:20, wobbleFreq:3, wobblePhase:.45, TW:50, terrain:'mountain',
+    treeTint:['#4a5c1f','#6b7a2a','#374512'], rockTint:'#8a5a42', groundBase:'#1a140a', speckle:'dry',
     features:[
       {a0:.02*Math.PI*2,width:.016*Math.PI*2,depth:-420},
       {a0:.06*Math.PI*2,width:.014*Math.PI*2,depth:260},
@@ -907,8 +986,13 @@ const TRACKS=[
     ],
     drsCount:2
   }),
+  // terrain variant: snow-dusted alpine pine forest (cool deep blue-green
+  // canopy, pale grey rock, snowy ground grain) — distinguishes ALPEN from
+  // ARDENNE/ESSE, matching its "brattest i fjellet" (steepest in the
+  // mountains) description.
   buildTrack({name:'ALPEN', info:'Kort · Brattest i fjellet', ncp:30, R0:1000, cx:1080, cy:1050,
     wobbleAmp:12, wobbleFreq:2, wobblePhase:.15, TW:54, terrain:'forest',
+    treeTint:['#0f3d3a','#1a5c4f','#0a2e28'], rockTint:'#7d8a94', groundBase:'#0a1620', speckle:'snow',
     features:[
       {a0:.05*Math.PI*2,width:.020*Math.PI*2,depth:-440},
       {a0:.18*Math.PI*2,width:.030*Math.PI*2,depth:200},
@@ -919,8 +1003,12 @@ const TRACKS=[
     ],
     drsCount:2
   }),
+  // terrain variant: lighter coastal dune sand + greener beach-grass bushes
+  // + pale pebble-grey rock — distinguishes DUNA from DESERTO, which also
+  // uses terrain:'arid' but keeps the default deep tan desert look.
   buildTrack({name:'DUNA', info:'Klitter · Bankede svinger ved kysten', ncp:32, R0:1050, cx:1150, cy:1100,
     wobbleAmp:18, wobbleFreq:2, wobblePhase:.55, TW:46, terrain:'arid',
+    bushTint:['#8a9a52','#9aa860','#6a7a3a'], rockTint:'#9a8878', groundBase:'#4a3824', speckle:'dune',
     features:[
       {a0:.04*Math.PI*2,width:.018*Math.PI*2,depth:-420},
       {a0:.14*Math.PI*2,width:.030*Math.PI*2,depth:200},
@@ -1294,6 +1382,29 @@ function update(){
       }
       const curvNow=Math.abs(TR.smoothCurv[li]);
 
+      // real corner-speed planning: scan ahead (window grows with current
+      // speed, like a real braking distance) for the sharpest upcoming bend.
+      // maxCurv (signed-average TR.smoothCurv, same metric as always) drives
+      // the normal corner-speed target further below — untouched, so normal
+      // AI pace/tuning doesn't shift. maxSeverity (TR.severity, an UNSIGNED
+      // local-turning-intensity metric — see computeHeadingCurv) specifically
+      // flags genuine hairpin/chicane-grade corners, since a signed average
+      // can net out deceptively low on a tight chicane's quick left-right-
+      // left even though it's a hard corner. Used below to brake earlier and
+      // stop swinging wide into exactly those corners, without changing how
+      // the AI treats an ordinary medium-speed bend.
+      const win=Math.round(20+c.speed*9);
+      let maxCurv=0, maxSeverity=0;
+      for(let k=0;k<win;k++){
+        const idx=(li+k)%PN;
+        const cv=Math.abs(TR.smoothCurv[idx]);
+        if(cv>maxCurv) maxCurv=cv;
+        const sv=TR.severity[idx];
+        if(sv>maxSeverity) maxSeverity=sv;
+      }
+      const HAIRPIN_T=0.065; // severity level at which a corner genuinely counts as hairpin/chicane-grade
+      const hairpinSev=Math.max(0,maxSeverity-HAIRPIN_T);
+
       // defending: react to an attacker closing from behind by moving to
       // cover that side — but only ever on a low-curvature stretch (a real
       // driver defends on the straight/braking zone, never mid-corner).
@@ -1305,7 +1416,21 @@ function update(){
         c.defendT=50;
       }
 
-      const curvAllow=1/(1+curvNow*D.curveK*1.5); // ease the swing off deep in tight corners
+      // hairpinScale: the easy/cautious tiers (high curveK) already brake
+      // hard for every corner by design — stacking the hairpin-specific
+      // caution on top there just makes an already-slow AI crawl even more
+      // without actually fixing anything (nothing was running wide there to
+      // begin with). The confident tiers (low curveK — VANSKELIG/ULTRA) are
+      // where "fires wide into a hairpin" is an actual real behaviour, so
+      // that's where this fix should bite hardest. Scales down to ~1/8th on
+      // ENKEL, full strength by curveK<=4 (VANSKELIG/ULTRA).
+      const hairpinScale=Math.min(1,4/D.curveK);
+
+      // curvAllow eases overtake/defend lateral swings not just mid-corner
+      // (curvNow) but also on the APPROACH to an upcoming hairpin/chicane
+      // (hairpinSev) — so cars stop lining up side-by-side ("four wide")
+      // trying to out-brake each other right as a hairpin arrives.
+      const curvAllow=1/(1+curvNow*D.curveK*1.5+hairpinSev*40*hairpinScale); // ease the swing off deep in tight corners
       const ramp=Math.min(1,c.overtakeT/20);
       const maxOvertakeOffset=TR.TW*0.5*D.overtakeCommit;
       const overtakeOffset = c.overtakeT>0 ? c.overtakeSide*maxOvertakeOffset*curvAllow*ramp : 0;
@@ -1328,18 +1453,13 @@ function update(){
       if(c.mistakeT>0) c.mistakeT--;
       else if(D.mistakeChance>0 && Math.random()<D.mistakeChance) c.mistakeT=40;
       const effK = c.mistakeT>0 ? D.curveK*0.25 : D.curveK;
+      // hairpin braking margin is only partially suppressed during a mistake
+      // (not zeroed out like effK) — a misjudged hairpin should still mostly
+      // play out like a genuine mistake, just a little less likely to end in
+      // a full barrier shunt than before this fix.
+      const hairpinExtra=hairpinSev*6*hairpinScale*(c.mistakeT>0?0.4:1);
 
-      // real corner-speed planning: scan ahead (window grows with current
-      // speed, like a real braking distance) for the sharpest upcoming bend
-      // and set a target speed for it, instead of just following a fixed
-      // speed cap blindly into every hairpin.
-      const win=Math.round(20+c.speed*9);
-      let maxCurv=0;
-      for(let k=0;k<win;k++){
-        const cv=Math.abs(TR.smoothCurv[(li+k)%PN]);
-        if(cv>maxCurv) maxCurv=cv;
-      }
-      const corner=c.skillVar*D.baseMax/(1+maxCurv*effK);
+      const corner=c.skillVar*D.baseMax/(1+maxCurv*effK+hairpinExtra);
 
       // light rubber-band: keeps the pack from drifting absurdly far apart
       // over a full race, but it's now a small multiplier on top of genuine
@@ -1491,7 +1611,10 @@ function update(){
     // TW*3.0. Scraping the barrier kills speed hard and visibly throws
     // orange sparks instead of the usual dust-coloured "ran out of grass".
     const farD=Math.hypot(preX-TR.PATH[near.idx][0],preY-TR.PATH[near.idx][1]);
-    const wallThresh = TR.walls ? TR.TW+GRAVEL_SAFE+6 : TR.TW*3.0+GRAVEL_SAFE;
+    // wall threshold now reads the same per-point runoff-aware offset the
+    // barrier is actually drawn at (TR.wallOffsArr, see buildTrack) instead
+    // of one flat value — the -2 preserves the original render/collision gap.
+    const wallThresh = TR.walls ? (TR.wallOffsArr[near.idx]-2) : TR.TW*3.0+GRAVEL_SAFE;
     if(farD>wallThresh){
       if(TR.walls){
         c.speed*=0.22; c.vx*=0.12; c.vy*=0.12;
@@ -1841,7 +1964,14 @@ function draw(){
     }
   }
 
-  // ── top HUD bar ──
+  // ── top HUD bar ── (and everything else race-UI below it) is skipped
+  // entirely once state==='win' — it used to just sit underneath the podium
+  // overlay, which is only 88% opaque, so the old lap counter/speed/ERS bar
+  // and the leaderboard/minimap panels visibly bled through behind the
+  // ceremony. Hiding this whole block is the real fix (bumping the overlay
+  // to fully opaque would've worked too, but would've lost the subtle crowd/
+  // track backdrop the win screen is drawn over).
+  if(state!=='win'){
   ctx.fillStyle='rgba(5,7,10,.92)'; ctx.fillRect(0,0,W,HY);
   ctx.fillStyle=TEAMS[0].color; ctx.fillRect(0,HY-3,W,3);
   ctx.textBaseline='middle';
@@ -1951,6 +2081,7 @@ function draw(){
     ctx.beginPath(); ctx.arc(mcx,mcy,c.isPlayer?3.2:2,0,Math.PI*2); ctx.fill();
   });
   ctx.globalAlpha=1;
+  } // state!=='win'
 
   // ── win screen: full podium ceremony ──
   // Always shows the actual top-3 finishers (by current race place), not
