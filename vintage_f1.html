@@ -164,22 +164,101 @@ function findDrsZones(smoothCurv, want){
   return zones;
 }
 
+// iOS Safari nekter å allokere et canvas over ca. 16,7 millioner piksler, og
+// returnerer da en blank/ubrukelig flate i stedet for å feile tydelig. De
+// største banene her (TEMPIO 21,8M, VISTANOTTE 20,5M, DESERTO 19,7M, CAMPAGNA
+// 17,8M) ligger over den grensen, så de kunne rett og slett ikke vises på
+// iPhone/iPad. Bakgrunner over dette taket tegnes derfor i redusert
+// oppløsning og skaleres opp igjen ved tegning (se buildTrackBg og
+// drawTrackScene) — samme bilde, færre piksler.
+const MAX_BG_PX=16e6;
+
+// Å bygge en bane er delt i to deler, fordi de koster vilt forskjellig:
+//
+//  1. buildTrack()   — geometrien. Billig, og må finnes for ALLE baner med én
+//                      gang: banevalg-skjermen tegner minikart rett fra PATH
+//                      og viser antall DRS-soner, og wallOffsArr må ligge
+//                      klart før første frame siden kollisjonen i update()
+//                      leser det.
+//  2. buildTrackBg() — det forhåndstegnede bakgrunnscanvaset. Dyrt: flere
+//                      tusen piksler i hver retning, og terrengspredningen
+//                      måler avstand til banen for hvert eneste objekt.
+//
+// Før denne delingen gjorde buildTrack() begge deler for alle 13 banene ved
+// oppstart: 164M piksler bakgrunn (~650 MB) lå i minnet samtidig før
+// spilleren i det hele tatt hadde valgt bane, oppstarten var treg, og de fire
+// største banene sprengte iOS-grensen over. Nå bygges bakgrunnen først når
+// banen faktisk startes, og bare én av dem holdes i minnet (se ensureTrackBg).
 function buildTrack(cfg){
   const CP=genCP(cfg);
   const PATH=buildPath(CP,18);
   const PN=PATH.length;
   const {heading,smoothCurv,severity}=computeHeadingCurv(PATH);
   const raceLine=buildRaceLine(PATH,heading,smoothCurv,cfg.TW);
+  const drsZones=findDrsZones(smoothCurv, cfg.drsCount||1);
+  const sfAng=heading[0], [sfx,sfy]=PATH[0]; // start/mål ligger alltid på PATH[0]
   let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
   PATH.forEach(([x,y])=>{minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);});
   const pad=cfg.TW*4+40;
   minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
   const bw=Math.ceil(maxX-minX), bh=Math.ceil(maxY-minY);
+  // Barriere-avstanden på gatebanene (cfg.walls) er IKKE en flat konstant:
+  // severity[] (den fortegnsløse svingintensiteten fra computeHeadingCurv)
+  // skyver veggen lenger bak kjørelinjen i chicaner og hårnåler, så det
+  // faktisk finnes en runoff-buffer der — slik en ekte gatebane gir mer margin
+  // i en trang chicane enn langs en strake der veggen trygt kan ligge tett.
+  // Dette er geometri, ikke pynt: BÅDE den tegnede barrieren (i buildTrackBg)
+  // og kollisjonsgrensen i update() leser fra dette samme per-punkt-arrayet,
+  // så det du ser er nøyaktig det du treffer. Derfor beregnes det her, og
+  // ligger klart før første frame uansett om bakgrunnen er bygget ennå.
+  let wallOffsArr=null;
+  if(cfg.walls){
+    const RUNOFF_BASE=8, RUNOFF_MAX=46, RUNOFF_LO=0.075, RUNOFF_HI=0.15;
+    const rawOffs=new Array(PN);
+    for(let i=0;i<PN;i++){
+      const t=Math.max(0,Math.min(1,(severity[i]-RUNOFF_LO)/(RUNOFF_HI-RUNOFF_LO)));
+      const st=t*t*(3-2*t); // smoothstep — eases the runoff bulge in/out instead of a hard edge
+      rawOffs[i]=cfg.TW+GRAVEL_SAFE+RUNOFF_BASE+st*RUNOFF_MAX;
+    }
+    // one more light smoothing pass so the barrier polygon's offset doesn't
+    // jump point-to-point (the geometry amplifies any raw discretization
+    // right where curvature is already highest) — purely cosmetic, doesn't
+    // change which corners get runoff, just how smoothly it blends in.
+    wallOffsArr=new Array(PN); const SW=4;
+    for(let i=0;i<PN;i++){
+      let s=0; for(let k=-SW;k<=SW;k++) s+=rawOffs[(i+k+PN)%PN];
+      wallOffsArr[i]=s/(SW*2+1);
+    }
+  }
+  // bgScale<1 = banen er for stor for ett canvas, bakgrunnen tegnes nedskalert
+  return {CP,PATH,PN,heading,smoothCurv,severity,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
+    drsZones,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,terrain:cfg.terrain||'forest',cfg,
+    bgW:bw,bgH:bh,bgScale:Math.min(1,Math.sqrt(MAX_BG_PX/(bw*bh))),
+    bgOx:-minX,bgOy:-minY,bgMinX:minX,bgMinY:minY,
+    bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null};
+}
 
-  // ── prerender background ──
-  const bg=document.createElement('canvas'); bg.width=bw; bg.height=bh;
+// Den dyre halvdelen: baker underlag, asfalt, høydeskygge, curbs, barrierer,
+// DRS-soner, terreng og tribuner inn i ett forhåndstegnet canvas, og plasserer
+// samtidig det levende lagets posisjoner (tribuner/flagg/marshaler/flomlys),
+// som må finnes før første frame av løpet. Idempotent: er bakgrunnen allerede
+// bygget, er det ingenting å gjøre — å kjøre samme bane om igjen etter et løp
+// skal ikke koste noe.
+function buildTrackBg(TR){
+  if(TR.bg) return;
+  const cfg=TR.cfg;
+  const {PATH,PN,heading,smoothCurv,severity,wallOffsArr,sfAng,sfx,sfy}=TR;
+  const bw=TR.bgW, bh=TR.bgH;
+  const ox=TR.bgOx, oy=TR.bgOy; // world -> bg canvas offset
+  const bg=document.createElement('canvas');
+  bg.width=Math.ceil(bw*TR.bgScale); bg.height=Math.ceil(bh*TR.bgScale);
   const bx=bg.getContext('2d');
-  const ox=-minX, oy=-minY; // world -> bg canvas offset
+  // All tegnekoden under regner i verdenskoordinater (+ox/+oy). Er banen for
+  // stor for ett canvas, skaleres hele konteksten én gang her i stedet for at
+  // hver enkelt tegnelinje skal måtte vite om nedskaleringen — bildet blir
+  // identisk, bare med færre piksler, og drawTrackScene blåser det opp til
+  // full verdensstørrelse igjen.
+  if(TR.bgScale!==1) bx.scale(TR.bgScale,TR.bgScale);
   // desert tracks get a sandy base instead of grass — speckle colour/shape
   // switches too (soft dune grain, not grass blades), so "ørken" reads from
   // the ground up, not just from the scattered bushes/rocks on top. Several
@@ -278,7 +357,6 @@ function buildTrack(cfg){
   bx.strokeStyle='rgba(241,245,249,.55)'; bx.lineWidth=2.4; tPath(bx); bx.stroke();
   // curbs on hard corners (red/white)
   const CURB_T=0.034;
-  let wallOffsArr=null; // populated below for cfg.walls tracks, exposed on the returned TR object
   for(let i=0;i<PN;i+=2){
     if(Math.abs(smoothCurv[i])<CURB_T) continue;
     const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
@@ -297,31 +375,10 @@ function buildTrack(cfg){
   // rail at this scale, plus red/white marker blocks at intervals like real
   // barrier end-plates. Only tracks with cfg.walls:true get this — see the
   // matching harsh wall-collision physics in update() (TR.walls).
-  // The barrier offset is NOT a flat constant any more: severity[] (the
-  // unsigned local-turning-intensity metric from computeHeadingCurv) pushes
-  // the wall further back from the racing line at chicanes/hairpins/hard
-  // corners, carving out a genuine runoff buffer there — like a real street
-  // circuit gives more margin at a tight chicane than along a dead-straight
-  // stretch where the wall can safely hug close. Both the rendered barrier
-  // AND the collision threshold in update() read from this same per-point
-  // array (TR.wallOffsArr) so what you see is exactly what you hit.
+  // Barrieren tegnes langs wallOffsArr, som er beregnet i buildTrack — samme
+  // per-punkt-avstand som kollisjonsgrensen i update() leser, så den tegnede
+  // veggen står nøyaktig der den faktisk treffes.
   if(cfg.walls){
-    const RUNOFF_BASE=8, RUNOFF_MAX=46, RUNOFF_LO=0.075, RUNOFF_HI=0.15;
-    const rawOffs=new Array(PN);
-    for(let i=0;i<PN;i++){
-      const t=Math.max(0,Math.min(1,(severity[i]-RUNOFF_LO)/(RUNOFF_HI-RUNOFF_LO)));
-      const st=t*t*(3-2*t); // smoothstep — eases the runoff bulge in/out instead of a hard edge
-      rawOffs[i]=cfg.TW+GRAVEL_SAFE+RUNOFF_BASE+st*RUNOFF_MAX;
-    }
-    // one more light smoothing pass so the barrier polygon's offset doesn't
-    // jump point-to-point (the geometry amplifies any raw discretization
-    // right where curvature is already highest) — purely cosmetic, doesn't
-    // change which corners get runoff, just how smoothly it blends in.
-    wallOffsArr=new Array(PN); const SW=4;
-    for(let i=0;i<PN;i++){
-      let s=0; for(let k=-SW;k<=SW;k++) s+=rawOffs[(i+k+PN)%PN];
-      wallOffsArr[i]=s/(SW*2+1);
-    }
     const GRAV_EDGE=cfg.TW+GRAVEL_SAFE;
     // extended gravel apron: fills the gap between the normal gravel edge
     // and the pulled-back barrier at runoff zones, so the extra buffer reads
@@ -367,7 +424,7 @@ function buildTrack(cfg){
     }
   }
   // start/finish checker
-  const sfAng=heading[0], sfPerp=sfAng+Math.PI/2, [sfx,sfy]=PATH[0];
+  const sfPerp=sfAng+Math.PI/2;
   for(let k=0;k<10;k++){
     const t=(k/10-.5)*(cfg.TW*2-4);
     bx.save(); bx.translate(sfx+ox+Math.cos(sfPerp)*t, sfy+oy+Math.sin(sfPerp)*t);
@@ -384,8 +441,7 @@ function buildTrack(cfg){
     bx.stroke(); bx.setLineDash([]);
   });
   // DRS zone tint + markers
-  const drsZones=findDrsZones(smoothCurv, cfg.drsCount||1);
-  drsZones.forEach(z=>{
+  TR.drsZones.forEach(z=>{
     const i0=Math.floor(z.a*PN), i1raw=Math.floor(z.b*PN), i1=i1raw<i0?i1raw+PN:i1raw;
     for(let i=i0;i<i1;i+=2){
       const ii=i%PN;
@@ -701,7 +757,7 @@ function buildTrack(cfg){
       dGraffiti(px+nx*lat+ox, py+ny*lat+oy, h+Math.PI/2, 0.8+Math.random()*0.6);
     }
   }
-  const terrain=cfg.terrain||'forest';
+  const terrain=TR.terrain;
   if(terrain==='mountain'){
     scatterTerrain(75,22,(x,y)=>dRock(x,y,0.9+Math.random()*0.6,cfg.rockTint));
     scatterTerrain(42,26,(x,y)=>dTree(x,y,0.65+Math.random()*0.35,cfg.treeTint));
@@ -818,9 +874,30 @@ function buildTrack(cfg){
     }
   }
 
-  return {CP,PATH,PN,heading,smoothCurv,severity,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
-    drsZones,bg,bgOx:ox,bgOy:oy,bgMinX:minX,bgMinY:minY,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,
-    terrain,standRects,flagPoles,marshalPosts,floodlights};
+  // Alt er bakt/plassert — legg det på banen. standRects/flagPoles/
+  // marshalPosts/floodlights settes sammen med bg, så det levende laget i
+  // drawTrackScene alltid finnes så snart bg finnes (de kommer fra samme
+  // clearFootprint-plassering som tribunene som er tegnet inn i bakgrunnen).
+  TR.bg=bg;
+  TR.standRects=standRects; TR.flagPoles=flagPoles;
+  TR.marshalPosts=marshalPosts; TR.floodlights=floodlights;
+}
+
+// Bare én bakgrunn skal ligge i minnet om gangen: de største er over 20M
+// piksler (~80 MB hver), så å beholde forrige bane når spilleren bytter ville
+// bygget opp minnebruken bane for bane gjennom en spilleøkt.
+let bgTrack=null;
+function ensureTrackBg(t){
+  if(bgTrack && bgTrack!==t){
+    // nullstiller størrelsen før referansen slippes: det er dette som faktisk
+    // frigjør pikselbufferet i WebKit med en gang, i stedet for å vente på at
+    // GC rydder canvas-objektet en gang senere.
+    if(bgTrack.bg){ bgTrack.bg.width=0; bgTrack.bg.height=0; }
+    bgTrack.bg=null;
+    bgTrack=null;
+  }
+  buildTrackBg(t);
+  bgTrack=t;
 }
 
 // The three original tracks are redesigned around real circuit-design
@@ -1377,8 +1454,17 @@ function buildCars(){
   camX=player.x; camY=player.y; camAngle=player.angle;
 }
 
+// Bakgrunnen bygges her, i det banen faktisk startes — ikke ved oppstart.
+// Målt i nettleseren tar det 3–14 ms per bane (90 ms for alle 13 til sammen),
+// altså under ett enkelt 60Hz-bilde, så den bygges rett ut synkront i stedet
+// for bak en «LASTER BANE…»-mellomskjerm: en lasteskjerm som bare vises i ett
+// bilde ville vært et uleselig glimt ved hver eneste løpsstart. Skulle en
+// svakere maskin bruke vesentlig lenger tid, er det eneste utslaget et kort
+// hakk, og det tapte tidshoppet fanges allerede av >250ms-nullstillingen i
+// loop() slik at spillet ikke byks framover etterpå.
 function startRace(){
   TR=TRACKS[trackSel];
+  ensureTrackBg(TR);
   buildCars(); particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; winTimer=0; raceTime=0;
   bestSector=[Infinity,Infinity,Infinity];
   state='countdown'; cntTimer=180;
@@ -1386,6 +1472,7 @@ function startRace(){
 
 function startPractice(){
   TR=TRACKS[trackSel];
+  ensureTrackBg(TR);
   const c=new Car(TR.sfx,TR.sfy,TR.sfAng,TEAMS[0],true);
   c.curProg=nearestOnPath(TR.PATH,c.x,c.y).progress;
   c.prevProg=c.curProg;
@@ -1949,7 +2036,11 @@ function drawTrackScene(){
   ctx.rotate(-(camAngle+Math.PI/2));
   ctx.translate(-camX,-camY);
 
-  ctx.drawImage(TR.bg, TR.bgMinX, TR.bgMinY);
+  // Målstørrelsen er alltid banens fulle verdensstørrelse (bgW/bgH). For de
+  // største banene er selve canvaset tegnet i redusert oppløsning (bgScale<1,
+  // se buildTrackBg), og blir dermed skalert opp hit igjen; for alle andre er
+  // dette identisk med å tegne canvaset i sin naturlige størrelse.
+  ctx.drawImage(TR.bg, TR.bgMinX, TR.bgMinY, TR.bgW, TR.bgH);
 
   // ── track "life" layer: everything here is drawn fresh every frame in
   // world space (unlike the grandstands/trees/etc. baked into TR.bg once),
@@ -2056,8 +2147,8 @@ function draw(){
     ctx.fillStyle=accent; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
     ctx.fillStyle='#64748b'; ctx.font='10px Courier New';
     ctx.fillText(REALISTIC
-      ? 'mye høyere toppfart · ekte dekkgrep · 6 baner · 20 sjåfører · 4 AI-nivåer'
-      : 'ekte F1-stil · 6 baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer', W/2,H/2-122);
+      ? `mye høyere toppfart · ekte dekkgrep · ${TRACKS.length} baner · 20 sjåfører · 4 AI-nivåer`
+      : `ekte F1-stil · ${TRACKS.length} baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer`, W/2,H/2-122);
     // mode toggle — picked here on the main menu, before you ever touch
     // track-select, exactly where "before you enter the game" belongs.
     ctx.fillStyle='rgba(255,255,255,.04)'; ctx.fillRect(W/2-120,H/2-104,240,22);
