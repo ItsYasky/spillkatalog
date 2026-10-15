@@ -1331,6 +1331,10 @@ class Car{
     this.offtrack=false;this.drsActive=false;this.wallHit=false; // street-circuit barrier contact — see update()
     this.battery=100; this.ersActive=false; // ERS/battery: 0-100%, see update()
     this.steerVel=0; // smoothed angular velocity — see turnRate in update()
+    this.braking=false; // ren tegnetilstand: speiler bremse-inputet dette steget, slik at
+                        // bremselyset og endeplatelysene (se endplateColor) kan vise det.
+                        // Fysikken leser den ALDRI — `brake` i update() er fortsatt fasiten.
+    this.spr=null; // [sprite med lukkede klaffer, sprite med åpne] — se buildCarSprites()
     this.slipstreamActive=false; this.slipstreamT=0; this.slipTarget=null; // draft tow — see update()
   }
   get totalDist(){return this.lap+this.curProg;}
@@ -1465,7 +1469,8 @@ function buildCars(){
 function startRace(){
   TR=TRACKS[trackSel];
   ensureTrackBg(TR);
-  buildCars(); particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; winTimer=0; raceTime=0;
+  buildCars(); buildCarSprites();
+  particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; winTimer=0; raceTime=0;
   bestSector=[Infinity,Infinity,Infinity];
   state='countdown'; cntTimer=180;
 }
@@ -1477,6 +1482,7 @@ function startPractice(){
   c.curProg=nearestOnPath(TR.PATH,c.x,c.y).progress;
   c.prevProg=c.curProg;
   cars=[c]; player=c;
+  buildCarSprites();
   camX=player.x; camY=player.y; camAngle=player.angle;
   particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; raceTime=0;
   bestSector=[Infinity,Infinity,Infinity];
@@ -1699,6 +1705,12 @@ function update(){
     if(ersOn) c.battery=Math.max(0,c.battery-1.1);
     else if(brake) c.battery=Math.min(100,c.battery+0.75);
     else if(!gas) c.battery=Math.min(100,c.battery+0.3);
+    // Rent kosmetisk avlesning av bremsingen, satt her fordi dette er det
+    // eneste stedet `brake` finnes for BÅDE spiller og AI (spilleren leser
+    // tastaturet øverst i loopen, AI-en bestemmer seg i sin egen gren). Ingen
+    // fysikk leser c.braking — den finnes bare så bremselyset og det ladende
+    // endeplatelyset kan tegnes uten å gjette seg til tilstanden.
+    c.braking=brake;
 
     // slipstream/draft: sitting almost dead-straight behind another car cuts
     // drag and gives a tow — strongest right on their gearbox, fading out by
@@ -1899,126 +1911,322 @@ function update(){
 // ══════════════════════════════════════════════════════════════════
 // DRAW
 // ══════════════════════════════════════════════════════════════════
+// ── BILEN: 2026-generasjonen ──────────────────────────────────────
+// Bilen er tegnet etter 2026-reglementet: kortere akselavstand (3400 mm mot
+// 3600) og 100 mm smalere bil, ingen hjulbuer over forhjulene så hjulene står
+// fritt, færre vingeelementer, og ingen bjelkevinge under bakvingen.
+//
+// Men den virkelige grunnen til omskrivingen er lesbarhet. Bilen er cirka
+// 28 px lang på skjermen. Den gamle bilen stablet gradientfyll, glansstrek,
+// halo-ring, diagonal sponsorstripe, nesetipp i aksentfarge, sidepod-gløder
+// for ERS og slipstream OG et plassnummer oppå hverandre innenfor de samme
+// 28 pikslene. Hver detalj var fin alene; til sammen smeltet de til én grøtete
+// flekk så snart bilen beveget seg, og to lag var ikke til å skille fra
+// hverandre i fart. Den nye bilen bruker FÅ, STORE former med harde kanter og
+// ÉN eneste skyggelegging (den flate lysflaten), slik at både silhuetten og
+// lakkeringen fortsatt leses i full fart.
+//
+// Lokalt koordinatsystem: nesen peker mot +x, én enhet = én spillpiksel.
+const CAR_SHADOW_COL='rgba(0,0,0,.3)';
+const TYRE_COL='#141418';
+const COCKPIT_COL='#0b0b0e';
+const CAR_SHEEN='rgba(255,255,255,.14)';
+const BRAKE_COL='#ff2a2a';
+// Endeplatelysene på bakvingen. Fargene er navngitte konstanter fordi de er
+// spillregler gjort synlige, ikke pynt: cyan = ERS deployes, blinkende rødt =
+// bilen bremser og henter energi tilbake, mørk grå = av.
+const EP_OFF='#3a3a44', EP_ERS='#38bdf8', EP_CHARGE='#ff3b3b';
+
+// Karosseriet som ETT lukket, symmetrisk polygon. Det ligger i en egen
+// funksjon og ikke inline, fordi nøyaktig samme bane brukes tre ganger per
+// bil: som fyll, som klippemaske for mønsteret/sponsorflatene/lysflaten, og
+// som strek for 'edges'-mønsteret. Ett sted å endre = ingen fare for at
+// masken og fyllet sklir fra hverandre.
+const BODY_PTS=[[14,0],[5,-1.8],[1.2,-2.7],[-0.6,-4.8],[-6.2,-4.4],[-10,-2],
+                [-12,-1.4],[-12,1.4],[-10,2],[-6.2,4.4],[-0.6,4.8],[1.2,2.7],[5,1.8]];
+function bodyPath(g){
+  g.beginPath();
+  g.moveTo(BODY_PTS[0][0],BODY_PTS[0][1]);
+  for(let i=1;i<BODY_PTS.length;i++) g.lineTo(BODY_PTS[i][0],BODY_PTS[i][1]);
+  g.closePath();
+}
+// roundRect finnes ikke i eldre nettlesere. Der faller vi tilbake til skarpe
+// hjørner i stedet for å kaste en feil — en bil med firkantede dekk er langt
+// bedre enn et spill som ikke tegner noe i det hele tatt.
+function rrectFill(g,x,y,w,h,r){
+  g.beginPath();
+  if(g.roundRect) g.roundRect(x,y,w,h,r); else g.rect(x,y,w,h);
+  g.fill();
+}
+
+// Lakkeringsmønstrene. Alle tegnes i aksentfargen og klippet til karosseri-
+// polygonet, slik at et mønster aldri kan lekke utenfor bilen uansett hvor
+// grovt rektangelet eller streken er lagt opp.
+function drawPattern(g,pat,acc){
+  if(!pat||pat==='solid') return;
+  g.save(); bodyPath(g); g.clip();
+  g.fillStyle=acc; g.strokeStyle=acc;
+  if(pat==='split')       g.fillRect(1.5,-6,14,12);          // front halv i aksent
+  else if(pat==='spine')  g.fillRect(-13,-1.1,28,2.2);       // stripe langs midten
+  else if(pat==='tail')   g.fillRect(-14,-6,9,12);           // bakre del i aksent
+  else if(pat==='sash'){                                     // diagonal over sidepodene
+    g.beginPath(); g.moveTo(1,-6); g.lineTo(4.2,-6); g.lineTo(-3.4,6); g.lineTo(-6.6,6);
+    g.closePath(); g.fill();
+  } else if(pat==='chevron'){                                // to piler bakover
+    g.lineWidth=1.6; g.lineCap='butt'; g.lineJoin='miter';
+    [-9.5,-5].forEach(cx=>{
+      g.beginPath(); g.moveTo(cx-2,-3.2); g.lineTo(cx+1.2,0); g.lineTo(cx-2,3.2); g.stroke();
+    });
+  } else if(pat==='edges'){                                  // kant rundt hele bilen
+    g.lineWidth=1.6; bodyPath(g); g.stroke();
+  }
+  g.restore();
+}
+
+// Sponsorflater. I spillstørrelse er tekst fullstendig uleselig, så sponsorene
+// er rene fargeflater på de to stedene ekte biler faktisk selger: sidepodene
+// og bakvingens hovedplan. Sidepod-flatene tegnes ETTER mønsteret (de skal
+// ligge oppå det, som ekte dekaler) og klippes til karosseriet.
+function drawSponsorPanels(g,spc){
+  g.save(); bodyPath(g); g.clip();
+  g.fillStyle=spc;
+  g.fillRect(-5.4,-4.3,3.6,1.2);
+  g.fillRect(-5.4,3.1,3.6,1.2);
+  g.restore();
+}
+
+// Den STATISKE delen av bilen: alt som bare avhenger av lakkeringen og
+// klaffstillingen, og derfor ser helt likt ut bilde etter bilde. Nøyaktig
+// dette innholdet forhåndstegnes til en sprite (se makeCarSprite).
+function drawCarStatic(g,lv,flapOpen){
+  const base=lv.base, acc=lv.acc, dark=lv.dark, hel=lv.hel, spc=lv.spc||lv.hel;
+  // Bakvinge: hovedplan → sponsorfelt → klaff. Klaffen ligger bakerst og blir
+  // synlig smalere sett ovenfra når den åpnes, slik ekte aktiv aero ser ut.
+  g.fillStyle=dark; g.fillRect(-13.8,-6,2.6,12);
+  g.fillStyle=spc;  g.fillRect(-13.4,-4,1.8,8);
+  g.fillStyle=acc;  if(flapOpen) g.fillRect(-13.8,-6,0.7,12); else g.fillRect(-14.2,-6,1.3,12);
+  // Frontvinge: hovedplan + klaff. Vingene tegnes FØR karosseriet slik at
+  // nesen legger seg oppå frontvingen, som på en ekte bil sett ovenfra.
+  g.fillStyle=dark; g.fillRect(11.8,-6.4,1.8,12.8);
+  g.fillStyle=acc;  g.fillRect(13.6,-6,flapOpen?0.5:1.1,12);
+  // Karosseriet, mønsteret og sponsorflatene
+  g.fillStyle=base; bodyPath(g); g.fill();
+  drawPattern(g,lv.pat,acc);
+  drawSponsorPanels(g,spc);
+  // Den ENESTE skyggeleggingen på bilen: én flat, lys flate over den ene
+  // halvdelen. Ingen gradient — en gradient på 28 px gjør bare lakkeringen
+  // uskarp uten at noen ser at den er der.
+  g.save(); bodyPath(g); g.clip();
+  g.fillStyle=CAR_SHEEN; g.fillRect(-13,-6,28,4.6);
+  g.restore();
+  // Cockpit og hjelm. Hjelmen er det mest gjenkjennelige punktet på bilen i
+  // spillstørrelse, derfor en lys farge rett oppå den nesten svarte cockpiten
+  // — høy kontrast her er det som gjør at øyet finner bilens «hode» med én gang.
+  g.fillStyle=COCKPIT_COL; g.beginPath(); g.ellipse(1.2,0,2.4,1.6,0,0,Math.PI*2); g.fill();
+  g.fillStyle=hel; g.beginPath(); g.arc(0.8,0,1.4,0,Math.PI*2); g.fill();
+}
+
+// Skyggen skal peke samme vei i VERDEN uansett hvilken vei bilen kjører — sola
+// står fast. Siden konteksten allerede er rotert med bilens vinkel, må
+// forskyvningen roteres TILBAKE med samme vinkel før den brukes, ellers ville
+// skyggen svingt rundt bilen som en viser hver gang bilen snudde.
+function drawCarShadow(g,ang){
+  const ca=Math.cos(ang), sa=Math.sin(ang);
+  g.save();
+  g.translate(1.5*ca+2.2*sa, -1.5*sa+2.2*ca);
+  g.fillStyle=CAR_SHADOW_COL;
+  rrectFill(g,-13,-7.8,27,15.6,4);
+  g.restore();
+}
+
+// Hjulene tegnes live og ikke inn i sprite-en, fordi forhjulene må kunne
+// svinge: et styrt forhjul er den tydeligste pekepinnen på hva en bil holder
+// på med, og 2026-bilen har ingen hjulbuer som skjuler det.
+function drawCarWheels(g,steer){
+  g.fillStyle=TYRE_COL;
+  rrectFill(g,-10.2,-9.1,6.4,4.4,1.3); // bakhjul, sentrum (-7,-6.9)
+  rrectFill(g,-10.2, 4.7,6.4,4.4,1.3); // bakhjul, sentrum (-7, 6.9)
+  for(let s=-1;s<=1;s+=2){
+    g.save(); g.translate(7,6.2*s); g.rotate(steer);
+    rrectFill(g,-2.6,-1.9,5.2,3.8,1.2);
+    g.restore();
+  }
+}
+
+// Endeplatelys + bremselys. Begge er live fordi de endrer farge/tilstand fra
+// bilde til bilde og derfor ikke kan bakes inn i en sprite.
+function drawCarLights(g,epCol,braking){
+  g.fillStyle=epCol;
+  g.fillRect(-14.4,-6.9,2.4,0.9);
+  g.fillRect(-14.4, 6.0,2.4,0.9);
+  g.fillStyle=BRAKE_COL; g.fillRect(-14.9,-0.7,0.6,1.4);
+  if(braking){
+    g.save(); g.globalAlpha=.45; g.fillStyle=BRAKE_COL;
+    g.beginPath(); g.arc(-14.6,0,2,0,Math.PI*2); g.fill();
+    g.restore();
+  }
+}
+
+// Fargen på endeplatelysene, i prioritert rekkefølge. Skrevet som en kjede av
+// tidlige returer nettopp FORDI den skal utvides: neste runde legger til en
+// gullfarge for overtake mode, og da skal det bare settes inn ett nytt `if`
+// øverst i denne funksjonen — ingen andre steder i tegnekoden trenger å vite
+// at det kom en ny tilstand.
+function endplateColor(c){
+  if(c.ersActive) return EP_ERS;
+  // Blinker på 4 Hz: raceTime teller bilder à 1/60 s, så et halvt blink er
+  // 60/(4*2) = 7,5 bilder.
+  if(c.braking && c.battery<100) return (Math.floor(raceTime/7.5)%2===0) ? EP_CHARGE : EP_OFF;
+  return EP_OFF;
+}
+
+// steerVel er den faktiske vinkelhastigheten fysikken bruker, og ligger på
+// maks ±TURN_BASE (0,046 rad per steg) — altfor lite til å se. Her skaleres
+// den opp til et synlig utslag på ca. 0,38 rad ved fullt ratt. Dette er REN
+// avlesning: fysikken er uendret, vi viser bare det den allerede gjør.
+const STEER_VIS_MAX=0.38, STEER_VIS_GAIN=STEER_VIS_MAX/TURN_BASE;
+function steerAngle(c){
+  return Math.max(-STEER_VIS_MAX,Math.min(STEER_VIS_MAX,c.steerVel*STEER_VIS_GAIN));
+}
+
+// Lakkering = ett samlet sett farger pluss ett mønster. Både lagene og
+// spillerens valgbare skins leverer det samme settet, slik at all tegnekode
+// bare trenger å forholde seg til ÉN form for lakkering og aldri trenger å
+// vite hvor fargene kom fra.
+// MIDLERTIDIG BRO: SKINS og TEAMS har foreløpig de gamle feltene
+// color/dark/accent/pattern. De skrives om i steg C og D — da forsvinner
+// oversettelsen under, og liveryOf blir et rent oppslag.
+const PAT_FROM_OLD={solid:'solid',stripe:'spine',gradient:'solid'};
+function toLivery(src){
+  return {base:src.color, acc:src.accent, dark:src.dark,
+          hel:src.accent, spc:src.accent,
+          pat:PAT_FROM_OLD[src.pattern]||'solid'};
+}
+function liveryOf(c){
+  const sk=c.isPlayer?SKINS[skinSel]:null;
+  return toLivery((sk&&sk.color)?sk:c.team);
+}
+
+// Den FELLES bilfunksjonen: tegner en hel bil med en gitt lakkering til hvilken
+// som helst kontekst, i hvilken som helst skala. Brukes av forhåndsvisningen i
+// baneutvalget, lagoversikten og podiet, slik at bilen de stedene garantert er
+// den samme bilen du faktisk kjører — ikke en håndtegnet etterligning som sakte
+// kommer ut av sync med den ekte.
+function drawCarShape(g,lv,o){
+  o=o||{};
+  g.save();
+  g.translate(o.x||0,o.y||0);
+  g.rotate(o.angle||0);
+  const sc=o.scale||1; g.scale(sc,sc);
+  if(o.shadow!==false) drawCarShadow(g,o.angle||0);
+  drawCarWheels(g,o.steer||0);
+  drawCarStatic(g,lv,!!o.flapOpen);
+  drawCarLights(g,o.epCol||EP_OFF,false);
+  g.restore();
+}
+
+// ── forhåndstegnede sprites ───────────────────────────────────────
+// Den statiske delen av bilen er identisk hvert eneste bilde, men besto av
+// over tjue tegnekall med tre klippeoperasjoner. Med 20 biler ble det ~400
+// kall per bilde på å tegne nøyaktig det samme om igjen. I stedet tegnes den
+// ÉN gang per bil til en liten offscreen-canvas og kopieres med drawImage —
+// standardrådet for gjentatte former på canvas.
+// 3× oppløsning: sprite-en vises alltid nedskalert til 1× på banen, og
+// nedskalering av et skarpt bilde gir ren antialiasing, mens oppskalering av
+// et 1×-bilde ville gitt synlige trappetrinn når bilen roterer.
+// To varianter per bil (klaffer lukket/åpen) — det er den eneste tilstanden i
+// den statiske delen som endrer seg under løpet, og å gjøre den til to ferdige
+// bilder er billigere enn å tegne vingen live for alle 20.
+const CAR_SPR_HW=16, CAR_SPR_HH=9, CAR_SPR_RES=3;
+let carSprites=[];
+// WebKit frigjør først minnet bak en canvas når den krympes til 0×0 — å bare
+// slippe referansen er ikke nok. Samme grep som for banebakgrunnen.
+function freeCarSprites(){
+  carSprites.forEach(s=>{ s.width=0; s.height=0; });
+  carSprites=[];
+}
+function makeCarSprite(lv,flapOpen){
+  const s=document.createElement('canvas');
+  s.width=CAR_SPR_HW*2*CAR_SPR_RES; s.height=CAR_SPR_HH*2*CAR_SPR_RES;
+  const g=s.getContext('2d');
+  g.scale(CAR_SPR_RES,CAR_SPR_RES);
+  g.translate(CAR_SPR_HW,CAR_SPR_HH);
+  drawCarStatic(g,lv,flapOpen);
+  carSprites.push(s);
+  return s;
+}
+function buildCarSprites(){
+  freeCarSprites(); // sprite-ene fra forrige løp skal ikke bli liggende
+  cars.forEach(c=>{
+    const lv=liveryOf(c);
+    c.spr=[makeCarSprite(lv,false),makeCarSprite(lv,true)];
+  });
+}
+
+// Hvor nær spilleren en AI-bil må være før plassnummeret vises. Nummeret lå før
+// midt på karosseriet og dekket cockpiten — på en 28 px bil spiste det hele
+// midtpartiet og skjulte hjelmen. Nå er det en egen liten etikett bak bilen,
+// og den vises bare for biler du faktisk kjemper mot; ellers ville 19 etiketter
+// ligget strødd utover banen og skjult selve løpet.
+const AI_LABEL_DIST=160;
+
 function drawCar(c){
-  // player's car renders its chosen SKIN livery instead of the team colours
-  // whenever a non-default skin is picked; AI always races in team colours.
-  // Both now resolve to a full {col,dark,accent,pattern} tuple instead of
-  // just two tones — accent drives the extra livery detail below (nose tip,
-  // halo hoop, sponsor stripe, wing endplates), pattern picks how the body
-  // itself is filled (flat/stripe/gradient). AI cars always fall back to
-  // 'solid' (TEAMS entries carry no pattern field), so only player-chosen
-  // skins can be stripe/gradient — team liveries stay flat-filled but gain
-  // all the same accent detailing.
-  const skin = c.isPlayer ? SKINS[skinSel] : null;
-  const col     = (skin && skin.color)   || c.team.color;
-  const dark    = (skin && skin.dark)    || c.team.dark;
-  const accent  = (skin && skin.accent)  || c.team.accent;
-  const pattern = (skin && skin.pattern) || 'solid';
-  const night = TOD[todIdx].night;
+  const night=TOD[todIdx].night;
   c.trail.forEach(t=>{ ctx.globalAlpha=t.life*.22; ctx.fillStyle='#0a0a12'; ctx.beginPath(); ctx.arc(t.x,t.y,2.6,0,Math.PI*2); ctx.fill(); });
   ctx.globalAlpha=1;
   ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.angle);
-  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.fillRect(-12,5,24,6); // shadow
-  // rear wing + accent endplate tips
-  ctx.fillStyle=dark; ctx.fillRect(-13,-8,3,16);
-  ctx.fillStyle=accent; ctx.fillRect(-13,-8,3,2); ctx.fillRect(-13,6,3,2);
-  // rear tires
-  ctx.fillStyle='#111'; ctx.fillRect(-9,-8,5,5); ctx.fillRect(-9,3,5,5);
-  // body — flat fill for solid/stripe, a nose-to-tail linear gradient
-  // (dark→base→accent) for 'gradient' skins, reading as a premium fade/
-  // chrome paint job instead of one flat tone
-  if(pattern==='gradient'){
-    const grad=ctx.createLinearGradient(-11,0,13,0);
-    grad.addColorStop(0,dark); grad.addColorStop(0.55,col); grad.addColorStop(1,accent);
-    ctx.fillStyle=grad;
-  } else {
-    ctx.fillStyle=col;
-  }
-  ctx.beginPath();
-  ctx.moveTo(13,0); ctx.lineTo(7,-3.2); ctx.lineTo(-10,-4.2); ctx.lineTo(-11,4.2); ctx.lineTo(7,3.2);
-  ctx.closePath(); ctx.fill();
-  // gloss highlight along the upper body edge — a thin pale stroke just
-  // inside the real outline, reading as a sheen on the paint rather than a
-  // flat matte fill.
-  ctx.strokeStyle='rgba(255,255,255,.3)'; ctx.lineWidth=.7;
-  ctx.beginPath(); ctx.moveTo(12,-.6); ctx.lineTo(6,-3); ctx.lineTo(-9,-3.9); ctx.stroke();
-  // centre racing stripe — 'stripe' skins only, a bold accent band straight
-  // down the middle of the body, Gulf/Martini style
-  if(pattern==='stripe'){ ctx.fillStyle=accent; ctx.fillRect(-9,-1.1,20,2.2); }
-  // diagonal sponsor-block stripe across the engine cover, between the
-  // cockpit and the rear wing — every real F1 livery has some version of
-  // this, and it's what actually sells "team livery" vs. "car painted one
-  // colour" at a glance.
-  ctx.save(); ctx.globalAlpha=.85; ctx.fillStyle=accent;
-  ctx.beginPath(); ctx.moveTo(-1.5,-2.2); ctx.lineTo(-0.3,-2.2); ctx.lineTo(-5.3,2.2); ctx.lineTo(-6.5,2.2);
-  ctx.closePath(); ctx.fill(); ctx.restore();
-  // nose-tip accent highlight
-  ctx.fillStyle=accent;
-  ctx.beginPath(); ctx.moveTo(13,0); ctx.lineTo(9,-1.6); ctx.lineTo(9,1.6); ctx.closePath(); ctx.fill();
-  // sidepods
-  ctx.fillStyle=dark; ctx.fillRect(-6,-4.6,6,2); ctx.fillRect(-6,2.6,6,2);
-  // halo — an accent-coloured hoop around the cockpit so the halo reads as
-  // its own structural piece instead of disappearing into the body colour
-  ctx.strokeStyle=accent; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.ellipse(1,0,3.8,2.6,0,0,Math.PI*2); ctx.stroke();
-  // halo/cockpit
-  ctx.fillStyle='#111'; ctx.beginPath(); ctx.ellipse(1,0,3.2,2.1,0,0,Math.PI*2); ctx.fill();
-  // front wing + accent endplate tips
-  ctx.fillStyle=dark; ctx.fillRect(11,-6,2.4,12);
-  ctx.fillStyle=accent; ctx.fillRect(11,-6,2.4,1.6); ctx.fillRect(11,4.4,2.4,1.6);
-  // front tires
-  ctx.fillStyle='#111'; ctx.fillRect(5,-7,4,4); ctx.fillRect(5,3,4,4);
+  drawCarShadow(ctx,c.angle);
+  drawCarWheels(ctx,steerAngle(c));
+  // Sprite-en dekker karosseri, mønster, sponsorflater, lysflate, cockpit,
+  // hjelm og vingene. Faller tilbake til live tegning hvis den mangler (kan
+  // skje for en bil som ikke gikk gjennom buildCarSprites).
+  const spr=c.spr&&c.spr[c.drsActive?1:0];
+  if(spr) ctx.drawImage(spr,-CAR_SPR_HW,-CAR_SPR_HH,CAR_SPR_HW*2,CAR_SPR_HH*2);
+  else drawCarStatic(ctx,liveryOf(c),c.drsActive);
+  drawCarLights(ctx,endplateColor(c),c.braking);
   if(night){
-    // headlight beam + glowing lamps, brighter rear light glow — the night
-    // livery pass; purely visual, reacts to the globally-selected TOD, not
-    // per-car state.
+    // frontlyskjegle + lykter, bak-/baklys — rent visuelt, styrt av den globalt
+    // valgte tiden på døgnet, ikke av noen tilstand på bilen selv.
     ctx.save(); ctx.globalAlpha=.3; ctx.fillStyle='rgba(255,255,255,.4)';
-    ctx.beginPath(); ctx.moveTo(13,0); ctx.lineTo(32,-6); ctx.lineTo(32,6); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(33,-6); ctx.lineTo(33,6); ctx.closePath(); ctx.fill();
     ctx.restore();
     ctx.save(); ctx.shadowColor='#fff'; ctx.shadowBlur=5; ctx.fillStyle='#fff';
-    ctx.beginPath(); ctx.arc(13,-2,1,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(13,2,1,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(12.7,-4.6,1,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(12.7, 4.6,1,0,Math.PI*2); ctx.fill();
     ctx.restore();
     ctx.save(); ctx.shadowColor='#ff2222'; ctx.shadowBlur=5; ctx.fillStyle='#ff4444';
-    ctx.beginPath(); ctx.arc(-13,-5,1,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(-13,5,1,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-12.5,-4.6,1,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-12.5, 4.6,1,0,Math.PI*2); ctx.fill();
     ctx.restore();
-  }
-  if(c.drsActive){ ctx.fillStyle='rgba(192,132,252,.9)'; ctx.fillRect(-13,-7,3,14); }
-  if(c.ersActive){
-    // ERS/battery deploy: hot white sidepod glow with a blue rim. A 1.1px
-    // blue margin behind a full-opacity white fill — wide enough to survive
-    // anti-aliasing at this tiny car scale (a sub-pixel margin just blurs
-    // away), while the white fill stays fully crisp on top.
-    ctx.fillStyle='#38bdf8'; ctx.fillRect(-7.1,-6.3,8.2,4.6); ctx.fillRect(-7.1,1.7,8.2,4.6);
-    ctx.fillStyle='#f8fbff'; ctx.fillRect(-6,-5.2,6,2.4); ctx.fillRect(-6,2.8,6,2.4);
   }
   if(c.slipstreamT>0.05){
-    // slipstream/draft: the SAME sidepod-glow treatment as ERS above, but
-    // pure white (no blue rim — this is drag, not a power deploy) and
-    // scaled by how strong the current tow is, so catching a draft reads as
-    // unmistakably as using ERS does, not just a faint HUD number.
-    ctx.save();
-    ctx.globalAlpha=c.slipstreamT*0.85;
-    ctx.fillStyle='#ffffff';
-    ctx.fillRect(-6,-5.2,6,2.4); ctx.fillRect(-6,2.8,6,2.4);
-    ctx.restore();
-    // air being dragged off the car ahead — short streak-lines trailing
-    // straight back off the rear wing, flickering for a sense of airflow.
+    // luft som dras av bilen foran — korte streker rett bakover fra bakvingen,
+    // flimrende slik at det leses som luftstrøm og ikke som faste linjer.
     ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.2;
     for(let k=0;k<3;k++){
       ctx.globalAlpha=c.slipstreamT*(0.35+Math.random()*0.55);
       const yy=(k-1)*3.4;
-      ctx.beginPath(); ctx.moveTo(-13,yy); ctx.lineTo(-19-Math.random()*6,yy+(Math.random()-.5)*2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-15,yy); ctx.lineTo(-21-Math.random()*6,yy+(Math.random()-.5)*2); ctx.stroke();
     }
     ctx.globalAlpha=1;
   }
-  if(!c.isPlayer){
-    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(-3,-3,7,6);
-    ctx.fillStyle='#fff'; ctx.font='bold 5px Courier New'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(c.place,0.5,0);
-  }
   ctx.restore();
+  // Plassnummeret: en skjermjustert etikett like bak bilen. Konteksten er
+  // rotert med kameraet, så den roteres tilbake her for at teksten skal stå
+  // rett opp og ned på skjermen uansett hvilken vei banen svinger.
+  // Ikke under nedtellingen: plasseringene regnes først ut når løpet går, så
+  // der ville hver eneste bil på startgriden fått etiketten «1» — tjue like
+  // ettall strødd utover en grid som allerede viser rekkefølgen helt tydelig.
+  if(!c.isPlayer && player && state!=='countdown' && Math.hypot(c.x-player.x,c.y-player.y)<AI_LABEL_DIST){
+    const lx=c.x-Math.cos(c.angle)*17, ly=c.y-Math.sin(c.angle)*17;
+    ctx.save(); ctx.translate(lx,ly); ctx.rotate(camAngle+Math.PI/2);
+    const txt=String(c.place);
+    ctx.font='bold 11px Courier New'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    const bw2=ctx.measureText(txt).width/2+4;
+    ctx.fillStyle='rgba(5,7,10,.72)'; ctx.fillRect(-bw2,-7,bw2*2,14);
+    ctx.fillStyle='#e2e8f0'; ctx.fillText(txt,0,0);
+    ctx.restore();
+  }
 }
 
 // Chase-cam: world is rotated so the player's heading always points "up"
