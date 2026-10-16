@@ -2163,6 +2163,55 @@ function buildCarSprites(){
   });
 }
 
+// ── forhåndstegnet glød ───────────────────────────────────────────
+// Alt mykt lys i spillet ble før laget på nytt for hvert eneste bilde, på to
+// måter som begge er dyre:
+//   • Lyktene på bilene brukte shadowBlur. Det er en ekte uskarphet som
+//     canvas regner ut på nytt for hver form den tegner — fire lykter per
+//     bil ganger tjue biler er åtti uskarpheter i sekstidelssekundet.
+//   • Flomlysene kalte createRadialGradient inne i løkka, altså 27 nye
+//     gradientobjekter per bilde som ble bygd, brukt én gang og kastet.
+// Begge deler lager det samme: en rund flekk som er sterkest i midten og
+// toner ut mot kanten. Den tegnes nå ÉN gang per farge til et lite offscreen-
+// canvas og kopieres inn med drawImage i akkurat den størrelsen hvert lys
+// trenger. Et radialt forløp er rotasjonssymmetrisk, så den samme sprite-en
+// kan strekkes fra en 5 px lykt til et 46 px flomlys uten at noen ser det.
+// 32×32 holder: et radialt forløp har ingen skarpe kanter, så det ser like
+// mykt ut om det strekkes opp til 92 px for et flomlys som om det krympes ned
+// til 8 px for en billykt. Større sprite kostet bare mer filtrering per kall.
+const GLOW_RES=32; // sprite-en er GLOW_RES×GLOW_RES med gløden tegnet inn i sirkelen
+function makeGlow(r,g,b){
+  const cv=document.createElement('canvas');
+  cv.width=GLOW_RES; cv.height=GLOW_RES;
+  const q=cv.getContext('2d'), h=GLOW_RES/2;
+  const grd=q.createRadialGradient(h,h,0,h,h,h);
+  grd.addColorStop(0,'rgba('+r+','+g+','+b+',1)');
+  grd.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
+  q.fillStyle=grd; q.fillRect(0,0,GLOW_RES,GLOW_RES);
+  return cv;
+}
+// To varianter dekker alt: varmhvit brukes av frontlyktene OG flomlysmastene
+// (samme lyse, litt gulaktige tone), rød av baklysene. Begge bygges én gang
+// ved innlasting og lever hele økta — to 64×64-canvas er neglisjerbart minne,
+// og de er like for alle baner, alle løp og alle tider på døgnet.
+const GLOW_WHITE=makeGlow(255,250,220);
+const GLOW_RED=makeGlow(255,60,45);
+// Tegner en glød sentrert i (x,y) med ytre radius `rad` og styrke `a`.
+// Styrken settes med globalAlpha i stedet for egne sprites per intensitet,
+// slik at det fortsatt bare finnes to bilder.
+// Merk at alpha lagres og settes tilbake for hånd i stedet for med save()/
+// restore(). Det er ikke pirk: save() tar en kopi av HELE tegnetilstanden —
+// transformasjon, klipping, farger, linjestiler — og med fire lykter på tjue
+// biler ble det 80 slike kopier per bilde. Målt isolert var det save/restore,
+// ikke selve drawImage, som gjorde den første versjonen av denne funksjonen
+// tregere enn shadowBlur-en den skulle erstatte.
+function drawGlow(g,spr,x,y,rad,a){
+  const prev=g.globalAlpha;
+  g.globalAlpha=a;
+  g.drawImage(spr,x-rad,y-rad,rad*2,rad*2);
+  g.globalAlpha=prev;
+}
+
 // Hvor nær spilleren en AI-bil må være før plassnummeret vises. Nummeret lå før
 // midt på karosseriet og dekket cockpiten — på en 28 px bil spiste det hele
 // midtpartiet og skjulte hjelmen. Nå er det en egen liten etikett bak bilen,
@@ -2190,14 +2239,23 @@ function drawCar(c){
     ctx.save(); ctx.globalAlpha=.3; ctx.fillStyle='rgba(255,255,255,.4)';
     ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(33,-6); ctx.lineTo(33,6); ctx.closePath(); ctx.fill();
     ctx.restore();
-    ctx.save(); ctx.shadowColor='#fff'; ctx.shadowBlur=5; ctx.fillStyle='#fff';
+    // Lyktene: forhåndstegnet glød (se GLOW_WHITE/GLOW_RED) pluss en liten
+    // hard kjerne oppå, slik at selve lyspunktet fortsatt leses som et punkt
+    // og ikke bare som en uskarp flekk. Dette erstatter shadowBlur, som ga
+    // nøyaktig samme uttrykk til en langt høyere pris.
+    // Radius og styrke er prøvd ut mot den gamle shadowBlur-varianten på en
+    // 5× forstørret bil: en bredere glød enn dette vasker ut forvingen helt,
+    // og vingene er noe av det som gjør bilen lesbar i 28 px.
+    drawGlow(ctx,GLOW_WHITE,12.7,-4.6,4.2,.45);
+    drawGlow(ctx,GLOW_WHITE,12.7, 4.6,4.2,.45);
+    ctx.fillStyle='#fff';
     ctx.beginPath(); ctx.arc(12.7,-4.6,1,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(12.7, 4.6,1,0,Math.PI*2); ctx.fill();
-    ctx.restore();
-    ctx.save(); ctx.shadowColor='#ff2222'; ctx.shadowBlur=5; ctx.fillStyle='#ff4444';
+    drawGlow(ctx,GLOW_RED,-12.5,-4.6,3.8,.45);
+    drawGlow(ctx,GLOW_RED,-12.5, 4.6,3.8,.45);
+    ctx.fillStyle='#ff4444';
     ctx.beginPath(); ctx.arc(-12.5,-4.6,1,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(-12.5, 4.6,1,0,Math.PI*2); ctx.fill();
-    ctx.restore();
   }
   if(c.slipstreamT>0.05){
     // luft som dras av bilen foran — korte streker rett bakover fra bakvingen,
@@ -2229,6 +2287,12 @@ function drawCar(c){
   }
 }
 
+// Flomlysets ytre radius, og hvor langt utenfor bildekanten en mast fortsatt
+// må tegnes. Marginen er radiusen pluss mastehøyden (26) med litt slakk, slik
+// at en mast rett utenfor kanten fortsatt rekker å kaste lyset sitt inn i
+// bildet — kutter man for tett, blinker lyset på når masta kommer inn.
+const FLOOD_R=46, FLOOD_MARGIN=FLOOD_R+34;
+
 // Chase-cam: world is rotated so the player's heading always points "up"
 // on screen, with the camera anchored behind/below the car (CHASE_Y).
 function worldToScreen(wx,wy){
@@ -2256,13 +2320,16 @@ function drawTrackScene(){
   // marshals wave, crowds flash cameras. Positions come from TR.flagPoles/
   // marshalPosts/floodlights/standRects, computed once in buildTrack.
   if(TOD[todIdx].night && TR.floodlights) TR.floodlights.forEach(f=>{
-    ctx.save();
-    const glow=ctx.createRadialGradient(f.x,f.y,0,f.x,f.y,46);
-    glow.addColorStop(0,'rgba(255,250,220,.35)'); glow.addColorStop(1,'rgba(255,250,220,0)');
-    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(f.x,f.y,46,0,Math.PI*2); ctx.fill();
+    // Culling: en bane har 27 flomlysmaster fordelt over hele runden, men bare
+    // en håndfull er innenfor bildet om gangen. Før ble alle 27 tegnet med full
+    // glød, mast og lampe hvert bilde — canvas måtte klippe bort hver eneste
+    // piksel av de ~22 som lå utenfor. Marginen er gløden pluss mastehøyden, så
+    // en mast like utenfor kanten fortsatt kaster lyset sitt inn i bildet.
+    const sp=worldToScreen(f.x,f.y);
+    if(sp[0]<-FLOOD_MARGIN||sp[0]>W+FLOOD_MARGIN||sp[1]<HY-FLOOD_MARGIN||sp[1]>H+FLOOD_MARGIN) return;
+    drawGlow(ctx,GLOW_WHITE,f.x,f.y,FLOOD_R,.35);
     ctx.fillStyle='#1b1f29'; ctx.fillRect(f.x-1.6,f.y-26,3.2,26);
     ctx.fillStyle='#fff7cc'; ctx.beginPath(); ctx.arc(f.x,f.y-26,3,0,Math.PI*2); ctx.fill();
-    ctx.restore();
   });
   if(TR.flagPoles) TR.flagPoles.forEach((f,i)=>{
     ctx.save(); ctx.translate(f.x,f.y);
@@ -2470,15 +2537,32 @@ function draw(){
   // shimmer wisps over arid ones — screen-space, driven purely by raceTime
   // (no particle state to manage), so they just keep looping for free.
   if(TR.terrain==='forest'||TR.terrain==='mountain'){
+    // Fuglene lå før i rene skjermkoordinater og fulgte derfor IKKE kameraet:
+    // når bilen svingte sto de bom fast på skjermen, som om de var malt på
+    // glasset, mens hele banen under dem roterte. Nå tegnes hele flokken i et
+    // rom som roterer med kameraet, så de står stille i forhold til landskapet
+    // og V-formen peker den veien fuglen faktisk flyr.
+    // Valget: rotere med kameraet, ikke flytte dem til ekte verdenskoordinater.
+    // Det ble klart minst kode — verdenskoordinater ville krevd egen tilstand
+    // per fugl (de må jo holde seg i nærheten av bilen gjennom hele runden), og
+    // de måtte tegnes inne i drawTrackScene, der nattoverlegget hadde mørknet
+    // dem helt bort. Her beholdes de nøyaktig som før, bare i et rotert rom.
+    // Posisjonene er nå målt fra midten av bane-visningen i stedet for fra
+    // skjermkanten, og holdes innenfor en radius som er mindre enn halve
+    // visningen, slik at rotasjonen aldri kan slenge en fugl ut av bildet.
+    const vcx=W/2, vcy=HY+(H-HY)/2;
+    ctx.save();
+    ctx.translate(vcx,vcy);
+    ctx.rotate(-(camAngle+Math.PI/2));
+    ctx.globalAlpha=.55; ctx.strokeStyle='#1b1b22'; ctx.lineWidth=1.3; ctx.lineCap='round';
     for(let i=0;i<3;i++){
       const t=raceTime*0.5+i*260;
-      const bx2=((t)%(W+200))-100;
-      const by2=HY+26+i*22+Math.sin(raceTime*0.04+i*2)*8;
+      const bx2=(t%300)-150;
+      const by2=-118+i*30+Math.sin(raceTime*0.04+i*2)*8;
       const flap=Math.sin(raceTime*0.35+i)*4;
-      ctx.save(); ctx.globalAlpha=.55; ctx.strokeStyle='#1b1b22'; ctx.lineWidth=1.3; ctx.lineCap='round';
       ctx.beginPath(); ctx.moveTo(bx2-5,by2+flap*.4); ctx.lineTo(bx2,by2-flap); ctx.lineTo(bx2+5,by2+flap*.4); ctx.stroke();
-      ctx.restore();
     }
+    ctx.restore();
   } else if(TR.terrain==='arid'){
     for(let i=0;i<4;i++){
       const cyc=4200, ph=(raceTime*8+i*(cyc/4))%cyc, prog=ph/cyc;
