@@ -1265,35 +1265,58 @@ const DIFFICULTIES_REALISTIC=[
 let DIFFICULTIES=DIFFICULTIES_CASUAL;
 let difficulty=1;
 
-// Player-selectable cosmetic liveries for the F1 car — entirely independent
-// of the randomly-assigned team identity (SKINS[0] "STANDARD" just falls
-// back to whatever team colours the player got that race via color:null).
-// Each skin now carries a third accent colour (same idea as TEAMS.accent —
-// see drawCar) PLUS a render pattern:
-//   'solid'    — flat body fill, accent used only for trim detail (the base
-//                look every livery already had)
-//   'stripe'   — a bold accent-coloured centre racing stripe down the body,
-//                Gulf/Martini style
-//   'gradient' — the body fill itself is a linear gradient from the base
-//                colour into a lighter/contrasting tone, for a premium
-//                fade/chrome paint job instead of a flat fill
-// STANDARD keeps color/dark/accent all null so drawCar falls all the way
-// back to the player's actual team livery, same as before.
+// Lakkeringer spilleren kan velge — uavhengig av hvilket lag han tilfeldig
+// havner i. STANDARD er fortsatt førstevalget og bruker lagets egen lakkering.
+//
+// De tolv gamle lakkeringene er byttet ut, av to grunner. For det første
+// brukte tre av mønstrene gradient, og en gradient over 28 piksler gjør bare
+// lakkeringen grumsete — den nye bilen er bygd på få, flate flater, og da må
+// lakkeringene være det samme. For det andre lå mange av fargene altfor nær
+// hverandre i spillstørrelse: KARBON, MIDNATT og SØLVPIL ble tre varianter av
+// «mørk grå bil», og FLAMME, MAGENTA og SOLOPPGANG tre varianter av «rød».
+// Åtte godt adskilte lakkeringer sier mer enn tolv som overlapper.
+//
+// Hver lakkering har fire farger og ett mønster:
+//   base — karosseriets grunnfarge
+//   acc  — mønster, vingeklaffer og trim
+//   dark — vingenes hovedplan (den mørke «skyggesiden» av lakkeringen)
+//   hel  — hjelmen, og sponsorflatene for spillerlakkeringene (se drawCarStatic)
+//   pat  — split / spine / sash / chevron / tail / edges (se drawPattern)
 const SKINS=[
-  {name:'STANDARD',  color:null,      dark:null,      accent:null,     pattern:'solid'},
-  {name:'KARBON',    color:'#1a1a1f', dark:'#000000', accent:'#8a8a94',pattern:'solid'},
-  {name:'ARKTISK',   color:'#e2e8f0', dark:'#64748b', accent:'#38bdf8',pattern:'gradient'},
-  {name:'NEON',      color:'#39ff88', dark:'#0a3d1f', accent:'#0a0a0a',pattern:'stripe'},
-  {name:'GULL',      color:'#facc15', dark:'#78350f', accent:'#fff7cc',pattern:'gradient'},
-  {name:'MAGENTA',   color:'#ec4899', dark:'#701a3d', accent:'#ffffff',pattern:'stripe'},
-  {name:'SØLVPIL',   color:'#c0c0c0', dark:'#1a1a1a', accent:'#f1f5f9',pattern:'gradient'},
-  {name:'BRITISK',   color:'#004225', dark:'#001a0e', accent:'#f1f5f9',pattern:'stripe'},
-  {name:'SOLOPPGANG',color:'#fb7185', dark:'#7c2d12', accent:'#fde047',pattern:'gradient'},
-  {name:'MIDNATT',   color:'#0f172a', dark:'#020617', accent:'#38bdf8',pattern:'gradient'},
-  {name:'FLAMME',    color:'#dc2626', dark:'#7c2d12', accent:'#fb923c',pattern:'gradient'},
-  {name:'TIGER',     color:'#f97316', dark:'#1c1917', accent:'#0a0a0a',pattern:'stripe'}
+  // base:null er signalet om at lagets egen lakkering skal brukes i stedet.
+  {name:'STANDARD',    base:null,      acc:null,      dark:null,      hel:null,      pat:null},
+  {name:'ROSSO',       base:'#c8102e', acc:'#f4ecd8', dark:'#4a0812', hel:'#f4ecd8', pat:'split'},
+  {name:'OXFORD',      base:'#2e4a5e', acc:'#a87f4e', dark:'#080d13', hel:'#e5e2d6', pat:'sash'},
+  {name:'RACINGGRØNN', base:'#1f5c45', acc:'#e9c46a', dark:'#0c2a1f', hel:'#f4ecd8', pat:'spine'},
+  {name:'PETROL',      base:'#1f8a8a', acc:'#f4a261', dark:'#0d3b3b', hel:'#f8fafc', pat:'chevron'},
+  {name:'ARKTISK',     base:'#ecebe4', acc:'#1d3557', dark:'#5c6b7a', hel:'#e63946', pat:'tail'},
+  {name:'KARBON',      base:'#2b2b31', acc:'#ff6b1a', dark:'#0e0e12', hel:'#ff6b1a', pat:'edges'},
+  {name:'SAND',        base:'#d9b26f', acc:'#2f2a26', dark:'#5a4630', hel:'#2f2a26', pat:'spine'},
+  {name:'FIOLETT',     base:'#5b3e96', acc:'#f2d49b', dark:'#241640', hel:'#f2d49b', pat:'sash'}
 ];
 let skinSel=0;
+// Hvis et lagret valg peker på en lakkering som ikke finnes lenger — f.eks.
+// «TIGER» fra den gamle lista, eller et tall utenfor rekkevidde — skal spillet
+// falle tilbake til STANDARD, ikke krasje på `undefined.base` midt i et løp.
+// Alt som leser en lakkering går gjennom denne, så det finnes bare ett sted
+// dette kan gå galt.
+function skinAt(i){
+  return (Number.isInteger(i) && i>=0 && i<SKINS.length) ? SKINS[i] : SKINS[0];
+}
+
+// Spillerens lag trekkes tilfeldig, men det MÅ trekkes før baneutvalget tegnes.
+// Før lå trekningen inne i buildCars, altså først når løpet startet, og da løy
+// STANDARD-forhåndsvisningen: den viste alltid det første laget i lista, mens
+// du i praksis kunne havne i et hvilket som helst av de ti. Nå trekkes
+// identiteten når du går inn i baneutvalget og holdes fast derfra til løpet er
+// bygget, slik at bilen du ser er bilen du får.
+let playerIdent=null;
+function rollPlayerIdent(){
+  playerIdent={
+    team:TEAMS[Math.floor(Math.random()*TEAMS.length)],
+    num:1+Math.floor(Math.random()*DRIVERS_PER_TEAM)
+  };
+}
 
 // Selectable time-of-day — purely atmospheric (lighting overlay + night
 // floodlights/headlights, see drawTrackScene/drawCar), no effect on physics.
@@ -1385,11 +1408,18 @@ function buildCars(){
   // field is therefore mandatory, every single race.
   const pool=[];
   TEAMS.forEach(t=>{ for(let n=1;n<=DRIVERS_PER_TEAM;n++) pool.push({team:t,num:n}); });
+  // Spillerens identitet er alt trukket (rollPlayerIdent), fordi baneutvalget
+  // må kunne vise den før løpet finnes. Den plukkes derfor UT av poolen her i
+  // stedet for å trekkes her, ellers ville spilleren kunne møte sin egen
+  // bil-identitet blant de 19 AI-ene.
+  if(!playerIdent) rollPlayerIdent();
+  const playerId=playerIdent;
+  const pi=pool.findIndex(p=>p.team===playerId.team&&p.num===playerId.num);
+  if(pi>=0) pool.splice(pi,1);
   for(let i=pool.length-1;i>0;i--){
     const j=Math.floor(Math.random()*(i+1));
     [pool[i],pool[j]]=[pool[j],pool[i]];
   }
-  const playerId=pool.pop(); // removed from the AI pool entirely
 
   // Grid slots are placed by walking BACKWARD along the actual track path
   // (not a straight-line projection from the start point), so the grid
@@ -1478,7 +1508,9 @@ function startRace(){
 function startPractice(){
   TR=TRACKS[trackSel];
   ensureTrackBg(TR);
-  const c=new Car(TR.sfx,TR.sfy,TR.sfAng,TEAMS[0],true);
+  // Samme lag som i løp, slik at STANDARD-lakkeringen ser lik ut i begge modi.
+  if(!playerIdent) rollPlayerIdent();
+  const c=new Car(TR.sfx,TR.sfy,TR.sfAng,playerIdent.team,true);
   c.curProg=nearestOnPath(TR.PATH,c.x,c.y).progress;
   c.prevProg=c.curProg;
   cars=[c]; player=c;
@@ -2093,18 +2125,29 @@ function steerAngle(c){
 // spillerens valgbare skins leverer det samme settet, slik at all tegnekode
 // bare trenger å forholde seg til ÉN form for lakkering og aldri trenger å
 // vite hvor fargene kom fra.
-// MIDLERTIDIG BRO: SKINS og TEAMS har foreløpig de gamle feltene
-// color/dark/accent/pattern. De skrives om i steg C og D — da forsvinner
-// oversettelsen under, og liveryOf blir et rent oppslag.
-const PAT_FROM_OLD={solid:'solid',stripe:'spine',gradient:'solid'};
+// SKINS leverer dette settet direkte. TEAMS har foreløpig fortsatt de gamle
+// feltene color/dark/accent — MIDLERTIDIG BRO, forsvinner i steg D.
 function toLivery(src){
   return {base:src.color, acc:src.accent, dark:src.dark,
-          hel:src.accent, spc:src.accent,
-          pat:PAT_FROM_OLD[src.pattern]||'solid'};
+          hel:src.accent, spc:src.accent, pat:'solid'};
+}
+// Spillerlakkeringene har ingen egen sponsorfarge (`spc`) — der brukes
+// hjelmfargen, som alltid er den lyseste fargen i settet og derfor leser som
+// en dekal uansett hvilken grunnfarge bilen har.
+function skinLivery(sk){
+  return {base:sk.base, acc:sk.acc, dark:sk.dark, hel:sk.hel, spc:sk.hel, pat:sk.pat};
 }
 function liveryOf(c){
-  const sk=c.isPlayer?SKINS[skinSel]:null;
-  return toLivery((sk&&sk.color)?sk:c.team);
+  const sk=c.isPlayer?skinAt(skinSel):null;
+  if(sk && sk.base) return skinLivery(sk);
+  return toLivery(c.team);
+}
+// Lakkeringen som skal vises i menyene. STANDARD har ingen egne farger, så den
+// må vise et lag — og det er hele poenget med STANDARD, at du kjører lagets bil.
+function previewLivery(sk){
+  if(sk.base) return skinLivery(sk);
+  if(!playerIdent) rollPlayerIdent();
+  return toLivery(playerIdent.team);
 }
 
 // Den FELLES bilfunksjonen: tegner en hel bil med en gitt lakkering til hvilken
@@ -2403,8 +2446,19 @@ function drawTrackScene(){
     }
   });
 
-  // cars — already inside the camera transform, draw directly in world space
-  [...cars].sort((a,b)=>a.place-b.place).reverse().forEach(drawCar);
+  // cars — already inside the camera transform, draw directly in world space.
+  // Rekkefølgen er fortsatt «dårligst plassering nederst, lederen øverst», men
+  // spilleren løftes ALLTID helt til topps til slutt. Uten det havnet din egen
+  // bil under hver eneste AI-bil du lå bak — og det som faktisk ødela bildet
+  // var ikke bilene, men plass-etikettene deres: etiketten tegnes 17 px bak
+  // bilen den hører til, så en AI rett foran deg la en nesten ugjennomsiktig
+  // boks midt oppå cockpiten din. På en bil som er 28 px lang forsvant hele
+  // midtpartiet. Egen bil må alltid være synlig, uansett plassering.
+  // sort() er stabil i moderne JS, så den andre sorteringen flytter bare
+  // spilleren bakerst og lar AI-enes innbyrdes rekkefølge stå urørt.
+  [...cars].sort((a,b)=>a.place-b.place).reverse()
+           .sort((a,b)=>(a.isPlayer?1:0)-(b.isPlayer?1:0))
+           .forEach(drawCar);
 
   ctx.restore();
 }
@@ -2448,20 +2502,23 @@ function draw(){
 
   if(state==='trackselect'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('VELG BANE',W/2,70);
+    // Skjermen er omorganisert fordi bil-forhåndsvisningen trenger ekte plass
+    // (den er 74×46 px) og fordi lagvalget kommer til på toppen. Innstillingene
+    // under karusellen står derfor i to kolonner i stedet for én lang stabel,
+    // og karusellboksen er kortet ned fra 420 til 290 px — de nederste 160 av
+    // dem var tom boks under baneteksten uansett.
+    // Ingen tekst under 9 px: de to 8 px-linjene (baneteller og ESC-hintet) er
+    // hevet til 9, som er grensen der Courier New fortsatt er til å lese.
+    ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('VELG BANE',W/2,62);
     // mode reminder — chosen back on the main menu, just a small corner tag here
     ctx.textAlign='right'; ctx.font='bold 9px Courier New';
     ctx.fillStyle=REALISTIC?'#f59e0b':'#38bdf8';
     ctx.fillText(REALISTIC?'MODUS: REALISTISK':'MODUS: CASUAL',W-12,22);
     ctx.textAlign='center';
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('← → bytt   ENTER kjør løp',W/2,94);
-    ctx.fillStyle='#38bdf8'; ctx.fillText('P — øvingskjøring (ingen motstandere)',W/2,110);
-    {
-      const D=DIFFICULTIES[difficulty];
-      ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('↑ ↓ bytt vanskelighetsgrad',W/2,124);
-      ctx.fillStyle=D.clr; ctx.font='bold 12px Courier New'; ctx.fillText(`AI: ${D.name}`,W/2,140);
-      ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText(`BANE ${trackSel+1} / ${TRACKS.length}  ·  20 sjåfører på startgrid`,W/2,152);
-    }
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New';
+    ctx.fillText('← → bytt bane   ENTER kjør løp   P øvingskjøring',W/2,82);
+    ctx.fillStyle='#1e293b'; ctx.font='9px Courier New';
+    ctx.fillText(`BANE ${trackSel+1} / ${TRACKS.length}  ·  20 sjåfører på startgrid`,W/2,96);
     // carousel: only render prev/current/next out of all TRACKS, so the
     // 6-track (and growing) roster still fits the 520px-wide canvas.
     const N=TRACKS.length;
@@ -2469,7 +2526,7 @@ function draw(){
       const ti=((trackSel+d)%N+N)%N;
       const t=TRACKS[ti];
       const sel=d===0;
-      const bx0=60+(d+1)*150, by0=158, bw0=130, bh0=420;
+      const bx0=60+(d+1)*150, by0=142, bw0=130, bh0=290;
       ctx.fillStyle=sel?'rgba(225,6,0,.12)':'rgba(255,255,255,.03)';
       ctx.fillRect(bx0,by0,bw0,bh0);
       ctx.strokeStyle=sel?'#e10600':'#1e293b'; ctx.lineWidth=sel?2.5:1;
@@ -2491,32 +2548,60 @@ function draw(){
       ctx.restore();
       ctx.fillStyle=sel?'#f1f5f9':'#64748b'; ctx.font='bold 13px Courier New';
       ctx.fillText(t.name,ccx,by0+ph+40);
-      ctx.fillStyle='#475569'; ctx.font='8px Courier New';
-      ctx.fillText(t.info,ccx,by0+ph+58);
-      ctx.fillText(`Bredde ${t.TW*2}  ·  DRS-zoner ${t.drsZones.length}`,ccx,by0+ph+74);
+      // t.info er en hel setning og var aldri smal nok til å få plass i en boks
+      // på 130 px: den rant ut til begge sider og la seg oppå nabobanenes
+      // tekst. Den brytes derfor på ordgrenser til bredden inne i boksen, så
+      // hver bane holder seg på sin egen flate uansett hvor lang infoen er.
+      ctx.fillStyle='#475569'; ctx.font='9px Courier New';
+      const maxW=bw0-14, words=t.info.split(' '), lines=[];
+      let cur='';
+      words.forEach(w=>{
+        const tryLine=cur?cur+' '+w:w;
+        if(cur && ctx.measureText(tryLine).width>maxW){ lines.push(cur); cur=w; }
+        else cur=tryLine;
+      });
+      if(cur) lines.push(cur);
+      lines.forEach((ln,k)=>ctx.fillText(ln,ccx,by0+ph+56+k*11));
+      // Forkortet fra «DRS-zoner» til «DRS»: den lange varianten ble 146 px bred
+      // og stakk ut av en boks som bare er 116 px innvendig.
+      ctx.fillText(`Bredde ${t.TW*2}  ·  DRS ${t.drsZones.length}`,ccx,by0+ph+60+lines.length*11);
     });
-    // ── distance (laps) selector ──
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Q E bytt rundelengde',W/2,592);
-    ctx.fillStyle='#facc15'; ctx.font='bold 12px Courier New'; ctx.fillText(`DISTANSE: ${LAPS} RUNDER`,W/2,606);
-    // ── skin selector ──
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Z X bytt bil-skin',W/2,620);
+    // ── AI difficulty ──
     {
-      const sk=SKINS[skinSel], swCol=sk.color||TEAMS[0].color, swAcc=sk.accent||TEAMS[0].accent;
-      ctx.fillStyle='#f1f5f9'; ctx.font='bold 12px Courier New'; ctx.textAlign='right';
-      ctx.fillText(`SKIN: ${sk.name}`,W/2+34,634);
-      ctx.fillStyle=swCol; ctx.fillRect(W/2+44,627,16,10);
-      ctx.fillStyle=swAcc; ctx.fillRect(W/2+44,627,16,3); // accent trim preview strip
-      ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(W/2+44,627,16,10);
-      ctx.textAlign='center';
+      const D=DIFFICULTIES[difficulty];
+      ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('↑ ↓ AI-nivå',W/2,448);
+      ctx.fillStyle=D.clr; ctx.font='bold 12px Courier New'; ctx.fillText(`AI: ${D.name}`,W/2,462);
     }
-    // ── time-of-day selector ──
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('C V bytt tid på døgnet',W/2,648);
+    // ── two columns: distance on the left, time of day on the right ──
+    // De sto før i én stabel nedover, men stabelen endte på y=662 og lot ikke
+    // bil-forhåndsvisningen få plass noe sted. To kolonner frigjør ~56 px.
+    const COL_L=140, COL_R=380;
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New';
+    ctx.fillText('Q E rundelengde',COL_L,486);
+    ctx.fillText('C V tid på døgnet',COL_R,486);
+    ctx.fillStyle='#facc15'; ctx.font='bold 12px Courier New';
+    ctx.fillText(`DISTANSE: ${LAPS} RUNDER`,COL_L,500);
     {
       const td=TOD[todIdx];
       ctx.fillStyle=td.clr; ctx.font='bold 12px Courier New';
-      ctx.fillText(`TID: ${td.name}`,W/2,662);
+      ctx.fillText(`TID: ${td.name}`,COL_R,500);
     }
-    ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H-6);
+    // ── skin selector ──
+    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Z X bil-skin',W/2,518);
+    {
+      // Den gamle 16×10-fargeprøven sa ingenting om hvordan bilen faktisk ville
+      // se ut — den viste to farger uten å vise hvor de havnet. Nå tegnes hele
+      // bilen i valgt lakkering med den samme funksjonen som brukes på banen,
+      // så det du ser her er nøyaktig det du får i løpet. Den koster 74×46 px,
+      // og det er grunnen til at hele skjermen er omorganisert: navnet står til
+      // venstre for bilen i stedet for over den, slik at linjeavstanden holder.
+      const sk=skinAt(skinSel);
+      ctx.fillStyle='#f1f5f9'; ctx.font='bold 12px Courier New'; ctx.textAlign='right';
+      ctx.fillText(`SKIN: ${sk.name}`,250,556);
+      drawCarShape(ctx,previewLivery(sk),{x:310,y:556,scale:2.5,shadow:false});
+      ctx.textAlign='center';
+    }
+    ctx.fillStyle='#1e293b'; ctx.font='9px Courier New'; ctx.fillText('ESC Katalog',W/2,660);
     ctx.restore(); return;
   }
 
@@ -2703,7 +2788,7 @@ function draw(){
   ctx.closePath(); ctx.stroke();
   cars.forEach(c=>{
     const [mcx,mcy]=mmPt(c.x,c.y);
-    ctx.fillStyle=c.isPlayer?(SKINS[skinSel].color||c.team.color):c.team.color; ctx.globalAlpha=c.isPlayer?1:.8;
+    ctx.fillStyle=c.isPlayer?(skinAt(skinSel).base||c.team.color):c.team.color; ctx.globalAlpha=c.isPlayer?1:.8;
     ctx.beginPath(); ctx.arc(mcx,mcy,c.isPlayer?3.2:2,0,Math.PI*2); ctx.fill();
   });
   ctx.globalAlpha=1;
@@ -2762,10 +2847,8 @@ function draw(){
       // player's chosen skin if this is the player, team colours otherwise —
       // so the podium actually shows the livery you raced with, not just a
       // flat team-colour placeholder.
-      const pSkin = car.isPlayer ? SKINS[skinSel] : null;
-      const pCol    = (pSkin && pSkin.color)   || car.team.color;
-      const pDark   = (pSkin && pSkin.dark)    || car.team.dark;
-      const pAccent = (pSkin && pSkin.accent)  || car.team.accent;
+      const plv=liveryOf(car);
+      const pCol=plv.base, pDark=plv.dark, pAccent=plv.acc;
       // team-colour car blob standing on the block
       ctx.save(); ctx.translate(slot.cx,top-14);
       ctx.fillStyle=pDark;
@@ -2859,7 +2942,9 @@ document.addEventListener('keydown',e=>{
   keys[normKey(e.key)]=true;
   if(e.key==='Escape'){window.location.href='index.html';return;}
   if(e.key==='Enter'){
-    if(state==='menu') state='trackselect';
+    // Nytt lag trekkes når du går inn i baneutvalget, ikke når løpet starter,
+    // slik at bil-forhåndsvisningen viser det laget du faktisk skal kjøre for.
+    if(state==='menu'){ rollPlayerIdent(); state='trackselect'; }
     else if(state==='trackselect') startRace();
     else if(state==='win') startRace();
   }
