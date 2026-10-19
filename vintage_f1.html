@@ -1487,6 +1487,18 @@ class Car{
                         // Fysikken leser den ALDRI — `brake` i update() er fortsatt fasiten.
     this.spr=null; // [sprite med lukkede klaffer, sprite med åpne] — se buildCarSprites()
     this.slipstreamActive=false; this.slipstreamT=0; this.slipTarget=null; // draft tow — see update()
+    // ── banegrenser (se checkTrackLimits i update()) ───────────────────────
+    this.limitViolations=0;   // antall brudd i dette løpet / denne økta
+    this.limitOffT=0;         // antall steg på rad lenger ut enn TW+LIMIT_MARGIN
+    this.limitArmed=true;     // må være tilbake innenfor TW før neste brudd kan telles
+    this.lapHadViolation=false; // for øvingsmodus: skal denne runden slettes?
+    this.penaltySec=0;        // tidsstraff i sekunder (bare spilleren får straff)
+    this.warnFlag=false;      // svart-hvitt-flagg vist resten av løpet
+    this.contactT=0;          // steg siden siste bil-mot-bil-kontakt, teller ned
+    this.finishT=null;        // raceTime da bilen fullførte — resultatlista trenger den
+    this.lapMarks=[];         // raceTime ved hver målpassering, for fartsanslag
+    this.sectorBuf=[null,null,null]; // sektortider i runden som kjøres nå, se målpasseringen
+    this.finalPlace=0;        // plassering etter at straffetid er lagt til, se finalizeResults()
   }
   get totalDist(){return this.lap+this.curProg;}
 }
@@ -1498,9 +1510,125 @@ let trackSel=0, cntTimer=0;
 let camX=0,camY=0,camAngle=0;
 const CHASE_Y = HY+(H-HY)*0.68; // chase-cam anchor: car sits lower on screen, more track visible ahead
 let bestSector=[Infinity,Infinity,Infinity];
+let bestLap=Infinity;     // beste GYLDIGE runde — slettede runder teller ikke, se målpasseringen
+let finalResults=null;    // resultatlista med straffetid, satt av finalizeResults()
 
 function addShake(n){ shake=Math.min(16,shake+n); }
 function toast(t,clr){ toasts.push({t,clr,life:1}); }
+
+// ── banegrenser ─────────────────────────────────────────────────────────────
+// F1-regelen er at den hvite linja er en DEL av banen, mens asfalten utenfor
+// den (kerben) ikke er det. Bilen er utenfor først når ingen del av den lenger
+// berører banen. TR.TW er halve banebredden målt fra senterlinja, så en bil med
+// senter TW + LIMIT_MARGIN ute har hele bredden sin forbi den hvite linja.
+//
+// HVORFOR 8 px: bilen er 28 px lang og rundt 16 px bred, altså ~8 px fra senter
+// til ytterkant. Grusen begynner også ved TW og strekker seg GRAVEL_SAFE = 23 px
+// ut, så 8 px er godt inne i grusen. Dermed dekker én terskel begge reglene:
+// grusen er fortsatt fysisk nøytral å kjøre i, men å kjøre HELT ut i den er et
+// brudd.
+const LIMIT_MARGIN=8;
+// HVORFOR 8 steg: med fast tidssteg er det 0,13 sekunder. Et enkelt bilde der
+// hjulet nipper utenfor i en kerbe er ikke et brudd — det ville gitt straff for
+// normal kjøring på de banene der racinglinja ligger tett på kanten. 0,13 s er
+// derimot lenger enn et overtramp, det er en kjøretur utenfor.
+const LIMIT_STEPS=8;
+// HVORFOR 30 steg: et halvt sekund. Blir du dyttet ut av en annen bil, er det
+// ikke ditt brudd. Vinduet må være langt nok til at bilen faktisk rekker å
+// havne utenfor etter kontakten, men kort nok til at det ikke blir et fribillett
+// til å skjære svinger lenge etterpå.
+const CONTACT_GRACE=30;
+const LIMIT_PENALTY_SEC=5; // straffen fra og med fjerde brudd
+
+// Teller brudd for én bil. Kalles hvert steg for hver bil, med avstanden fra
+// senterlinja som allerede er regnet ut i update().
+//
+// Brudd telles for ALLE biler, også AI-en. AI-en får ingen straff (den har ikke
+// en dommer å forholde seg til), men tallene må finnes for at headless-testen
+// skal kunne svare på om AI-en faktisk holder seg innenfor.
+function checkTrackLimits(c,dist){
+  if(c.contactT>0) c.contactT--;
+  // Tilbake innenfor den hvite linja: nå kan et nytt brudd telles. Terskelen
+  // for å «nullstille» er TW, ikke TW+LIMIT_MARGIN — ellers kunne en bil
+  // balansere på kanten og få et nytt brudd for hver lille bølge.
+  if(dist<=TR.TW){ c.limitArmed=true; }
+  if(dist>TR.TW+LIMIT_MARGIN){
+    c.limitOffT++;
+    if(c.limitOffT>=LIMIT_STEPS && c.limitArmed){
+      c.limitArmed=false; // ett brudd per utflukt
+      // Dyttet ut av en annen bil? Da er det ikke et brudd — men utflukten er
+      // «brukt opp» uansett, så den ikke kan telles senere i samme sving.
+      if(c.contactT>0) return;
+      c.limitViolations++;
+      c.lapHadViolation=true;
+      if(c.isPlayer) announceViolation(c);
+    }
+  } else {
+    c.limitOffT=0;
+  }
+}
+
+// Anslått målgang for en bil som ennå ikke er ferdig, i sekunder.
+//
+// HVORFOR anslag i det hele tatt: løpet avsluttes i det SPILLEREN kommer i mål,
+// og da har de fleste AI-bilene en bit igjen. Rangerer man dem på tilbakelagt
+// distanse alene, kan ikke straffetid sammenlignes med noe — straff måles i
+// sekunder. Så alle må ha en tid.
+//
+// Farten hentes fra de to siste rundene, ikke fra hele løpet: starten fra
+// stillestående og en eventuell grusutflukt tidlig i løpet sier ingenting om
+// farten bilen holder nå.
+function estimateFinishSec(c){
+  const nowSec=raceTime/60;
+  const remaining=LAPS-c.raceDist; // i runder
+  if(remaining<=0) return nowSec;
+  let lapsPerSec=0;
+  const m=c.lapMarks;
+  if(m.length>=3){
+    const dt=(m[m.length-1]-m[m.length-3])/60; // to runder
+    if(dt>0) lapsPerSec=2/dt;
+  }
+  if(lapsPerSec<=0 && nowSec>0 && c.raceDist>0) lapsPerSec=c.raceDist/nowSec; // reserve: snitt over hele løpet
+  if(lapsPerSec<=0) return nowSec+remaining*60; // siste utvei, bilen har aldri beveget seg
+  return nowSec+remaining/lapsPerSec;
+}
+
+// Sluttiden en bil rangeres på: løpstid pluss straffetid.
+function finalTimeSec(c){
+  const base = c.finished && c.finishT!=null ? c.finishT/60 : estimateFinishSec(c);
+  return base+c.penaltySec;
+}
+
+// Kalles i det spilleren fullfører. Låser rekkefølgen på resultatskjermen.
+//
+// HVORFOR en egen, frosset liste: c.place oppdateres hvert steg ut fra
+// raceDist, som er riktig MENS løpet går, men den kjenner ikke straffetid. En
+// spiller med +10 s skal falle bakover på resultatlista selv om bilen fysisk
+// krysset streken først.
+function finalizeResults(){
+  finalResults=[...cars].map(c=>({car:c,time:finalTimeSec(c)}))
+    .sort((a,b)=>a.time-b.time);
+  finalResults.forEach((r,i)=>{ r.rank=i+1; r.car.finalPlace=i+1; });
+}
+
+// Straffeteksten som vises etter navnet i resultatlista og på pallen.
+function penaltyLabel(c){ return c.penaltySec>0 ? ` +${c.penaltySec}s` : ''; }
+
+// Alt spilleren får se og merke av et brudd. Skilt fra tellingen over, slik at
+// AI-en kan telles med helt samme regel uten at noe vises på skjermen.
+function announceViolation(c){
+  const n=c.limitViolations;
+  if(state==='practice') return; // øvingsmodus sletter runden i stedet, se nedenfor
+  if(n<3){
+    toast(`BANEGRENSER ${n}/3`,'#f97316');
+  } else if(n===3){
+    c.warnFlag=true;
+    toast('SVART-HVITT FLAGG – ADVARSEL','#f1f5f9');
+  } else {
+    c.penaltySec+=LIMIT_PENALTY_SEC;
+    toast(`+${LIMIT_PENALTY_SEC} SEK STRAFF`,'#ef4444');
+  }
+}
 function spawnConfetti(){
   const clrs=['#4ade80','#38bdf8','#facc15','#ef4444','#f97316','#f1f5f9'];
   for(let i=0;i<70;i++){
@@ -1641,7 +1769,7 @@ function startRace(){
   ensureTrackBg(TR);
   buildCars(); buildCarSprites();
   particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; winTimer=0; raceTime=0;
-  bestSector=[Infinity,Infinity,Infinity];
+  bestSector=[Infinity,Infinity,Infinity]; bestLap=Infinity; finalResults=null;
   state='countdown'; cntTimer=180;
 }
 
@@ -1657,7 +1785,7 @@ function startPractice(){
   buildCarSprites();
   camX=player.x; camY=player.y; camAngle=player.angle;
   particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; raceTime=0;
-  bestSector=[Infinity,Infinity,Infinity];
+  bestSector=[Infinity,Infinity,Infinity]; bestLap=Infinity; finalResults=null;
   state='practice';
 }
 
@@ -1884,6 +2012,11 @@ function update(){
     if(!c.offtrack && wasOff && c.isPlayer){
       toast('TILBAKE PÅ ASFALT','#4ade80');
     }
+    // Banegrenser telles på den RÅ avstanden fra senterlinja, ikke på
+    // c.offtrack. c.offtrack starter først utenfor grusen (TW+GRAVEL_SAFE),
+    // mens den hvite linja ligger på TW — en bil kan altså være godt forbi
+    // linja og fortsatt ikke være «offtrack» i fysikkens forstand.
+    if(state==='playing'||state==='practice') checkTrackLimits(c,dist);
 
     // stuck-in-gravel recovery (AI only) — if an AI car makes essentially no
     // lap progress for 3s straight (overshot a corner, wedged on the outer
@@ -1968,7 +2101,14 @@ function update(){
       dragMul = deepOff? 0.90 : 0.95;
       GRIP = 0.6;
       if(Math.random()<.6) dust(c.x-Math.cos(c.angle)*8,c.y-Math.sin(c.angle)*8, deepOff?'rgba(122,108,84,.8)':'rgba(70,110,60,.7)');
-      if(c.isPlayer) raceTime += 1.0; // time penalty: lose extra time off-track
+      // Her lå det før `raceTime += 1.0` når spilleren var utenfor banen.
+      // HVORFOR den er borte: raceTime er den GLOBALE løpsklokka, felles for
+      // alle bilene. Å legge til tid der flyttet aldri spilleren én plass —
+      // det eneste den gjorde var å forfalske runde- og sektortidene, og en
+      // forfalsket sektortid kunne bli lagret som beste sektor. Farten
+      // spilleren taper utenfor banen ligger i accelMul/MAX/GRIP rett over,
+      // og det er den som faktisk er straffen. Sanksjonene for å kjøre
+      // utenfor ligger nå i checkTrackLimits().
     }
     if(REALISTIC) GRIP*=gripPenalty;
     if(ersOn) accelMul*=1.18;
@@ -2070,22 +2210,53 @@ function update(){
       if(c.isPlayer){
         const sNum=c.sectorIdx+1;
         let clr='#f1f5f9';
-        if(t<bestSector[c.sectorIdx]){bestSector[c.sectorIdx]=t;clr='#c084fc';}
+        // I øvingsmodus kan runden bli slettet, og da skal heller ikke
+        // sektorene i den stå som beste. Derfor legges tiden i en buffer og
+        // skrives til bestSector FØRST når runden er fullført uten brudd (se
+        // målpasseringen nedenfor). I løp finnes ingen sletting, så der
+        // skrives den med én gang, som før. Den lilla fargen er i øving
+        // dermed en antydning om at tiden ER best, ikke en bekreftelse.
+        const wouldBeBest = t<bestSector[c.sectorIdx];
+        if(wouldBeBest) clr='#c084fc';
+        if(state==='practice') c.sectorBuf[c.sectorIdx]=t;
+        else if(wouldBeBest) bestSector[c.sectorIdx]=t;
         toast(`SEKTOR ${sNum}: ${t.toFixed(2)}s`,clr);
       }
       c.sectorIdx=sOf; c.sectorStartT=raceTime;
     }
     if(c.prevProg>.88&&pr<.12&&c.seenHalf){
       c.lap++; c.seenHalf=false; c.sectorIdx=0; c.sectorStartT=raceTime;
+      // raceTime ved hver målpassering. Resultatlista bruker de to siste for å
+      // anslå når en bil som ennå ikke er ferdig ville kommet i mål.
+      c.lapMarks.push(raceTime);
       if(c.isPlayer){
-        const lt=((raceTime-c.lapStartT)/60).toFixed(2);
-        c.lapTimes.push(lt);
+        const ltNum=(raceTime-c.lapStartT)/60;
+        const lt=ltNum.toFixed(2);
         c.lapStartT=raceTime;
-        if(state==='practice') toast(`RUNDE ${c.lap} FERDIG: ${lt}s`,'#38bdf8');
+        // En slettet runde skal ikke finnes i lapTimes i det hele tatt. Alt som
+        // regner ut «beste runde» leser den lista, så da er den automatisk
+        // utelatt overalt — også på resultatskjermen.
+        const deleted = state==='practice' && c.lapHadViolation;
+        if(deleted){
+          toast(`RUNDE ${c.lap} SLETTET – BANEGRENSER`,'#ef4444');
+        } else {
+          c.lapTimes.push(lt);
+          if(ltNum<bestLap) bestLap=ltNum;
+          if(state==='practice'){
+            for(let s=0;s<3;s++){
+              const sb=c.sectorBuf[s];
+              if(sb!=null && sb<bestSector[s]) bestSector[s]=sb;
+            }
+            toast(`RUNDE ${c.lap} FERDIG: ${lt}s`,'#38bdf8');
+          }
+        }
+        c.sectorBuf=[null,null,null];
       }
+      c.lapHadViolation=false;
       if(state==='playing' && c.lap>=LAPS){
         c.finished=true;
-        if(c.isPlayer){ state='win'; winTimer=0; buildPodiumCrowd(); if(c.place===1) spawnConfetti(); }
+        c.finishT=raceTime;
+        if(c.isPlayer){ finalizeResults(); state='win'; winTimer=0; buildPodiumCrowd(); if(player.finalPlace===1) spawnConfetti(); }
       }
     }
     c.prevProg=pr;
@@ -2105,6 +2276,11 @@ function update(){
           b.x+=nx*overlap; b.y+=ny*overlap;
           a.speed*=.92; b.speed*=.92;
           a.vx-=nx*.4; a.vy-=ny*.4; b.vx+=nx*.4; b.vy+=ny*.4;
+          // Begge bilene får nådevinduet, ikke bare den som ble dyttet: i en
+          // berøring er det ikke mulig å avgjøre hvem som dyttet hvem, og det
+          // er bedre å unnlate å straffe et brudd som kanskje var selvforskyldt
+          // enn å straffe et som helt sikkert ikke var det.
+          a.contactT=CONTACT_GRACE; b.contactT=CONTACT_GRACE;
           if(a.isPlayer||b.isPlayer) addShake(3);
         }
       }
@@ -2912,7 +3088,15 @@ function draw(){
   ctx.fillStyle=TEAMS[0].color; ctx.fillRect(0,HY-3,W,3);
   ctx.textBaseline='middle';
   if(state==='practice'){
-    ctx.fillStyle='#38bdf8'; ctx.font='bold 14px Courier New'; ctx.textAlign='left'; ctx.fillText('ØVING',8,HY/2);
+    ctx.fillStyle='#38bdf8'; ctx.font='bold 14px Courier New'; ctx.textAlign='left'; ctx.fillText('ØVING',8,HY/2-5);
+    // Beste GYLDIGE runde står fast i HUD-en. Rundetiden kommer ellers bare som
+    // en toast som forsvinner, og i øving er hele poenget å jage én tid — da må
+    // den man skal slå være synlig mens man kjører. Lilla er samme fargekode
+    // som beste sektor bruker. Slettede runder er aldri med i bestLap.
+    if(bestLap<Infinity){
+      ctx.fillStyle='#c084fc'; ctx.font='bold 9px Courier New';
+      ctx.fillText(`BESTE ${bestLap.toFixed(2)}s`,8,HY/2+11);
+    }
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
     ctx.fillText(`RUNDE ${player.lap+1}  ·  ${TR.name}`,W/2,HY/2-9);
   } else {
@@ -2949,6 +3133,36 @@ function draw(){
   if((state==='playing'||state==='practice') && player.offtrack){
     ctx.fillStyle='rgba(239,68,68,.9)'; ctx.font='bold 10px Courier New'; ctx.textAlign='center';
     ctx.fillText('UTENFOR BANEN',W/2,HY+16);
+  }
+
+  // ── banegrense-status ──
+  // Bruddene kom bare som toast før, og en toast er borte etter halvannet
+  // sekund. Står man på 3/3 er neste brudd +5 s, og det må være mulig å vite
+  // UTEN å huske en melding fra fire svinger siden. Venstrestilt på x=8 fordi
+  // «UTENFOR BANEN» er sentrert (spenner 221–299 px) — de to kan vises
+  // samtidig, og da skal de ikke ligge oppå hverandre.
+  if(state==='playing'||state==='practice'){
+    ctx.textAlign='left'; ctx.font='bold 10px Courier New';
+    if(state==='practice'){
+      // I øving finnes ingen straff, bare sletting. Det nyttige å vite er om
+      // runden man kjører NÅ allerede er tapt — da kan man la den gå og
+      // begynne på nytt i stedet for å presse en tid som ikke blir stående.
+      if(player.lapHadViolation){
+        ctx.fillStyle='#ef4444'; ctx.fillText('RUNDEN SLETTES',8,HY+16);
+      }
+    } else if(player.warnFlag){
+      // Svart-hvitt-flagget henger ute resten av løpet: det er en advarsel som
+      // ikke nullstilles, og etter det koster hvert brudd tid. Flagget tegnes
+      // som to ruter i stedet for tekst — det er sånn det ser ut på banen, og
+      // to 7 px-ruter er lettere å oppfatte i periferien enn et ord.
+      ctx.fillStyle='#f1f5f9'; ctx.fillRect(8,HY+10,7,7); ctx.fillRect(15,HY+17,7,7);
+      ctx.fillStyle='#0b0e14'; ctx.fillRect(15,HY+10,7,7); ctx.fillRect(8,HY+17,7,7);
+      ctx.fillStyle='#f1f5f9';
+      ctx.fillText(player.penaltySec>0?`+${player.penaltySec}s`:'ADVARSEL',26,HY+18);
+    } else if(player.limitViolations>0){
+      ctx.fillStyle='#f97316'; ctx.fillText(`GRENSER ${player.limitViolations}/3`,8,HY+16);
+    }
+    ctx.textAlign='center';
   }
 
   // toasts
@@ -3032,8 +3246,12 @@ function draw(){
   if(state==='win'){
     ctx.fillStyle='rgba(5,7,10,.88)'; ctx.fillRect(0,0,W,H);
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    const won=player.place===1;
-    const ordered=[...cars].sort((a,b)=>a.place-b.place);
+    // Rekkefølgen kommer fra finalizeResults(), ikke fra c.place: c.place
+    // kjenner ikke straffetid, og en spiller med +10 s skal falle bakover her
+    // selv om bilen fysisk krysset streken først.
+    if(!finalResults) finalizeResults();
+    const ordered=finalResults.map(r=>r.car);
+    const won=player.finalPlace===1;
     const podium=ordered.slice(0,3);
 
     if(won){
@@ -3110,7 +3328,7 @@ function draw(){
       // gulvet). Det fulle navnet vises i stedet på egen linje under podiet,
       // der det er 520 px å ta av.
       ctx.fillStyle=teamInk(car.team.color); ctx.font='bold 9px Courier New';
-      ctx.fillText(car.isPlayer?'DU':car.team.name+' '+car.num,slot.cx,BASE+15);
+      ctx.fillText((car.isPlayer?'DU':car.team.name+' '+car.num)+penaltyLabel(car),slot.cx,BASE+15);
     });
 
     // Vinnerens fulle navn — tittelsponsor + lag — på egen linje over hele
@@ -3121,11 +3339,18 @@ function draw(){
       ctx.fillText(`${teamFullName(w0.team)} ${w0.num}`,W/2,BASE+38);
     }
     ctx.fillStyle='#64748b'; ctx.font='12px Courier New';
-    ctx.fillText(`${player.place}. plass · Totaltid: ${(raceTime/60).toFixed(1)}s`,W/2,BASE+58);
+    // Totaltiden er løpstid PLUSS straffetid, altså det samme tallet lista
+    // rangeres på. Hadde den stått uten straffen, ville spilleren sett en
+    // plassering som ikke stemte med tiden rett ved siden av.
+    ctx.fillText(`${player.finalPlace}. plass · Totaltid: ${finalTimeSec(player).toFixed(1)}s`,W/2,BASE+58);
+    if(player.penaltySec>0){
+      ctx.fillStyle='#ef4444'; ctx.font='10px Courier New';
+      ctx.fillText(`Inkludert +${player.penaltySec}s straff · ${player.limitViolations} banegrensebrudd`,W/2,BASE+74);
+    }
     if(player.lapTimes.length){
       const best=Math.min(...player.lapTimes.map(Number)).toFixed(2);
       ctx.fillStyle='#334155'; ctx.font='10px Courier New';
-      ctx.fillText(`Beste runde: ${best}s`,W/2,BASE+76);
+      ctx.fillText(`Beste runde: ${best}s`,W/2,BASE+(player.penaltySec>0?90:76));
     }
 
     // compact final standings: top 5 + the player's own row (20-car field
@@ -3133,8 +3358,8 @@ function draw(){
     ctx.font='9px Courier New';
     {
       const top=ordered.slice(0,5);
-      const rows = player.place<=5 ? top.map((c,i)=>({c,rank:i+1})) :
-        [...top.map((c,i)=>({c,rank:i+1})), {gap:true}, {c:player,rank:player.place}];
+      const rows = player.finalPlace<=5 ? top.map((c,i)=>({c,rank:i+1})) :
+        [...top.map((c,i)=>({c,rank:i+1})), {gap:true}, {c:player,rank:player.finalPlace}];
       const listY0=BASE+100;
       rows.forEach((row,i)=>{
         const ry=listY0+i*15;
@@ -3143,7 +3368,7 @@ function draw(){
         ctx.fillStyle=teamInk(c.team.color);
         // Fullt navn her — lista er sentrert over hele bredden, så det er god
         // plass til «Fjellbor Industri GRANITT 2» (162 px på 9 px Courier).
-        ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':teamFullName(c.team)+' '+c.num}`,W/2,ry);
+        ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':teamFullName(c.team)+' '+c.num}${penaltyLabel(c)}`,W/2,ry);
       });
       const listRows=rows.length;
       const promptY=listY0+listRows*15+20;
