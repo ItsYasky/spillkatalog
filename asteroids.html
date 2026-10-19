@@ -20,6 +20,64 @@ function wrap(o,r){
   if(o.y<-r)o.y=H+r; else if(o.y>H+r)o.y=-r;
 }
 
+// ── Kollisjon mot steinenes faktiske form ─────────────────────────
+// Steinene TEGNES som polygoner der hvert hjørne ligger på mellom 72% og
+// 108% av radiusen (se makeShape), men kollisjon ble sjekket mot en sirkel
+// med full radius. Det ga treff i tomrommet: skudd "traff" tydelig ved
+// siden av steinen der den har et innhakk, og skipet døde av steiner det
+// ikke rørte. Nå sjekkes den samme formen spilleren ser.
+
+// strålekasting: teller hvor mange ganger en stråle fra punktet krysser
+// polygonets kanter — odde antall betyr at punktet er inne i formen
+function pointInPoly(x,y,pts){
+  let inne=false;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    const xi=pts[i][0], yi=pts[i][1], xj=pts[j][0], yj=pts[j][1];
+    if((yi>y)!==(yj>y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) inne=!inne;
+  }
+  return inne;
+}
+
+// kvadrert avstand fra punkt til linjestykke (kvadrert for å slippe en
+// Math.sqrt per kant — vi sammenligner bare mot r*r)
+function distToSegSq(px,py,ax,ay,bx,by){
+  const vx=bx-ax, vy=by-ay, wx=px-ax, wy=py-ay;
+  const lenSq=vx*vx+vy*vy;
+  let t = lenSq>0 ? (wx*vx+wy*vy)/lenSq : 0;
+  if(t<0)t=0; else if(t>1)t=1;
+  const dx=ax+vx*t-px, dy=ay+vy*t-py;
+  return dx*dx+dy*dy;
+}
+
+// Treffer en sirkel med sentrum (x,y) og radius r denne steinen?
+// r=0 brukes for skudd (rene punkter), SHIP_HIT_R for skipet.
+function hitsRock(rock,x,y,r){
+  // Grovsjekk med sirkel først: ingen del av polygonet kan stikke lenger ut
+  // enn 108% av radiusen, så alt utenfor det kan forkastes med én
+  // avstandsmåling. Det holder den dyre polygon-sjekken unna de aller
+  // fleste par, så spillet går like fort som før.
+  const maxR=rock.r*1.08+r;
+  const dx=x-rock.x, dy=y-rock.y;
+  if(dx*dx+dy*dy > maxR*maxR) return false;
+
+  // Over i steinens egne koordinater. Steinen tegnes med ctx.rotate(rock.rot),
+  // så punktet må roteres tilbake like mye for å matche hjørnene i rock.shape.
+  const c=Math.cos(rock.rot), s=Math.sin(rock.rot);
+  const lx =  dx*c + dy*s;
+  const ly = -dx*s + dy*c;
+
+  const pts=rock.shape;
+  if(pointInPoly(lx,ly,pts)) return true;
+  if(r<=0) return false;
+  // Sentrum er utenfor formen, men en sirkel med radius r kan fortsatt
+  // ligge inntil en kant — da er det et skrapetreff.
+  const rSq=r*r;
+  for(let i=0,j=pts.length-1;i<pts.length;j=i++){
+    if(distToSegSq(lx,ly,pts[j][0],pts[j][1],pts[i][0],pts[i][1])<rSq) return true;
+  }
+  return false;
+}
+
 // ── Pre-render starfield background ─────────────────────────────
 const bgcv=document.createElement('canvas'); bgcv.width=W; bgcv.height=H;
 const bx=bgcv.getContext('2d');
@@ -32,6 +90,9 @@ for(let i=0;i<140;i++){
 
 // ── Constants ─────────────────────────────────────────────────────
 const SHIP_R=9;
+// Treffradius for skipet, bevisst litt mindre enn SHIP_R (som styrer hvor
+// stort skipet TEGNES). Da føles nesten-treff heldige i stedet for urettferdige.
+const SHIP_HIT_R=7;
 const ROT_SPEED=0.064;
 const THRUST=0.145;
 const MAX_SPEED=6.4;
@@ -367,7 +428,7 @@ function update(){
     const b=bullets[bi]; let used=false;
     for(let ai=asteroids.length-1;ai>=0;ai--){
       const a=asteroids[ai];
-      if(dist(b.x,b.y,a.x,a.y)<a.r){
+      if(hitsRock(a,b.x,b.y,0)){ // skudd er små nok til å regnes som punkter
         if(elektroTime>0) chainLightning(a.x,a.y,a);
         splitAsteroid(a);
         const idx=asteroids.indexOf(a);
@@ -390,7 +451,9 @@ function update(){
   if(ship.alive && (ship.invuln<=0 || ship.dashTimer>0 || shieldTime>0)){
     for(let ai=asteroids.length-1;ai>=0;ai--){
       const a=asteroids[ai];
-      if(dist(ship.x,ship.y,a.x,a.y)<a.r+SHIP_R){
+      // samme formsjekk uansett om det blir dash-knusing, skjold-avvisning
+      // eller død — spilleren skal oppleve nøyaktig samme treffflate
+      if(hitsRock(a,ship.x,ship.y,SHIP_HIT_R)){
         if(ship.dashTimer>0){ splitAsteroid(a); asteroids.splice(ai,1); }
         else if(shieldTime>0){ /* skjold: uskadd, steinen overlever */ }
         else if(ship.invuln<=0){ killShip(); break; }
