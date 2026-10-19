@@ -1463,6 +1463,23 @@ let todIdx=0;
 const LAP_OPTIONS=[3,5,8,12,20];
 let lapsIdx=1, LAPS=LAP_OPTIONS[lapsIdx];
 
+// ── tidtakingspunkter ──────────────────────────────────────────────────────
+// Ekte F1-tidtaking måler ikke avstand, den måler TID: banen er delt i et
+// antall punkter, og hver bil får et tidsstempel hver gang den passerer ett av
+// dem. Gapet mellom to biler er da differansen mellom tidsstemplene deres på
+// SAMME punkt — ikke en omregning fra avstand, som ville blitt feil i det
+// øyeblikket to biler holder ulik fart.
+//
+// HVORFOR 50 PUNKTER: en runde tar rundt 40 sekunder, altså cirka 2400 steg.
+// 50 punkter gir et oppdatert gap hvert 48. steg, altså cirka hvert 0,8
+// sekund. Det er omtrent takten en ekte tidtakingsskjerm oppdateres i, og det
+// er tett nok til at tallet føles levende uten at det flimrer.
+const GAP_MARKS=50;
+// To runder med punkter. Lengre historikk trengs ikke: gapet leses alltid på
+// det punktet bilen SIST passerte, og trendfargen sammenligner med forrige
+// runde på samme punkt. Begge ligger innenfor to runder.
+const GAP_RING=GAP_MARKS*2;
+
 class Car{
   constructor(x,y,ang,team,isPlayer){
     this.x=x;this.y=y;this.angle=ang;
@@ -1499,6 +1516,17 @@ class Car{
     this.lapMarks=[];         // raceTime ved hver målpassering, for fartsanslag
     this.sectorBuf=[null,null,null]; // sektortider i runden som kjøres nå, se målpasseringen
     this.finalPlace=0;        // plassering etter at straffetid er lagt til, se finalizeResults()
+    // ── tidtakingspunkter (se recordGapMarks / gapAhead) ───────────────────
+    // Ringbuffer over de to siste rundene. markT er raceTime da punktet ble
+    // passert, markI er det GLOBALE punktnummeret som ligger i den plassen.
+    // Uten markI ville en bil som er mer enn to runder bak lest en gammel tid
+    // fra en overskrevet plass og fått et gap som så rimelig ut, men var feil.
+    this.markT=new Float64Array(GAP_RING);
+    this.markI=new Int32Array(GAP_RING).fill(-1<<30);
+    this.lastMark=null;       // globalt punktnummer bilen sist passerte
+    this.aheadCar=null; this.behindCar=null; // naboer i kampen, settes i update()
+    this.gapHist=new Float64Array(GAP_MARKS).fill(NaN); // gapet forrige runde, per punkt i runden
+    this.gapTrend=0;          // -1 krymper (grønn), +1 vokser (rød), 0 vet ikke
   }
   get totalDist(){return this.lap+this.curProg;}
 }
@@ -1613,6 +1641,100 @@ function finalizeResults(){
 
 // Straffeteksten som vises etter navnet i resultatlista og på pallen.
 function penaltyLabel(c){ return c.penaltySec>0 ? ` +${c.penaltySec}s` : ''; }
+
+// ── tidtaking og gap ────────────────────────────────────────────────────────
+// Stempler bilen inn på hvert tidtakingspunkt den passerer. Kalles hvert steg
+// for hver bil, rett etter at raceDist er oppdatert.
+//
+// raceDist er bevisst brukt i stedet for lap+curProg: den er sammenhengende
+// over målstreken og kan starte litt NEGATIV for biler som står foran streken
+// på startgriden, slik at punktnummeret er entydig selv før første runde er
+// registrert. Derfor må modulo-regningen tåle negative tall.
+function recordGapMarks(c){
+  const idx=Math.floor(c.raceDist*GAP_MARKS);
+  if(c.lastMark===null){ stampMark(c,idx); c.lastMark=idx; return; }
+  if(idx<=c.lastMark) return; // samme punkt, eller bilen har rygget litt
+  // Normalt passeres ett punkt om gangen (cirka hvert 48. steg). Skulle et
+  // steg likevel dekke flere punkter, stemples de mellomliggende med samme tid
+  // i stedet for å bli stående tomme — et hull ville gjort gapet utilgjengelig
+  // for alle som leste det punktet senere.
+  const start=Math.max(c.lastMark+1, idx-GAP_RING+1);
+  for(let m=start;m<=idx;m++) stampMark(c,m);
+  c.lastMark=idx;
+  // Trendfargen: gapet nå mot gapet på SAMME punkt i runden forrige gang.
+  const naa=gapAhead(c);
+  const p=markSlotInLap(idx);
+  const gammel=c.gapHist[p];
+  if(naa!=null && !Number.isNaN(gammel)) c.gapTrend = naa<gammel ? -1 : 1;
+  else if(naa==null) c.gapTrend=0;
+  if(naa!=null) c.gapHist[p]=naa;
+}
+function stampMark(c,m){
+  const slot=((m%GAP_RING)+GAP_RING)%GAP_RING;
+  c.markT[slot]=raceTime; c.markI[slot]=m;
+}
+function markSlotInLap(m){ return ((m%GAP_MARKS)+GAP_MARKS)%GAP_MARKS; }
+// Tiden bilen passerte et bestemt punkt, eller null hvis den aldri gjorde det
+// (eller det er så lenge siden at plassen er overskrevet).
+function markTime(c,m){
+  const slot=((m%GAP_RING)+GAP_RING)%GAP_RING;
+  return c.markI[slot]===m ? c.markT[slot] : null;
+}
+// Bilen rett foran / rett bak i løpsstillingen. Naboene settes én gang per
+// steg sammen med plasseringene (se slutten av update()), ikke ved å lete i
+// `cars` her — gapAhead kalles for hver bil hvert steg, og et søk per kall
+// ville blitt 400 gjennomganger av feltet i sekundet uten å gi noe nytt svar.
+//
+// Biler som har fullført er ikke med: de ruller en avkjølingsrunde og er ute
+// av kampen. Naboene hopper derfor OVER dem, i stedet for at gapet forsvinner
+// for alle som ligger bak en bil som nettopp gikk i mål.
+function carAhead(c){ return c.aheadCar; }
+function carBehind(c){ return c.behindCar; }
+
+// Gapet til bilen foran, i sekunder, eller null når det ikke kan måles.
+//
+// Hovedleddet tas på det punktet BILEN SELV sist passerte: «da jeg var her,
+// hvor lenge var det siden han var her?». Begge tidene er låste tidsstempler,
+// så tallet står stille mellom punktene. Prompten ba om «nå minus tiden bilen
+// foran passerte mitt siste punkt», men da vokser gapet jevnt fram til neste
+// punkt og faller tilbake idet det passeres — et sagtannmønster på opptil 0,8
+// sekunder, som er mer enn gapet man faktisk kjemper om.
+//
+// Et låst tidsstempel alene er likevel for lite: står bilen stille, blir tallet
+// hengende på den siste målingen for alltid (målt i nettleseren: «▲ +0.00» mens
+// bilen i praksis var sju sekunder bak). Derfor et andre ledd — hvor lenge det
+// er siden bilen foran forlot punktet JEG er på vei mot. Det leddet begynner
+// først å vokse når jeg bruker lengre tid på strekket enn han gjorde, altså
+// bare når gapet virkelig øker, og treffer akkurat hovedleddet i det jeg
+// passerer punktet. Maksimum av de to gir derfor et tall som står stille når
+// farten holder, vokser når den ikke gjør det, og aldri hopper.
+function gapAhead(c){
+  if(c.lastMark===null || c.finished) return null;
+  const a=carAhead(c); if(!a) return null;
+  const tMeg=markTime(c,c.lastMark), tHan=markTime(a,c.lastMark);
+  if(tMeg==null || tHan==null) return null;
+  let g=tMeg-tHan;
+  const tHanNeste=markTime(a,c.lastMark+1);
+  if(tHanNeste!=null) g=Math.max(g, raceTime-tHanNeste);
+  return g/60;
+}
+// Gapet til bilen bak, målt på det punktet BILEN BAK sist passerte — det er
+// det ferskeste punktet begge to har vært innom. Samme tillegg som over, bare
+// speilvendt: mister bilen bak farten, er det tiden siden JEG forlot punktet
+// han er på vei mot som vokser.
+function gapBehind(c){
+  if(c.lastMark===null || c.finished) return null;
+  const b=carBehind(c); if(!b || b.lastMark===null) return null;
+  const tHan=markTime(b,b.lastMark), tMeg=markTime(c,b.lastMark);
+  if(tMeg==null || tHan==null) return null;
+  let g=tHan-tMeg;
+  const tMegNeste=markTime(c,b.lastMark+1);
+  if(tMegNeste!=null) g=Math.max(g, raceTime-tMegNeste);
+  return g/60;
+}
+// To desimaler under ti sekunder, én over — samme oppløsning som en ekte
+// tidtakingsskjerm, der det femte sifferet uansett ikke rekker å leses.
+function fmtGap(s){ const a=Math.abs(s); return a>=10 ? a.toFixed(1) : a.toFixed(2); }
 
 // Alt spilleren får se og merke av et brudd. Skilt fra tellingen over, slik at
 // AI-en kan telles med helt samme regel uten at noe vises på skjermen.
@@ -2202,6 +2324,7 @@ function update(){
     // has registered a real lap (see initRaceDist() in buildCars()).
     let dRace=pr-c.prevProg; if(dRace<-0.5)dRace+=1; else if(dRace>0.5)dRace-=1;
     c.raceDist+=dRace;
+    recordGapMarks(c); // tidsstempel på tidtakingspunktene, se gapAhead()
     c.curProg=pr;
     if(pr>.38&&pr<.62)c.seenHalf=true;
     const sOf=Math.min(2,Math.floor(pr*3));
@@ -2287,7 +2410,14 @@ function update(){
     }
   }
 
-  [...cars].sort((a,b)=>b.raceDist-a.raceDist).forEach((c,i)=>c.place=i+1);
+  const ordered=[...cars].sort((a,b)=>b.raceDist-a.raceDist);
+  ordered.forEach((c,i)=>c.place=i+1);
+  // Naboene i kampen, brukt av gapAhead/gapBehind. Biler på avkjølingsrunde
+  // tas ut av rekka her, slik at gapet hopper over dem i stedet for å slutte
+  // å virke for alle som ligger bak.
+  const racing=ordered.filter(c=>!c.finished);
+  racing.forEach((c,i)=>{ c.aheadCar=racing[i-1]||null; c.behindCar=racing[i+1]||null; });
+  ordered.forEach(c=>{ if(c.finished){ c.aheadCar=null; c.behindCar=null; } });
   camX+=(player.x-camX)*.14;
   camY+=(player.y-camY)*.14;
   camAngle+=wrapPi(player.angle-camAngle)*.12;
@@ -3102,7 +3232,29 @@ function draw(){
   } else {
     const posLbl=`P${player.place}`;
     const posClr=player.place===1?'#4ade80':player.place===2?'#38bdf8':player.place===3?'#f97316':player.place<=10?'#f1f5f9':'#64748b';
-    ctx.fillStyle=posClr; ctx.font='bold '+(player.place>=10?18:22)+'px Courier New'; ctx.textAlign='left'; ctx.fillText(posLbl,8,HY/2);
+    // P-merket er flyttet 5 px opp for å gi plass til tidsgapene under seg.
+    // Toppfeltet er bare 50 px høyt, så dette er den eneste ledige linja som
+    // ikke kolliderer med rundetelleren i midten eller farten til høyre.
+    ctx.fillStyle=posClr; ctx.font='bold '+(player.place>=10?18:22)+'px Courier New'; ctx.textAlign='left'; ctx.fillText(posLbl,8,HY/2-5);
+    // ── tidsgap, som på en tidtakingsskjerm ──
+    // Begge gapene står på samme linje fordi det ikke finnes to ledige linjer
+    // under P-merket. Fargen gjelder bare gapet FORAN: den sier om du tar inn
+    // på bilen foran eller mister, sammenlignet med forrige runde på samme
+    // punkt. Gapet bakover får ingen trendfarge — det er informasjon, ikke et
+    // mål du jager.
+    const gA=gapAhead(player), gB=gapBehind(player);
+    ctx.font='bold 9px Courier New'; ctx.textAlign='left';
+    let gx=8;
+    if(gA!=null){
+      ctx.fillStyle = player.gapTrend<0 ? '#4ade80' : player.gapTrend>0 ? '#ef4444' : '#94a3b8';
+      const sA=`▲ +${fmtGap(gA)}`;
+      ctx.fillText(sA,gx,HY/2+13);
+      gx+=ctx.measureText(sA).width+9;
+    }
+    if(gB!=null){
+      ctx.fillStyle='#94a3b8';
+      ctx.fillText(`▼ −${fmtGap(gB)}`,gx,HY/2+13);
+    }
     const displayLap=Math.min(player.lap+1,LAPS);
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New'; ctx.textAlign='center';
     ctx.fillText(`RUNDE ${displayLap}/${LAPS}  ·  ${TR.name}  ·  ${DIFFICULTIES[difficulty].name}`,W/2,HY/2-9);
