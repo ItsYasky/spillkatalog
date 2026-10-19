@@ -1597,7 +1597,19 @@ function buildCars(){
     // drivers, backmarkers (just ahead of the player) are its weakest —
     // so starting last means picking off easy traffic first before facing
     // real resistance up front, instead of 19 identical clones.
-    const posFactor=1.08-0.22*(p/(AI_COUNT-1));
+    // Spennet ble strammet fra 0,22 til 0,06 da gummistrikken ble svekket.
+    // HVORFOR: gummistrikken skjulte før hvor stort spennet egentlig var — den
+    // dro de raske ned til 85 % og de trege opp til 118 %, så feltet holdt seg
+    // samlet uansett. Med spennet urørt og strikken borte ble siste bil 1,4–1,8
+    // runder bak etter åtte runder (målt på alle 13 banene), altså rundet av
+    // lederen. Det er ikke et felt, det er en oppstilling. 0,06 gir 0,5–0,8
+    // runders spredning: et felt som strekker seg naturlig, men der siste bil
+    // fortsatt er i samme løp.
+    //
+    // Midtpunktet er med vilje holdt på 0,97 (som før: snittet av 1,08…0,86).
+    // Flyttes det, endres AI-ens absolutte fart og dermed balansen mot
+    // spillerens egen toppfart — og det er ikke det dette steget skal gjøre.
+    const posFactor=1.00-0.06*(p/(AI_COUNT-1));
     c.skillVar=posFactor*(0.97+Math.random()*0.06);
     cars.push(c);
   }
@@ -1802,15 +1814,52 @@ function update(){
       // a full barrier shunt than before this fix.
       const hairpinExtra=hairpinSev*6*hairpinScale*(c.mistakeT>0?0.4:1);
 
-      const corner=c.skillVar*D.baseMax/(1+maxCurv*effK+hairpinExtra);
+      // straightPace er farten bilen ville holdt uten sving i det hele tatt.
+      // Den trengs nedenfor for å kunne tynne ut gummistrikkens påslag i
+      // svingene, og er samtidig teller i `corner`, så den beregnes bare én
+      // gang her.
+      const straightPace=c.skillVar*D.baseMax;
+      const corner=straightPace/(1+maxCurv*effK+hairpinExtra);
 
-      // light rubber-band: keeps the pack from drifting absurdly far apart
-      // over a full race, but it's now a small multiplier on top of genuine
-      // skill-based pace rather than the main driver of AI speed.
+      // Gummistrikk, versjon 3: nesten usynlig.
+      //
+      // HVORFOR den ble strammet inn så kraftig: tidligere lå `rubberMul`
+      // mellom 0,85 og 1,18. Siden spilleren ALLTID starter sist, og
+      // referansepunktet er spillerens `raceDist`, betydde det i praksis at
+      // hele feltet ventet på spilleren — de foran kjørte på 85 % fart, og de
+      // bak fikk 118 % også gjennom svinger de ikke er stilt inn for. Et godt
+      // innhentingssystem skal ikke nulle ut et godt kjørt løp, og spillere vil
+      // kjøre under samme regler som de de kjører mot. Nå er spennet 0,97–1,03,
+      // og den naturlige spredningen i feltet kommer i stedet fra `skillVar` og
+      // `posFactor` i buildCars().
       const gap=c.raceDist-player.raceDist;
-      c.rubberMul=Math.max(.85,Math.min(1.18,c.rubberMul+(gap>D.rubberThresh?-D.rubberRate:gap<-D.rubberThresh?D.rubberRate:0)));
+      // Taket på endringsraten gjør at utslaget bygger seg opp over sekunder,
+      // ikke på et par bilder — ellers ville en bil som så vidt krysser
+      // terskelen rykke merkbart til.
+      const rRate=Math.min(D.rubberRate,0.0005);
+      // De som ligger FORAN bremses først når forspranget er over en tredjedel
+      // av en runde, og aldri under 0,99. Under det er avstanden et resultat av
+      // løpet, ikke noe spillet skal reparere.
+      const AHEAD_THRESH=0.35, AHEAD_FLOOR=0.99;
+      let rTarget=0;
+      if(gap>AHEAD_THRESH) rTarget=-rRate;
+      else if(gap<-D.rubberThresh) rTarget=rRate;
+      c.rubberMul=Math.max(.97,Math.min(1.03,c.rubberMul+rTarget));
+      if(gap>0 && c.rubberMul<AHEAD_FLOOR) c.rubberMul=AHEAD_FLOOR;
+      // ULTRA har ingen gummistrikk i det hele tatt: der er hele poenget at
+      // feltet kjører på sin egen fart.
+      if(D.name==='ULTRA') c.rubberMul=1;
 
-      c.aiSpd=corner*c.rubberMul;
+      // Et påslag (rubberMul > 1) skal aldri løfte SVINGFARTEN. `corner` er
+      // taket svingen tillater, og en bil som henger etter skal få ta igjen på
+      // rettstrekkene — ikke ved å kaste seg inn i svingene fortere enn den er
+      // stilt inn for. Derfor skaleres påslaget med hvor lite svingen alt har
+      // tatt bort: cornerFrac er ~1 på rettstrekke (fullt påslag) og lite i en
+      // hårnål (nesten ingenting).
+      let rMul=c.rubberMul;
+      if(rMul>1) rMul=1+(rMul-1)*(corner/straightPace);
+
+      c.aiSpd=corner*rMul;
       gas = c.speed < c.aiSpd;
       brake = c.speed > c.aiSpd*D.overspeed;
 
