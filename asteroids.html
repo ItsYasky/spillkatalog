@@ -63,6 +63,33 @@ const POWERUPS={
 };
 const PICKUP_LIFE=560;
 
+// ── Tastatur ──────────────────────────────────────────────────────
+// Handling -> fysiske tastekoder (e.code). Vi bruker e.code og IKKE e.key
+// fordi e.key gir tegnet tasten produserte, som endrer seg med Shift og
+// Caps Lock: holdt man A nede, trykket Shift (hyperrom) og slapp A, kom
+// keyup som 'A' mens keydown hadde vært 'a' — keys['a'] ble aldri satt
+// tilbake til false, og skipet roterte videre av seg selv. e.code er den
+// fysiske tasten ('KeyA') uansett modifikatorer, så ned og opp matcher alltid.
+const TASTER={
+  ROTER_VENSTRE:['ArrowLeft','KeyA'],
+  ROTER_HOEYRE :['ArrowRight','KeyD'],
+  GASS         :['ArrowUp','KeyW'],
+  SKYT         :['Space'],
+  HYPERROM     :['ShiftLeft','ShiftRight','KeyH'],
+  START        :['Enter','NumpadEnter'],
+  PAUSE        :['KeyP'],
+  KATALOG      :['Escape'],
+};
+// taster vi må stoppe nettleserens standardoppførsel for (mellomrom og
+// piltaster ruller siden), ellers hopper hele siden mens man spiller
+const BLOKKER_STANDARD=['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+
+function holdes(handling){
+  const koder=TASTER[handling];
+  for(let i=0;i<koder.length;i++) if(keys[koder[i]]) return true;
+  return false;
+}
+
 // ── State ─────────────────────────────────────────────────────────
 let ship,bullets,ufoBullets,particles,asteroids,ufo;
 let score,hiScore=0,lives,wave,nextExtra;
@@ -288,9 +315,9 @@ function update(){
   lightningBolts=lightningBolts.filter(b=>{ b.life--; return b.life>0; });
 
   if(ship.alive){
-    if(keys['ArrowLeft']||keys['a']) ship.angle-=ROT_SPEED;
-    if(keys['ArrowRight']||keys['d']) ship.angle+=ROT_SPEED;
-    ship.thrusting=!!(keys['ArrowUp']||keys['w']);
+    if(holdes('ROTER_VENSTRE')) ship.angle-=ROT_SPEED;
+    if(holdes('ROTER_HOEYRE')) ship.angle+=ROT_SPEED;
+    ship.thrusting=holdes('GASS');
     if(ship.thrusting){
       ship.vx+=Math.cos(ship.angle)*THRUST;
       ship.vy+=Math.sin(ship.angle)*THRUST;
@@ -301,7 +328,7 @@ function update(){
     ship.x+=ship.vx; ship.y+=ship.vy;
     wrap(ship,SHIP_R);
     if(ship.invuln>0)ship.invuln--;
-    if(fireCooldown<=0 && keys[' ']){ fireBullet(); fireCooldown=FIRE_COOLDOWN; }
+    if(fireCooldown<=0 && holdes('SKYT')){ fireBullet(); fireCooldown=FIRE_COOLDOWN; }
   } else {
     respawnTimer--;
     if(respawnTimer<=0){
@@ -572,14 +599,30 @@ function drawToast(){
 }
 
 // ── Input ─────────────────────────────────────────────────────────
+// alle taster slippes når spillet mister oppmerksomheten. Uten dette blir en
+// tast som var nede da man byttet vindu stående som true for alltid (keyup
+// går til det nye vinduet, ikke til oss), og skipet roterer eller gir gass
+// av seg selv når man kommer tilbake.
+function slippAlleTaster(){
+  keys={};
+  if(ship) ship.thrusting=false; // flammen tegnes fra dette flagget, og draw() kan kjøre uten update()
+}
+window.addEventListener('blur',slippAlleTaster);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) slippAlleTaster(); });
+
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ window.location.href='index.html'; return; }
-  keys[e.key]=true;
-  if([' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
-  if(e.key==='Enter' && (state==='menu'||state==='gameover')) resetGame();
-  if((e.key==='Shift'||e.key==='h') && state==='playing'){ if(kappeTime>0) dashRam(); else hyperspace(); }
+  const kode=e.code;
+  if(BLOKKER_STANDARD.includes(kode)) e.preventDefault();
+  if(TASTER.KATALOG.includes(kode)){ window.location.href='index.html'; return; }
+  keys[kode]=true;
+  // e.repeat er autorepeat fra operativsystemet når en tast holdes nede.
+  // Handlinger som skal skje én gang per trykk må ignorere dem, ellers
+  // ville hyperrom fyre om og om igjen bare fordi tasten holdes.
+  if(e.repeat) return;
+  if(TASTER.START.includes(kode) && (state==='menu'||state==='gameover')) resetGame();
+  if(TASTER.HYPERROM.includes(kode) && state==='playing'){ if(kappeTime>0) dashRam(); else hyperspace(); }
 });
-document.addEventListener('keyup',e=>{ keys[e.key]=false; });
+document.addEventListener('keyup',e=>{ keys[e.code]=false; });
 
 // ══════════════════════════════════════════════════════════════════
 // FAST TIDSSTEG (Glenn Fiedler «Fix Your Timestep», akkumulator-metoden)
