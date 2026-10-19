@@ -70,6 +70,11 @@ let fireCooldown,hyperCooldown,respawnTimer,waveTransition,ufoTimer;
 let toastTimer=0,toastText='',toastColor='#67e8f9';
 let state='menu';
 let keys={};
+// Spillklokke i antall update()-steg. Alt som pulserer visuelt i draw() leser
+// denne i stedet for Date.now(), slik at animasjonene går i takt med spillets
+// faste tidssteg og fryser når spillet pauses — en veggklokke ville fortsatt
+// pulsert videre bak en pauseskjerm.
+let tick=0;
 let pickups=[],lightningBolts=[];
 let shieldTime=0,elektroTime=0,kappeTime=0;
 
@@ -256,6 +261,7 @@ for(let i=0;i<5;i++) spawnAsteroid('LARGE');
 
 // ── Update ────────────────────────────────────────────────────────
 function update(){
+  tick++;
   if(toastTimer>0)toastTimer--;
 
   // Ambient motion always runs (menu + gameover included)
@@ -427,7 +433,9 @@ function draw(){
   if(ship.alive && !(ship.invuln>0 && Math.floor(ship.invuln/5)%2===0)){
     if(shieldTime>0){
       ctx.save(); ctx.translate(ship.x,ship.y);
-      ctx.globalAlpha=0.55+0.25*Math.sin(Date.now()/90);
+      // 0.185 rad/steg gir samme pulstakt som den gamle Date.now()/90 hadde
+      // på 60 Hz (16,67 ms / 90), men nå styrt av spillklokka.
+      ctx.globalAlpha=0.55+0.25*Math.sin(tick*0.185);
       ctx.strokeStyle=POWERUPS.SHIELD.clr; ctx.lineWidth=1.6;
       ctx.beginPath(); ctx.arc(0,0,SHIP_R+7,0,Math.PI*2); ctx.stroke();
       ctx.globalAlpha=1; ctx.restore();
@@ -573,8 +581,56 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>{ keys[e.key]=false; });
 
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
-loop();
+// ══════════════════════════════════════════════════════════════════
+// FAST TIDSSTEG (Glenn Fiedler «Fix Your Timestep», akkumulator-metoden)
+// ══════════════════════════════════════════════════════════════════
+// Alle konstantene over (ROT_SPEED, THRUST, FRICTION, BULLET_LIFE,
+// FIRE_COOLDOWN, INVULN_TIME, HYPER_COOLDOWN, UFO_FIRE_RATE, power-up-
+// varighetene, toastTimer, ufoTimer ...) er tunet med forutsetningen om at
+// update() kjøres nøyaktig 60 ganger i sekundet. Før denne fiksen kalte
+// loop() update() én gang per requestAnimationFrame — på en 120 Hz- eller
+// 144 Hz-skjerm kjører rAF 2–2,4x oftere enn 60/s, så hele spillet (fart,
+// rotasjon, skuddtakt, UFO-er, usårbarhetstid) gikk like mye for fort.
+// Løsningen: mål ekte forløpt tid mellom frames med tidsstempelet rAF selv
+// gir callbacken (samme klokke som performance.now()), legg den i en
+// akkumulator, og kjør update() i faste 1000/60 ms-biter så lenge
+// akkumulatoren har nok tid liggende — resten tas med videre til neste
+// frame. draw() tegnes fortsatt nøyaktig én gang per frame, uavhengig av
+// hvor mange update()-steg som kjørte.
+const STEP_MS = 1000/60;
+const MAX_STEPS_PER_FRAME = 5; // tak per frame, så en hengende maskin ikke går i en "spiral of death" av flere og flere steg
+let lastFrameT = null, accumulator = 0;
+
+function loop(t){
+  if(lastFrameT===null) lastFrameT=t; // første frame: ingen delta å spille inn ennå
+  let frameDt = t - lastFrameT;
+  lastFrameT = t;
+  // etter en ekte lang pause (fanen har vært skjult, maskinen hang i over
+  // 250ms, e.l.) skal vi IKKE spille inn den tapte tiden — det ville gitt
+  // et skippete byks av mange update()-steg i ett jafs når man kommer
+  // tilbake. Nullstill i stedet og fortsett i realtid fra akkurat nå.
+  if(frameDt>250 || frameDt<0) frameDt=0;
+  accumulator += frameDt;
+  let steps=0;
+  while(accumulator>=STEP_MS && steps<MAX_STEPS_PER_FRAME){
+    update();
+    accumulator -= STEP_MS;
+    steps++;
+  }
+  // maskinen hang så mye at vi traff taket over — kast resten av den
+  // oppsamlede tiden i stedet for å la den henge igjen og kreve enda
+  // flere steg neste frame også (det er selve "spiral of death"-faren).
+  if(steps>=MAX_STEPS_PER_FRAME) accumulator=0;
+  draw();
+  requestAnimationFrame(loop);
+}
+// samme nullstilling når fanen blir skjult og synlig igjen — uten dette
+// ville tiden fanen var borte blitt stående i akkumulatoren og brukt opp
+// i et stort byks av update()-kall i det fanen blir aktiv igjen.
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden){ lastFrameT=null; accumulator=0; }
+});
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
