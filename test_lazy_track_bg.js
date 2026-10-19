@@ -14,7 +14,7 @@
 // kjøring, og hele banegeometrien sammenlignes felt for felt. Geometrien er
 // helt deterministisk (ingen Math.random i genCP/buildPath/computeHeadingCurv/
 // buildRaceLine/findDrsZones), så den sammenligningen er eksakt og er det som
-// beviser at PATH/wallOffsArr/raceLine/drsZones ikke endret seg da bakgrunns-
+// beviser at PATH/wallOffsArr/raceLine/straightZones ikke endret seg da bakgrunns-
 // byggingen ble flyttet ut av buildTrack() — altså at banene fortsatt er
 // NØYAKTIG de samme banene, bare med bakgrunnen bygget senere.
 //
@@ -146,7 +146,7 @@ function deepDiff(a, b, path){
 // Math.random, så de er aldri identiske mellom to kjøringer — heller ikke før
 // endringen.)
 const GEOM_FIELDS = ['name','info','PN','TW','terrain','walls','sfx','sfy','sfAng',
-  'bgMinX','bgMinY','bgOx','bgOy','CP','PATH','heading','smoothCurv','severity','raceLine','drsZones','wallOffsArr'];
+  'bgMinX','bgMinY','bgOx','bgOy','CP','PATH','heading','smoothCurv','severity','raceLine','straightZones','wallOffsArr'];
 
 function geomFingerprint(t){
   const o = {};
@@ -183,7 +183,7 @@ function run(argv){
   out.push('');
 
   // ── A: geometri for alle baner ved oppstart ───────────────────────────────
-  const GEOM_REQUIRED = ['CP','PATH','PN','heading','smoothCurv','severity','raceLine','drsZones',
+  const GEOM_REQUIRED = ['CP','PATH','PN','heading','smoothCurv','severity','raceLine','straightZones',
     'TW','name','info','sfAng','sfx','sfy','terrain'];
   let geomOk = 0;
   TRACKS.forEach(function(t){
@@ -192,7 +192,7 @@ function run(argv){
     if(missing.length) fails.push('A: ' + t.name + ' mangler geometri ved oppstart: ' + missing.join(', '));
     else geomOk++;
   });
-  out.push('A  Geometri ved oppstart (banevalg trenger PATH til minikart + drsZones til teksten)');
+  out.push('A  Geometri ved oppstart (banevalg trenger PATH til minikart + straightZones til teksten)');
   out.push('   ' + geomOk + '/' + TRACKS.length + ' baner har all geometri uten at bakgrunnen er bygget');
 
   // ── B: ingen bakgrunn bygget ved oppstart ─────────────────────────────────
@@ -277,7 +277,7 @@ function run(argv){
         else identical++;
       });
       out.push('F  Geometri mot ' + refPath + ': ' + identical + '/' + TRACKS.length +
-        ' baner bit-identiske (' + GEOM_FIELDS.length + ' felt hver, inkl. PATH, raceLine, drsZones og wallOffsArr)');
+        ' baner bit-identiske (' + GEOM_FIELDS.length + ' felt hver, inkl. PATH, raceLine, straightZones og wallOffsArr)');
     }
   } else {
     out.push('');

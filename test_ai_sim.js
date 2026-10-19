@@ -254,9 +254,14 @@ function simulate(game, opts){
   // på den, så gummistrikkens referansepunkt er intakt.
   player.isPlayer = false;
 
-  const stats = cars.map(function(){ return { wallHits:0, offSteps:0, limitViolations:0 }; });
+  const stats = cars.map(function(){ return { wallHits:0, offSteps:0, limitViolations:0, otLaps:0, laps:0 }; });
   const prevWall = cars.map(function(){ return false; });
   const prevViol = cars.map(function(c){ return c.limitViolations || 0; });
+  // Overtake mode (steg D) settes ved målpasseringen og varer en hel runde.
+  // Her telles hvor mange av rundene hver bil kjørte MED modusen på, slik at
+  // rapporten kan si om regelen slår inn nesten alltid eller nesten aldri —
+  // begge ytterpunktene gjør den meningsløs.
+  const prevLap = cars.map(function(c){ return c.lap; });
 
   const spreadAt = {};
   const want = opts.spreadLaps.slice();
@@ -274,6 +279,7 @@ function simulate(game, opts){
       prevWall[i] = !!c.wallHit;
       const v = c.limitViolations || 0;
       if(v > prevViol[i]){ stats[i].limitViolations += (v - prevViol[i]); prevViol[i] = v; }
+      if(c.lap > prevLap[i]){ prevLap[i] = c.lap; stats[i].laps++; if(c.overtakeMode) stats[i].otLaps++; }
     }
     // Spredningen måles i det LEDEREN fullfører runden, ikke når alle gjør det
     // — det er det øyeblikket en seer faktisk ville sett feltet strukket ut.
@@ -296,11 +302,13 @@ function simulate(game, opts){
     if(allDone) break;
   }
 
-  let wallHits = 0, offSteps = 0, viol = 0, liveSteps = 0;
+  let wallHits = 0, offSteps = 0, viol = 0, liveSteps = 0, otLaps = 0, lapsRun = 0;
   for(let i=0;i<stats.length;i++){
     wallHits += stats[i].wallHits;
     offSteps += stats[i].offSteps;
     viol += stats[i].limitViolations;
+    otLaps += stats[i].otLaps;
+    lapsRun += stats[i].laps;
   }
   liveSteps = steps * cars.length;
   return {
@@ -309,7 +317,8 @@ function simulate(game, opts){
     spread: spreadAt,
     wallHitsPerCar: +(wallHits / cars.length).toFixed(3),
     offFracPerCar: +(offSteps / Math.max(1, liveSteps)).toFixed(5),
-    violPerCar: +(viol / cars.length).toFixed(3)
+    violPerCar: +(viol / cars.length).toFixed(3),
+    otFrac: +(otLaps / Math.max(1, lapsRun)).toFixed(4)
   };
 }
 
@@ -412,7 +421,8 @@ function main(argv){
           finished: avg(function(r){ return r.finished; }),
           wallHitsPerCar: avg(function(r){ return r.wallHitsPerCar; }),
           offFracPerCar: avg(function(r){ return r.offFracPerCar; }),
-          violPerCar: avg(function(r){ return r.violPerCar; })
+          violPerCar: avg(function(r){ return r.violPerCar; }),
+          otFrac: avg(function(r){ return r.otFrac; })
         };
         spreadLaps.forEach(function(l){
           row['spreadLap'+l] = avg(function(r){ return r.spread['lap'+l]; });
@@ -420,7 +430,8 @@ function main(argv){
         results.push(row);
         console.log(row.track + ' / ' + row.mode + ' / ' + row.diff +
           '  spredning L1=' + row.spreadLap1 + ' L4=' + row.spreadLap4 + ' L8=' + row.spreadLap8 +
-          '  vegg=' + row.wallHitsPerCar + ' utenfor=' + row.offFracPerCar + ' brudd=' + row.violPerCar);
+          '  vegg=' + row.wallHitsPerCar + ' utenfor=' + row.offFracPerCar + ' brudd=' + row.violPerCar +
+          ' overtake=' + row.otFrac);
       });
     });
   });

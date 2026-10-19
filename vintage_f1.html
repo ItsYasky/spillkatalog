@@ -136,9 +136,9 @@ function buildRaceLine(PATH,heading,smoothCurv,TW){
   return line;
 }
 
-// Locate genuinely straight sections (low curvature) for DRS zone placement,
+// Locate genuinely straight sections (low curvature) for rett-modus-soner,
 // instead of guessing from feature angles (corner features have wide gaussian tails).
-function findDrsZones(smoothCurv, want){
+function findStraightZones(smoothCurv, want){
   const PN=smoothCurv.length, thresh=0.014;
   const ext=smoothCurv.concat(smoothCurv);
   const runs=[]; let runStart=-1;
@@ -177,7 +177,7 @@ const MAX_BG_PX=16e6;
 //
 //  1. buildTrack()   — geometrien. Billig, og må finnes for ALLE baner med én
 //                      gang: banevalg-skjermen tegner minikart rett fra PATH
-//                      og viser antall DRS-soner, og wallOffsArr må ligge
+//                      og viser antall rett-modus-soner, og wallOffsArr må ligge
 //                      klart før første frame siden kollisjonen i update()
 //                      leser det.
 //  2. buildTrackBg() — det forhåndstegnede bakgrunnscanvaset. Dyrt: flere
@@ -195,7 +195,7 @@ function buildTrack(cfg){
   const PN=PATH.length;
   const {heading,smoothCurv,severity}=computeHeadingCurv(PATH);
   const raceLine=buildRaceLine(PATH,heading,smoothCurv,cfg.TW);
-  const drsZones=findDrsZones(smoothCurv, cfg.drsCount||1);
+  const straightZones=findStraightZones(smoothCurv, cfg.straightCount||1);
   const sfAng=heading[0], [sfx,sfy]=PATH[0]; // start/mål ligger alltid på PATH[0]
   let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
   PATH.forEach(([x,y])=>{minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);});
@@ -232,14 +232,14 @@ function buildTrack(cfg){
   }
   // bgScale<1 = banen er for stor for ett canvas, bakgrunnen tegnes nedskalert
   return {CP,PATH,PN,heading,smoothCurv,severity,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
-    drsZones,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,terrain:cfg.terrain||'forest',cfg,
+    straightZones,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,terrain:cfg.terrain||'forest',cfg,
     bgW:bw,bgH:bh,bgScale:Math.min(1,Math.sqrt(MAX_BG_PX/(bw*bh))),
     bgOx:-minX,bgOy:-minY,bgMinX:minX,bgMinY:minY,
     bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null};
 }
 
 // Den dyre halvdelen: baker underlag, asfalt, høydeskygge, curbs, barrierer,
-// DRS-soner, terreng og tribuner inn i ett forhåndstegnet canvas, og plasserer
+// rett-modus-soner, terreng og tribuner inn i ett forhåndstegnet canvas, og plasserer
 // samtidig det levende lagets posisjoner (tribuner/flagg/marshaler/flomlys),
 // som må finnes før første frame av løpet. Idempotent: er bakgrunnen allerede
 // bygget, er det ingenting å gjøre — å kjøre samme bane om igjen etter et løp
@@ -440,8 +440,8 @@ function buildTrackBg(TR){
     bx.lineTo(px+ox-Math.cos(perp)*cfg.TW, py+oy-Math.sin(perp)*cfg.TW);
     bx.stroke(); bx.setLineDash([]);
   });
-  // DRS zone tint + markers
-  TR.drsZones.forEach(z=>{
+  // Rett-modus-sone: lilla tint + merking på asfalten
+  TR.straightZones.forEach(z=>{
     const i0=Math.floor(z.a*PN), i1raw=Math.floor(z.b*PN), i1=i1raw<i0?i1raw+PN:i1raw;
     for(let i=i0;i<i1;i+=2){
       const ii=i%PN;
@@ -456,8 +456,20 @@ function buildTrackBg(TR){
     const mid=Math.floor(((i0+i1)/2))%PN;
     const [mx,my]=PATH[mid], mh=heading[mid];
     bx.save(); bx.translate(mx+ox,my+oy); bx.rotate(mh+Math.PI/2);
-    bx.fillStyle='#a855f7'; bx.font='bold 11px Courier New'; bx.textAlign='center';
-    bx.fillText('DRS',0,-cfg.TW-10);
+    // Ett hakk ned fra 11 til 10 px: «RETT-MODUS» er ti tegn, og i 11 px
+    // Courier blir det 66 px bredt. Teksten står på tvers av asfalten, og de
+    // smaleste banene her er bare 76 px brede — da var det 5 px margin på hver
+    // side og ordet berørte nærmest kerben. 60 px gir den luft på alle baner.
+    //
+    // Teksten er samtidig lysnet fra #a855f7 til #ddd6fe. HVORFOR: målt med
+    // contrastRatio() mot bakgrunnen den faktisk står på — asfalt #33333e
+    // tintet med sonens egen rgba(168,85,247,.22), altså #4d3a67 — ga den gamle
+    // fargen 2,51:1. Det er under halvparten av kravet på 4,5, og ordet er nå
+    // tre ganger så langt som «DRS» var, så det er mer tekst å ikke få lest.
+    // #ddd6fe måler 7,15:1 på samme bakgrunn. Sonefargen selv er urørt — det er
+    // bare bokstavene som er lysnet, så sonen leses fortsatt som lilla.
+    bx.fillStyle='#ddd6fe'; bx.font='bold 10px Courier New'; bx.textAlign='center';
+    bx.fillText('RETT-MODUS',0,-cfg.TW-10);
     bx.restore();
   });
   bx.globalAlpha=1;
@@ -930,7 +942,7 @@ const TRACKS=[
       {a0:.63*Math.PI*2,width:.060*Math.PI*2,depth:240},
       {a0:.81*Math.PI*2,width:.028*Math.PI*2,depth:-500}
     ],
-    drsCount:2
+    straightCount:2
   }),
   buildTrack({name:'ARDENNE', info:'Flytende · Lange svinger', ncp:34, R0:1664, cx:1760, cy:1680,
     wobbleAmp:20, wobbleFreq:2, wobblePhase:.2, TW:68, terrain:'forest',
@@ -942,7 +954,7 @@ const TRACKS=[
       {a0:.60*Math.PI*2,width:.090*Math.PI*2,depth:260},
       {a0:.75*Math.PI*2,width:.070*Math.PI*2,depth:-260}
     ],
-    drsCount:3
+    straightCount:3
   }),
   buildTrack({name:'DESERTO', info:'Ørken · Høy fart, lange rettstrekk', ncp:40, R0:1872, cx:1720, cy:1720,
     wobbleAmp:14, wobbleFreq:2, wobblePhase:0, TW:74, terrain:'arid',
@@ -957,7 +969,7 @@ const TRACKS=[
       {a0:.730*Math.PI*2,width:.016*Math.PI*2,depth:-210},
       {a0:.900*Math.PI*2,width:.080*Math.PI*2,depth:360}
     ],
-    drsCount:3
+    straightCount:3
   }),
   // ── the three hard tracks, now redesigned with the same real-circuit-
   // design vocabulary as the first three (genuine straights between a
@@ -975,12 +987,12 @@ const TRACKS=[
   //    volcano — three linked hairpins, a cliffside sweeper, a narrow
   //    chicane, then a steep final hairpin and a fast corner onto the line.
   // feature gap widths below were tuned numerically (not just by eye) against
-  // findDrsZones' 10%-of-lap straight requirement — on a star-shaped polar
+  // findStraightZones' 10%-of-lap straight requirement — on a star-shaped polar
   // track, a corner's curvature footprint extends well past its nominal
   // gaussian width, so two real straights need roughly a 25-30% RAW angular
   // gap between feature centers, not just "some space". Verified via a
   // headless measurement pass before locking these in, so every track below
-  // genuinely delivers the DRS zone count it declares.
+  // genuinely delivers the straight-zone count it declares.
   buildTrack({name:'LABIRINTO', info:'Street circuit · Vegger langs hele banen', ncp:36, R0:1020, cx:1180, cy:1180,
     wobbleAmp:10, wobbleFreq:2, wobblePhase:.4, TW:40, terrain:'city', cityPal:'#2d3344', graffiti:true, walls:true,
     features:[
@@ -993,7 +1005,7 @@ const TRACKS=[
       {a0:.69*Math.PI*2,width:.014*Math.PI*2,depth:-210},
       {a0:.78*Math.PI*2,width:.016*Math.PI*2,depth:-260}
     ],
-    drsCount:2
+    straightCount:2
   }),
   buildTrack({name:'SERPENTINA', info:'Bygater · Høy fart i kveldslys', ncp:34, R0:1560, cx:1600, cy:1500,
     wobbleAmp:10, wobbleFreq:2, wobblePhase:.5, TW:46, terrain:'city', cityPal:'#3a2d4a', graffiti:true,
@@ -1004,7 +1016,7 @@ const TRACKS=[
       {a0:.62*Math.PI*2,width:.014*Math.PI*2,depth:-410},
       {a0:.94*Math.PI*2,width:.026*Math.PI*2,depth:-420}
     ],
-    drsCount:2
+    straightCount:2
   }),
   buildTrack({name:'VULCANO', info:'Smalest · Opp og ned fjellet', ncp:38, R0:1300, cx:1350, cy:1400,
     wobbleAmp:10, wobbleFreq:2, wobblePhase:.7, TW:36, terrain:'volcanic',
@@ -1017,13 +1029,13 @@ const TRACKS=[
       {a0:.74*Math.PI*2,width:.022*Math.PI*2,depth:-430},
       {a0:.88*Math.PI*2,width:.028*Math.PI*2,depth:230}
     ],
-    drsCount:1
+    straightCount:1
   }),
   // ── seven more circuits, each built around a real-world F1 venue's
   // defining corner sequence and terrain, the same way the six above are
   // Monaco/Spa/Bahrain/Jeddah/generic-mountain flavoured. Every one of these
   // follows the same "genuine straight between deliberate features" design
-  // vocabulary and was checked with a headless findDrsZones()+AI-sim pass
+  // vocabulary and was checked with a headless findStraightZones()+AI-sim pass
   // before being locked in:
   //  - TEMPIO: Monza, the "temple of speed" — a chicane off the line, the
   //    fast Curva Grande sweeper, the connected Lesmo double-apex, a long
@@ -1039,7 +1051,7 @@ const TRACKS=[
   //    rapid esses chain, the tightening Degner double, a very tight
   //    hairpin, the long double-apex Spoon Curve, the sweeping 130R, and a
   //    final chicane. Ten features — easily the most corner-dense track —
-  //    deliberately leaves only one real DRS straight, same as real Suzuka.
+  //    deliberately leaves only one real straight-mode zone, same as real Suzuka.
   //  - DISCESA ("descent"): Interlagos — short, hilly, anti-clockwise in
   //    spirit: the Senna S off the line, a long sweeper, a downhill kink,
   //    the tight Ferradura hairpin, an esses section, then the Juncão
@@ -1065,7 +1077,7 @@ const TRACKS=[
       {a0:.72*Math.PI*2,width:.015*Math.PI*2,depth:-420},
       {a0:.92*Math.PI*2,width:.050*Math.PI*2,depth:300}
     ],
-    drsCount:3
+    straightCount:3
   }),
   buildTrack({name:'CAMPAGNA', info:'Landlig · Flytende høyfartssvinger', ncp:36, R0:1700, cx:1700, cy:1650,
     wobbleAmp:16, wobbleFreq:2, wobblePhase:.6, TW:64, terrain:'hedge',
@@ -1078,7 +1090,7 @@ const TRACKS=[
       {a0:.80*Math.PI*2,width:.040*Math.PI*2,depth:240},
       {a0:.92*Math.PI*2,width:.020*Math.PI*2,depth:-260}
     ],
-    drsCount:2
+    straightCount:2
   }),
   // terrain variant: autumn forest (golden/amber canopy, warm dry-leaf
   // ground) — distinguishes ESSE from ARDENNE/ALPEN which also use
@@ -1097,7 +1109,7 @@ const TRACKS=[
       {a0:.90*Math.PI*2,width:.030*Math.PI*2,depth:320},
       {a0:.97*Math.PI*2,width:.014*Math.PI*2,depth:-300}
     ],
-    drsCount:1
+    straightCount:1
   }),
   // terrain variant: warm reddish-brown Mediterranean hillside — distinguishes
   // DISCESA from MONTE SPIRA, which also uses terrain:'mountain' but keeps
@@ -1115,7 +1127,7 @@ const TRACKS=[
       {a0:.80*Math.PI*2,width:.014*Math.PI*2,depth:-340},
       {a0:.90*Math.PI*2,width:.018*Math.PI*2,depth:-460}
     ],
-    drsCount:2
+    straightCount:2
   }),
   // terrain variant: snow-dusted alpine pine forest (cool deep blue-green
   // canopy, pale grey rock, snowy ground grain) — distinguishes ALPEN from
@@ -1132,7 +1144,7 @@ const TRACKS=[
       {a0:.70*Math.PI*2,width:.035*Math.PI*2,depth:200},
       {a0:.85*Math.PI*2,width:.016*Math.PI*2,depth:-280}
     ],
-    drsCount:2
+    straightCount:2
   }),
   // terrain variant: lighter coastal dune sand + greener beach-grass bushes
   // + pale pebble-grey rock — distinguishes DUNA from DESERTO, which also
@@ -1148,7 +1160,7 @@ const TRACKS=[
       {a0:.74*Math.PI*2,width:.018*Math.PI*2,depth:-320},
       {a0:.92*Math.PI*2,width:.030*Math.PI*2,depth:260}
     ],
-    drsCount:2
+    straightCount:2
   }),
   // NOTE on ncp:58 — this is the biggest-R0 track in the roster (1950), and
   // buildPath samples a fixed 18 steps per control-point segment regardless
@@ -1172,7 +1184,7 @@ const TRACKS=[
       {a0:.65*Math.PI*2,width:.014*Math.PI*2,depth:-400},
       {a0:.95*Math.PI*2,width:.016*Math.PI*2,depth:-380}
     ],
-    drsCount:3
+    straightCount:3
   })
 ];
 
@@ -1360,7 +1372,7 @@ const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 //    corner) that this car reacts to an attacker closing from behind by
 //    moving to cover that side of the track. ENKEL barely defends at all;
 //    ULTRA defends its position hard.
-//  - ersSkill: how well a tier manages its battery (see the ERS system in
+//  - ersSkill: how well a tier manages its battery (see the boost system in
 //    update()) — a sharp driver deploys it when it matters (on a straight or
 //    mid-overtake/defend), a weak driver uses it more on a whim.
 // NOTE on lookAhead: this is held constant (11) across every tier on purpose.
@@ -1496,8 +1508,17 @@ class Car{
     this.overtakeSide=0; this.overtakeT=0; // which way (and for how long) this AI is currently swinging out to pass a blocker ahead
     this.defendSide=0; this.defendT=0; // which way (and for how long) this AI is currently covering to defend against an attacker from behind
     this.trail=[];this.finished=false;this.place=1;
-    this.offtrack=false;this.drsActive=false;this.wallHit=false; // street-circuit barrier contact — see update()
-    this.battery=100; this.ersActive=false; // ERS/battery: 0-100%, see update()
+    this.offtrack=false;this.straightMode=false;this.wallHit=false; // street-circuit barrier contact — see update()
+    this.battery=100; this.boostActive=false; // boost-batteri: 0-100, se update()
+    // Ladetaket per runde. HVORFOR det trengs: uten tak lader bilen fritt hver
+    // gang den slipper gassen, og en runde har så mange gassløft at batteriet i
+    // praksis ble uendelig — boosten var gratis og dermed alltid på. Taket gjør
+    // energien til et budsjett som må fordeles over runden.
+    this.lapCharge=0;
+    // Overtake mode varer HELE neste runde, så svaret må hentes ved målepunktet
+    // (progress 0,95) men brukes først ved målpasseringen. otPending holder det
+    // i mellomtiden.
+    this.overtakeMode=false; this.otPending=false;
     this.steerVel=0; // smoothed angular velocity — see turnRate in update()
     this.braking=false; // ren tegnetilstand: speiler bremse-inputet dette steget, slik at
                         // bremselyset og endeplatelysene (se endplateColor) kan vise det.
@@ -1911,9 +1932,39 @@ function startPractice(){
   state='practice';
 }
 
-function inDRSZone(prog){
-  return TR.drsZones.some(z=> z.b<z.a ? (prog>=z.a||prog<=z.b) : (prog>=z.a&&prog<=z.b));
+function inStraightZone(prog){
+  return TR.straightZones.some(z=> z.b<z.a ? (prog>=z.a||prog<=z.b) : (prog>=z.a&&prog<=z.b));
 }
+
+// ── 2026-reglene: rett-modus, boost og overtake ───────────────────────────
+// Tallene står samlet her, og ikke strødd utover update(), fordi de bare gir
+// mening i forhold til hverandre: et batteri som varer seks sekunder, et
+// ladetak som gir to og en halv slike utladninger per runde, og en overtake-
+// bonus som er omtrent halvparten av en utladning. Endrer man ett av dem uten
+// å se de to andre, er balansen borte.
+const BOOST_DRAIN=0.28;        // 100/0,28 = 357 steg ≈ 5,95 s med full stang
+const BOOST_CHARGE_BRAKE=0.35; // bremsing gir mest tilbake
+const BOOST_CHARGE_COAST=0.08; // et gassløft gir lite — det skal ikke lønne seg å seile
+const LAP_CHARGE_CAP=60;       // maks ladet energi per runde, nullstilles ved mål
+const BOOST_MAX_MUL=1.06;      // toppfart med boost
+const BOOST_MAX_MUL_OT=1.09;   // ... og i overtake mode
+const BOOST_ACCEL_MUL=1.15;    // boostens virkelige verdi: akselerasjonen ut av svingen
+const STRAIGHT_MAX_MUL=1.12;   // rett-modus, bare i lilla sone
+const OT_PROG=0.95;            // målepunktet overtake avgjøres på
+const OT_GAP_SEC=1.0;          // innenfor dette gapet foran utløses overtake
+const OT_BATTERY=25;           // ekstra energi, UTENFOR ladetaket for runden
+const OT_COL='#facc15';
+
+// Lading med runde-tak. Returnerer hvor mye som faktisk kom inn, slik at
+// endeplatelyset kan slutte å blinke når taket er nådd — et lys som sier
+// «lader» mens ingenting lades, ville vært en direkte løgn om spillreglene.
+function chargeBattery(c,amount){
+  const rom=Math.min(amount, LAP_CHARGE_CAP-c.lapCharge, 100-c.battery);
+  if(rom<=0) return 0;
+  c.battery+=rom; c.lapCharge+=rom;
+  return rom;
+}
+function canCharge(c){ return c.lapCharge<LAP_CHARGE_CAP && c.battery<100; }
 
 // ══════════════════════════════════════════════════════════════════
 // UPDATE
@@ -1935,16 +1986,17 @@ function update(){
 
   cars.forEach(c=>{
     if(c.finished)return;
-    let gas=false,steerL=false,steerR=false,brake=false,drsKey=false;
+    let gas=false,steerL=false,steerR=false,brake=false,straightKey=false;
     if(c.isPlayer){
       gas=!!(keys['ArrowUp']||keys['w']||keys['W']);
       brake=!!(keys['ArrowDown']||keys['s']||keys['S']);
       steerL=!!(keys['ArrowLeft']||keys['a']||keys['A']);
       steerR=!!(keys['ArrowRight']||keys['d']||keys['D']);
-      drsKey=!!(keys[' ']);
-      // ERS deploy is its own key (Shift), separate from DRS (Space) — a
-      // real F1 car can run both systems at once.
-      c.ersActive=!!(keys['Shift']||keys['ShiftLeft']||keys['ShiftRight']) && c.battery>0;
+      straightKey=!!(keys[' ']);
+      // Boosten har sin egen tast (Shift), atskilt fra rett-modus (Space):
+      // de to skal kunne stå på samtidig, for det er nettopp kombinasjonen
+      // på en lang rett som er den store forbikjøringssjansen.
+      c.boostActive=!!(keys['Shift']||keys['ShiftLeft']||keys['ShiftRight']) && c.battery>0;
     } else {
       const PN=TR.PN;
       const D=DIFFICULTIES[difficulty];
@@ -2113,10 +2165,16 @@ function update(){
       gas = c.speed < c.aiSpd;
       brake = c.speed > c.aiSpd*D.overspeed;
 
-      // ERS deploy: a sharper tier (higher ersSkill) saves its battery for
-      // when it actually matters — an overtake/defend fight or a straight —
-      // instead of spending it the instant it's available.
-      c.ersActive = c.battery>25 && (blockerFound||attackerFound||Math.abs(curvNow)<0.008)
+      // Boost-bruk: et skarpere nivå (høyere ersSkill — feltnavnet står urørt,
+      // siden DIFFICULTIES-konstantene ikke skal endres i dette steget) sparer
+      // batteriet til det faktisk betyr noe (en kamp eller en rett strekning)
+      // i stedet for å brenne det i det sekundet det er tilgjengelig.
+      //
+      // I overtake mode senkes reserven fra 25 til 5: hele poenget med
+      // modusen er at den runden skal brukes på å angripe, og en AI som
+      // fortsatt sparer på batteriet ville aldri fått noe igjen for den.
+      const reserve = c.overtakeMode ? 5 : 25;
+      c.boostActive = c.battery>reserve && (blockerFound||attackerFound||Math.abs(curvNow)<0.008)
         && Math.random()<(0.35+0.5*D.ersSkill);
     }
 
@@ -2157,18 +2215,31 @@ function update(){
       }
     }
 
-    const DRSon = c.isPlayer ? (drsKey && inDRSZone(c.curProg)) : inDRSZone(c.curProg);
-    c.drsActive = DRSon;
+    // Rett-modus: ingen avstandskrav og ingen ventetid — står du i den lilla
+    // sonen og holder Space, er klaffene åpne. HVORFOR kravet om å ligge
+    // innenfor ett sekund av bilen foran er borte: det gjorde rett-modus til
+    // noe som bare skjedde i tette kamper, og i et felt på 20 biler med store
+    // gap var det ofte ikke tilgjengelig en hel runde. Nå er det et verktøy man
+    // alltid har, og det er bremsingen som koster — klaffene lukkes i det
+    // bremsen røres, akkurat som de lukkes ved slutten av sonen.
+    // `near.progress` og ikke `c.curProg`: curProg skrives først nederst i
+    // loopen, så den holder forrige steg sin posisjon. Forskjellen er ett
+    // bilde, men den gjorde at fysikken og HUD-en leste to ulike sannheter —
+    // HUD-en tegnes ETTER update() og ser den nye verdien, så klaffene kunne
+    // vises åpne et bilde etter at farten de ga var borte. Nå ser begge samme.
+    const straightOn = !brake && inStraightZone(near.progress) && (c.isPlayer ? straightKey : true);
+    c.straightMode = straightOn;
 
-    // battery/ERS: drains while deployed, recharges while braking (fast) or
-    // simply lifting off the throttle (slow) — real hybrid energy management,
-    // not a free boost. c.ersActive was already decided above (player: Shift
-    // key + battery>0; AI: its own deploy decision) — here we just apply it.
-    const ersOn = c.ersActive && c.battery>0;
-    c.ersActive = ersOn;
-    if(ersOn) c.battery=Math.max(0,c.battery-1.1);
-    else if(brake) c.battery=Math.min(100,c.battery+0.75);
-    else if(!gas) c.battery=Math.min(100,c.battery+0.3);
+    // Batteriet: tappes mens boosten står på, lades tilbake under bremsing
+    // (mest) eller bare ved å slippe gassen (lite). Ladingen går gjennom
+    // chargeBattery() og ikke direkte på c.battery, fordi den må gjennom
+    // runde-taket. c.boostActive er allerede avgjort over (spiller: Shift +
+    // batteri; AI: sin egen vurdering) — her brukes den bare.
+    const boostOn = c.boostActive && c.battery>0;
+    c.boostActive = boostOn;
+    if(boostOn) c.battery=Math.max(0,c.battery-BOOST_DRAIN);
+    else if(brake) chargeBattery(c,BOOST_CHARGE_BRAKE);
+    else if(!gas) chargeBattery(c,BOOST_CHARGE_COAST);
     // Rent kosmetisk avlesning av bremsingen, satt her fordi dette er det
     // eneste stedet `brake` finnes for BÅDE spiller og AI (spilleren leser
     // tastaturet øverst i loopen, AI-en bestemmer seg i sin egen gren). Ingen
@@ -2215,7 +2286,14 @@ function update(){
     const turnPenalty=1/(1+overRatio*2.4);
     const gripPenalty=1/(1+overRatio*1.3);
 
-    let MAX=(c.isPlayer?PLAYER_MAX:c.aiSpd)*(DRSon?1.12:1)*(ersOn?1.08:1)*(1+slipStrength*0.10);
+    // Boosten gir lite toppfart (1,06, i overtake mode 1,09) men mye
+    // akselerasjon — se accelMul nedenfor. HVORFOR fordelingen er sånn: en ren
+    // toppfartsbonus merkes bare på de to-tre lengste rettstrekkene, mens
+    // akselerasjonen merkes ut av hver eneste sving, og det er der et løp
+    // faktisk avgjøres. Rett-modus er det motsatte: bare toppfart, og bare i
+    // sonen, slik at de to systemene ikke blir to navn på samme ting.
+    const boostMaxMul = boostOn ? (c.overtakeMode?BOOST_MAX_MUL_OT:BOOST_MAX_MUL) : 1;
+    let MAX=(c.isPlayer?PLAYER_MAX:c.aiSpd)*(straightOn?STRAIGHT_MAX_MUL:1)*boostMaxMul*(1+slipStrength*0.10);
     let GRIP=0.82, accelMul=1, dragMul=1;
     if(c.offtrack){
       accelMul = deepOff? 0.28 : 0.45;
@@ -2233,7 +2311,7 @@ function update(){
       // utenfor ligger nå i checkTrackLimits().
     }
     if(REALISTIC) GRIP*=gripPenalty;
-    if(ersOn) accelMul*=1.18;
+    if(boostOn) accelMul*=BOOST_ACCEL_MUL;
     if(slipStrength>0) accelMul*=(1+slipStrength*0.12);
 
     if(REALISTIC){
@@ -2305,15 +2383,17 @@ function update(){
     }
     c.trail=c.trail.filter(t=>{t.life-=t.d;return t.life>0;});
 
-    // DRS exhaust spark
-    if(c.drsActive && Math.random()<.4){
+    // Gnist fra rett-modus — lilla, samme farge som sonen på banen
+    if(c.straightMode && Math.random()<.4){
       const a=c.angle+Math.PI+(Math.random()-.5)*.5;
       particles.push({x:c.x,y:c.y,vx:Math.cos(a)*1.4,vy:Math.sin(a)*1.4,life:.6,d:.04,r:1.8,clr:'#c084fc'});
     }
-    // ERS deploy spark — cyan, distinct from the purple DRS spark
-    if(c.ersActive && Math.random()<.5){
+    // Gnist fra boosten — cyan, og gull i overtake mode. Fargene er de samme
+    // som endeplatelysene bruker, slik at man kan lese tilstanden til en bil
+    // man ser forfra like godt som en man ser bakfra.
+    if(c.boostActive && Math.random()<.5){
       const a=c.angle+Math.PI+(Math.random()-.5)*.5;
-      particles.push({x:c.x,y:c.y,vx:Math.cos(a)*1.6,vy:Math.sin(a)*1.6,life:.6,d:.04,r:1.8,clr:'#38bdf8'});
+      particles.push({x:c.x,y:c.y,vx:Math.cos(a)*1.6,vy:Math.sin(a)*1.6,life:.6,d:.04,r:1.8,clr:c.overtakeMode?OT_COL:'#38bdf8'});
     }
 
     // progress / lap / sector tracking
@@ -2325,6 +2405,18 @@ function update(){
     let dRace=pr-c.prevProg; if(dRace<-0.5)dRace+=1; else if(dRace>0.5)dRace-=1;
     c.raceDist+=dRace;
     recordGapMarks(c); // tidsstempel på tidtakingspunktene, se gapAhead()
+    // Overtake mode avgjøres ÉN gang per runde, på vei inn mot mål.
+    // HVORFOR et fast punkt og ikke en løpende sjekk: en løpende «gap < 1 s»
+    // ville slått modusen av og på flere ganger i samme sving, og da hadde
+    // verken spilleren eller AI-en kunnet planlegge bruken av energien.
+    // Punktet ligger på 0,95 og ikke på selve mållinja fordi gapet må leses
+    // FØR begge bilene krysser målet, ellers måler man mot en bil som
+    // allerede har startet en ny runde. Svaret lagres og brukes ved
+    // målpasseringen rett nedenfor.
+    if(c.prevProg<OT_PROG && pr>=OT_PROG){
+      const g=gapAhead(c);
+      c.otPending = g!=null && g<OT_GAP_SEC;
+    }
     c.curProg=pr;
     if(pr>.38&&pr<.62)c.seenHalf=true;
     const sOf=Math.min(2,Math.floor(pr*3));
@@ -2352,6 +2444,20 @@ function update(){
       // raceTime ved hver målpassering. Resultatlista bruker de to siste for å
       // anslå når en bil som ennå ikke er ferdig ville kommet i mål.
       c.lapMarks.push(raceTime);
+      // Ladebudsjettet nullstilles ved mål — hele poenget med taket er at det
+      // er et budsjett PER RUNDE, ikke per løp.
+      c.lapCharge=0;
+      // Overtake mode gjelder én hel runde, så den settes (og dermed også
+      // slås av) her, med svaret som ble målt på 0,95. De 25 ekstra enhetene
+      // legges rett på batteriet og UTENOM c.lapCharge, slik at de kommer inn
+      // også når ladetaket for runden alt er brukt opp — det er nettopp det
+      // som skal gjøre modusen verdt noe sent i en runde.
+      const hadOT=c.overtakeMode;
+      c.overtakeMode=c.otPending; c.otPending=false;
+      if(c.overtakeMode){
+        c.battery=Math.min(100,c.battery+OT_BATTERY);
+        if(c.isPlayer && !hadOT) toast('OVERTAKE AKTIV',OT_COL);
+      }
       if(c.isPlayer){
         const ltNum=(raceTime-c.lapStartT)/60;
         const lt=ltNum.toFixed(2);
@@ -2434,7 +2540,7 @@ function update(){
 // Men den virkelige grunnen til omskrivingen er lesbarhet. Bilen er cirka
 // 28 px lang på skjermen. Den gamle bilen stablet gradientfyll, glansstrek,
 // halo-ring, diagonal sponsorstripe, nesetipp i aksentfarge, sidepod-gløder
-// for ERS og slipstream OG et plassnummer oppå hverandre innenfor de samme
+// for boost og slipstream OG et plassnummer oppå hverandre innenfor de samme
 // 28 pikslene. Hver detalj var fin alene; til sammen smeltet de til én grøtete
 // flekk så snart bilen beveget seg, og to lag var ikke til å skille fra
 // hverandre i fart. Den nye bilen bruker FÅ, STORE former med harde kanter og
@@ -2448,9 +2554,10 @@ const COCKPIT_COL='#0b0b0e';
 const CAR_SHEEN='rgba(255,255,255,.14)';
 const BRAKE_COL='#ff2a2a';
 // Endeplatelysene på bakvingen. Fargene er navngitte konstanter fordi de er
-// spillregler gjort synlige, ikke pynt: cyan = ERS deployes, blinkende rødt =
-// bilen bremser og henter energi tilbake, mørk grå = av.
-const EP_OFF='#3a3a44', EP_ERS='#38bdf8', EP_CHARGE='#ff3b3b';
+// spillregler gjort synlige, ikke pynt: gull = overtake mode med boosten på,
+// cyan = boost, blinkende rødt = bilen bremser og henter energi tilbake,
+// mørk grå = av.
+const EP_OFF='#3a3a44', EP_BOOST='#38bdf8', EP_CHARGE='#ff3b3b', EP_OVERTAKE=OT_COL;
 
 // Karosseriet som ETT lukket, symmetrisk polygon. Det ligger i en egen
 // funksjon og ikke inline, fordi nøyaktig samme bane brukes tre ganger per
@@ -2583,15 +2690,22 @@ function drawCarLights(g,epCol,braking){
 }
 
 // Fargen på endeplatelysene, i prioritert rekkefølge. Skrevet som en kjede av
-// tidlige returer nettopp FORDI den skal utvides: neste runde legger til en
-// gullfarge for overtake mode, og da skal det bare settes inn ett nytt `if`
-// øverst i denne funksjonen — ingen andre steder i tegnekoden trenger å vite
-// at det kom en ny tilstand.
+// tidlige returer nettopp FORDI den skal utvides — gullfargen under er lagt
+// inn som ett nytt `if` øverst, og ingen andre steder i tegnekoden trengte å
+// vite at det kom en ny tilstand.
 function endplateColor(c){
-  if(c.ersActive) return EP_ERS;
+  // Gull står øverst og krever BÅDE overtake mode og boost på. HVORFOR ikke
+  // gull på overtake mode alene: modusen varer en hel runde, og et lys som
+  // står konstant gult i et helt minutt slutter å betyr noe. Gull akkurat i
+  // det en bil faktisk bruker den ekstra energien er derimot et varsel om at
+  // den kommer.
+  if(c.overtakeMode && c.boostActive) return EP_OVERTAKE;
+  if(c.boostActive) return EP_BOOST;
   // Blinker på 4 Hz: raceTime teller bilder à 1/60 s, så et halvt blink er
-  // 60/(4*2) = 7,5 bilder.
-  if(c.braking && c.battery<100) return (Math.floor(raceTime/7.5)%2===0) ? EP_CHARGE : EP_OFF;
+  // 60/(4*2) = 7,5 bilder. canCharge() er med fordi ladetaket per runde kan
+  // være oppbrukt — da bremser bilen uten å hente noe tilbake, og et lys som
+  // sier «lader» ville løyet om spillreglene.
+  if(c.braking && canCharge(c)) return (Math.floor(raceTime/7.5)%2===0) ? EP_CHARGE : EP_OFF;
   return EP_OFF;
 }
 
@@ -2751,9 +2865,9 @@ function drawCar(c){
   // Sprite-en dekker karosseri, mønster, sponsorflater, lysflate, cockpit,
   // hjelm og vingene. Faller tilbake til live tegning hvis den mangler (kan
   // skje for en bil som ikke gikk gjennom buildCarSprites).
-  const spr=c.spr&&c.spr[c.drsActive?1:0];
+  const spr=c.spr&&c.spr[c.straightMode?1:0];
   if(spr) ctx.drawImage(spr,-CAR_SPR_HW,-CAR_SPR_HH,CAR_SPR_HW*2,CAR_SPR_HH*2);
-  else drawCarStatic(ctx,liveryOf(c),c.drsActive);
+  else drawCarStatic(ctx,liveryOf(c),c.straightMode);
   drawCarLights(ctx,endplateColor(c),c.braking);
   if(night){
     // frontlyskjegle + lykter, bak-/baklys — rent visuelt, styrt av den globalt
@@ -2965,9 +3079,12 @@ function draw(){
     ctx.fillText(`MODUS: ${REALISTIC?'REALISTISK':'CASUAL'}`,W/2,H/2-93);
     ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('TAB — bytt modus',W/2,H/2-76);
     ctx.fillStyle='#334155'; ctx.font='10px Courier New';
-    [['↑ / W','Gass'],['↓ / S',REALISTIC?'Brems — kreves før svinger!':'Brems'],['← → / A D','Styr'],['SPACE','DRS i lilla sone'],['SHIFT','ERS-boost (batteri)'],['(auto)','Slipstream tett bak andre']].forEach(([k,v],i)=>{
-      ctx.fillStyle=accent; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-50+i*17);
-      ctx.fillStyle='#64748b'; ctx.textAlign='left'; ctx.fillText(v,W/2+6,H/2-50+i*17);
+    // Sju rader nå, ikke seks. Linjeavstanden er kuttet fra 17 til 15 px og
+    // starten flyttet 4 px opp, ellers hadde den siste raden landet oppå
+    // setningen om grep/fart lenger nede (den står fast på H/2+56).
+    [['↑ / W','Gass'],['↓ / S',REALISTIC?'Brems — kreves før svinger!':'Brems'],['← → / A D','Styr'],['SPACE','Rett-modus i lilla sone'],['SHIFT','Boost (batteri)'],['(auto)','Overtake: innenfor 1 s ved mål'],['(auto)','Slipstream tett bak andre']].forEach(([k,v],i)=>{
+      ctx.fillStyle=accent; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-54+i*15);
+      ctx.fillStyle='#64748b'; ctx.textAlign='left'; ctx.fillText(v,W/2+6,H/2-54+i*15);
     });
     ctx.fillStyle='#94a3b8'; ctx.font='11px Courier New'; ctx.textAlign='center';
     ctx.fillText(REALISTIC
@@ -3093,9 +3210,11 @@ function draw(){
       });
       if(cur) lines.push(cur);
       lines.forEach((ln,k)=>ctx.fillText(ln,ccx,by0+ph+56+k*11));
-      // Forkortet fra «DRS-zoner» til «DRS»: den lange varianten ble 146 px bred
-      // og stakk ut av en boks som bare er 116 px innvendig.
-      ctx.fillText(`Bredde ${t.TW*2}  ·  DRS ${t.drsZones.length}`,ccx,by0+ph+60+lines.length*11);
+      // «RETT» og ikke «RETT-MODUS»: boksen er 116 px innvendig, og i 9 px
+      // Courier er hvert tegn 5,4 px — altså plass til 21 tegn. Hele ordet
+      // ville gjort linja 140 px og stukket ut av boksen på hver side. Det
+      // samme skjedde med «DRS-soner» her tidligere.
+      ctx.fillText(`Bredde ${t.TW*2}  ·  RETT ${t.straightZones.length}`,ccx,by0+ph+60+lines.length*11);
     });
     // ── AI difficulty ──
     {
@@ -3208,7 +3327,7 @@ function draw(){
 
   // ── top HUD bar ── (and everything else race-UI below it) is skipped
   // entirely once state==='win' — it used to just sit underneath the podium
-  // overlay, which is only 88% opaque, so the old lap counter/speed/ERS bar
+  // overlay, which is only 88% opaque, so the old lap counter/speed/boost bar
   // and the leaderboard/minimap panels visibly bled through behind the
   // ceremony. Hiding this whole block is the real fix (bumping the overlay
   // to fully opaque would've worked too, but would've lost the subtle crowd/
@@ -3266,19 +3385,29 @@ function draw(){
   const gear=Math.min(8,1+Math.floor(spd/48));
   ctx.fillStyle='#94a3b8'; ctx.font='bold 13px Courier New'; ctx.textAlign='right';
   ctx.fillText(`${spd} km/t  G${gear}`,W-8,HY/2-8);
-  // DRS indicator
-  const drsReady=inDRSZone(player.curProg);
+  // Rett-modus. Står som «AERO» i HUD-en og ikke «RETT-MODUS»: feltet er bare
+  // 24 px bredt mellom farten og boost-prosenten, og den lange varianten er
+  // 66 px i 10 px Courier. AERO er dessuten det ordet som sier HVA man får —
+  // åpne klaffer, mindre luftmotstand — der «rett-modus» bare sier hvor.
+  const straightReady=inStraightZone(player.curProg);
   ctx.font='bold 10px Courier New'; ctx.textAlign='right';
-  ctx.fillStyle = player.drsActive?'#c084fc' : drsReady?'rgba(168,85,247,.5)':'#334155';
-  ctx.fillText('DRS',W-8,HY/2+9);
-  // ERS/battery indicator
-  const ersPct=Math.round(player.battery);
-  ctx.fillStyle = player.ersActive?'#38bdf8' : ersPct>50?'#4ade80' : ersPct>20?'#f97316':'#ef4444';
-  ctx.fillText(`ERS ${ersPct}%`,W-46,HY/2+9);
+  ctx.fillStyle = player.straightMode?'#c084fc' : straightReady?'rgba(168,85,247,.5)':'#334155';
+  ctx.fillText('AERO',W-8,HY/2+9);
+  // Boost-batteriet
+  const batPct=Math.round(player.battery);
+  ctx.fillStyle = player.boostActive?'#38bdf8' : batPct>50?'#4ade80' : batPct>20?'#f97316':'#ef4444';
+  ctx.fillText(`BOOST ${batPct}%`,W-38,HY/2+9);
   // slipstream/tow indicator
   if(player.slipstreamT>0.05){
     ctx.fillStyle=`rgba(255,255,255,${0.5+0.5*player.slipstreamT})`;
     ctx.fillText('TOW',W-104,HY/2+9);
+  }
+  // Overtake mode. Gull, og lengst til venstre i rekka av indikatorer, fordi
+  // den er den eneste av dem som gjelder en hel runde og ikke bare dette
+  // øyeblikket — den hører sammen med rundetelleren, ikke med farten.
+  if(player.overtakeMode){
+    ctx.fillStyle=OT_COL;
+    ctx.fillText('OVERTAKE',W-128,HY/2+9);
   }
 
   // off-track indicator
@@ -3544,7 +3673,7 @@ function draw(){
 }
 
 // store letter/digit keys case-normalized (modifier-independent) so that
-// holding Shift (ERS) doesn't cause a "stuck key": without this, releasing
+// holding Shift (boost) doesn't cause a "stuck key": without this, releasing
 // e.g. W while Shift is still held fires keyup with e.key==='W' (uppercase),
 // which would never clear the keys['w'] set by the original lowercase
 // keydown — leaving gas/steer/brake permanently stuck on. Arrow keys, Space,
