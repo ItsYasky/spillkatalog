@@ -45,10 +45,21 @@ Sammenlign dem med:
 | B | ferdig | `17cb43d` | Banegrenser etter F1-regelen, straffetid og slettede runder | `test_track_limits.js` |
 | C | ferdig | `6f4c9d6` | Tidsgap til bilen foran og bak i HUD-en | `test_gap.js` |
 | D | ferdig | `709d20a` | 2026-reglene — rett-modus, boost og overtake | `test_boost.js` |
-| E–G | **ikke definert** | — | Planen lå bare i en økt som ble tømt, og er ikke gjenfunnet | — |
+| E | ferdig | `a9927c2` | Avkjølingsrunde: biler i mål kjører videre på 55 % fart, uten kollisjon, 60 % gjennomsiktige, toner ut etter en halv runde | `test_cooldown.js` (24/24) |
+| F | ikke startet | — | Spøkelsesbil i øving: beste gyldige runde i `localStorage` (`gp_ghost_<BANE>_<MODUS>`), spilles av i hvitt med 35 % synlighet, Δ-tid i HUD-en, slås av/på med `G` | — |
+| G | ikke startet | — | Sluttest og rapport: AI-sim mot «før»-tallene fra A1, tidssteg på 60/120/144 Hz, skjermbilder og rapport per steg | — |
 
 Tidligere deler: `5a4f417` fast tidssteg (akkumulator) i spill-loopen,
 `ce0e0b9` lazy banebakgrunn + nedskalering over 16M px.
+
+**Avvik verdt å vite i steg E:** `drawCar()` setter `globalAlpha` med absolutte
+verdier flere steder, så gjennomsiktighet kan ikke settes med én `save()` på
+toppen av funksjonen — den blir overskrevet. Løsningen er faktoren `A`, som
+alle alpha-verdiene ganges med, og en nullstilling til 1 på slutten (uten den
+blir alle biler som tegnes ETTER den utonede gjennomsiktige også). En bil på
+avkjølingsrunde er dessuten tatt ut av `checkTrackLimits()`: straffetid går inn
+i `finalTimeSec()`, så uten sperra kunne en bil som alt var i mål falt på
+resultatlista for noe den gjorde på utrullingen.
 
 ### ASTEROIDER (`asteroids.html`)
 

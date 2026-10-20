@@ -1508,6 +1508,10 @@ class Car{
     this.overtakeSide=0; this.overtakeT=0; // which way (and for how long) this AI is currently swinging out to pass a blocker ahead
     this.defendSide=0; this.defendT=0; // which way (and for how long) this AI is currently covering to defend against an attacker from behind
     this.trail=[];this.finished=false;this.place=1;
+    // Avkjølingsrunde, se COOL_*-konstantene. finishDist er raceDist i det
+    // målstreken krysses, slik at halvrunden måles i DISTANSE og ikke i tid —
+    // en bil som bråbremser skal ikke få en kortere avkjølingsrunde av det.
+    this.finishDist=null;this.coolAlpha=1;this.coolDone=false;
     this.offtrack=false;this.straightMode=false;this.wallHit=false; // street-circuit barrier contact — see update()
     this.battery=100; this.boostActive=false; // boost-batteri: 0-100, se update()
     // Ladetaket per runde. HVORFOR det trengs: uten tak lader bilen fritt hver
@@ -1955,6 +1959,20 @@ const OT_GAP_SEC=1.0;          // innenfor dette gapet foran utløses overtake
 const OT_BATTERY=25;           // ekstra energi, UTENFOR ladetaket for runden
 const OT_COL='#facc15';
 
+// ── Avkjølingsrunde ──────────────────────────────────────────────────────────
+// En bil som er i mål sto før bom stille på sporet, midt på den racinglinja de
+// som fortsatt kjører skal bruke. Den var tatt ut av kollisjonen, så feltet
+// kjørte rett gjennom den — et vrak man ser igjennom er verre enn ingen bil.
+// Nå ruller den ut runden slik det gjøres i virkeligheten, og forsvinner.
+const COOL_SPEED=0.55;   // andel av normal AI-fart, ingen boost
+const COOL_ALPHA=0.40;   // 60 % gjennomsiktig: tydelig «ikke i løpet lenger»
+const COOL_LAPS=0.50;    // borte etter en halv runde
+// HVORFOR nedtoningen starter så sent: en lineær fade over hele halvrunden
+// gjorde bilen praktisk talt usynlig alt etter en fjerdedel, mens den fortsatt
+// lå i veien visuelt. Den holder COOL_ALPHA mesteparten av tiden og toner ned
+// først over den siste tredjedelen, så den er synlig så lenge den er der.
+const COOL_FADE_AT=0.34; // runder siden mål før nedtoningen begynner
+
 // Lading med runde-tak. Returnerer hvor mye som faktisk kom inn, slik at
 // endeplatelyset kan slutte å blinke når taket er nådd — et lys som sier
 // «lader» mens ingenting lades, ville vært en direkte løgn om spillreglene.
@@ -1985,7 +2003,17 @@ function update(){
   raceTime++;
 
   cars.forEach(c=>{
-    if(c.finished)return;
+    // Biler i mål kjører videre på avkjølingsrunde i stedet for å returnere
+    // her. De beholder AI-styringen (så de følger banen), men farten settes
+    // ned og boosten slås av der AI-en bestemmer seg, lenger ned. Kollisjon
+    // var de alt tatt ut av — se de tre o.finished-sjekkene.
+    if(c.finished){
+      if(c.coolDone) return;           // ferdig utonet: ikke tegn, ikke regn
+      const kjort=c.raceDist-c.finishDist;
+      if(kjort>=COOL_LAPS){ c.coolDone=true; c.coolAlpha=0; return; }
+      const f=(kjort-COOL_FADE_AT)/(COOL_LAPS-COOL_FADE_AT);
+      c.coolAlpha=COOL_ALPHA*(1-Math.max(0,Math.min(1,f)));
+    }
     let gas=false,steerL=false,steerR=false,brake=false,straightKey=false;
     if(c.isPlayer){
       gas=!!(keys['ArrowUp']||keys['w']||keys['W']);
@@ -2176,6 +2204,18 @@ function update(){
       const reserve = c.overtakeMode ? 5 : 25;
       c.boostActive = c.battery>reserve && (blockerFound||attackerFound||Math.abs(curvNow)<0.008)
         && Math.random()<(0.35+0.5*D.ersSkill);
+
+      // Avkjølingsrunde: 55 % fart og ingen boost. Farten settes ved å skalere
+      // c.aiSpd, for det er den ENE størrelsen både gass/brems her og taket
+      // MAX lenger ned leser — da trenger ikke nedsettelsen gjentas to steder
+      // og kan ikke komme i utakt med seg selv. Bremsen får ingen
+      // overspeed-margin: bilen skal legge seg på den nye farten, ikke pendle.
+      if(c.finished){
+        c.aiSpd*=COOL_SPEED;
+        gas   = c.speed < c.aiSpd;
+        brake = c.speed > c.aiSpd;
+        c.boostActive=false; c.overtakeMode=false; c.otPending=false;
+      }
     }
 
     const near=nearestOnPath(TR.PATH,c.x,c.y);
@@ -2196,7 +2236,12 @@ function update(){
     // c.offtrack. c.offtrack starter først utenfor grusen (TW+GRAVEL_SAFE),
     // mens den hvite linja ligger på TW — en bil kan altså være godt forbi
     // linja og fortsatt ikke være «offtrack» i fysikkens forstand.
-    if(state==='playing'||state==='practice') checkTrackLimits(c,dist);
+    // !c.finished: en bil på avkjølingsrunde skal ikke kunne samle banegrenser.
+    // Straffetiden går inn i finalTimeSec(), som finalizeResults() rangerer
+    // etter — uten denne sperra kunne en bil som alt var i mål bli straffet
+    // for å kjøre vidt på utrullingen og dermed falle på resultatlista
+    // etterpå, for noe som ikke var en del av løpet.
+    if((state==='playing'||state==='practice') && !c.finished) checkTrackLimits(c,dist);
 
     // stuck-in-gravel recovery (AI only) — if an AI car makes essentially no
     // lap progress for 3s straight (overshot a corner, wedged on the outer
@@ -2482,9 +2527,20 @@ function update(){
         c.sectorBuf=[null,null,null];
       }
       c.lapHadViolation=false;
-      if(state==='playing' && c.lap>=LAPS){
+      // !c.finished: avkjølingsrunden er bare en halv runde, så en bil rekker
+      // ikke tilbake til streken — men sperra står her likevel, for uten den
+      // ville en lengre COOL_LAPS overskrevet finishT med en ny, senere tid og
+      // dermed flyttet bilen bakover på resultatlista.
+      if(state==='playing' && !c.finished && c.lap>=LAPS){
         c.finished=true;
         c.finishT=raceTime;
+        c.finishDist=c.raceDist;   // nullpunkt for avkjølingsrunden
+        // MÅ settes her, ikke bare i avkjølingsgrenen øverst i løkken:
+        // målpasseringen skjer ETTER den grenen i samme bilde, så en bil som
+        // nettopp ble ferdig ville blitt tegnet ett bilde med alpha=1 og først
+        // deretter hoppet til 0,40 — et synlig blaff i det bilen krysser
+        // streken. Testen «gjennomsiktigheten starter på COOL_ALPHA» fanget det.
+        c.coolAlpha=COOL_ALPHA;
         if(c.isPlayer){ finalizeResults(); state='win'; winTimer=0; buildPodiumCrowd(); if(player.finalPlace===1) spawnConfetti(); }
       }
     }
@@ -2677,13 +2733,17 @@ function drawCarWheels(g,steer){
 
 // Endeplatelys + bremselys. Begge er live fordi de endrer farge/tilstand fra
 // bilde til bilde og derfor ikke kan bakes inn i en sprite.
-function drawCarLights(g,epCol,braking){
+// a er alpha-faktoren fra drawCar (1 for alle biler som ikke er på
+// avkjølingsrunde). Den trengs bare på bremselyset, som er det ene stedet her
+// som setter alpha absolutt; de faste flatene over arver alpha fra konteksten.
+function drawCarLights(g,epCol,braking,a){
+  if(a===undefined) a=1;   // drawCarShape() tegner forhåndsvisningen uten faktor
   g.fillStyle=epCol;
   g.fillRect(-14.4,-6.9,2.4,0.9);
   g.fillRect(-14.4, 6.0,2.4,0.9);
   g.fillStyle=BRAKE_COL; g.fillRect(-14.9,-0.7,0.6,1.4);
   if(braking){
-    g.save(); g.globalAlpha=.45; g.fillStyle=BRAKE_COL;
+    g.save(); g.globalAlpha=.45*a; g.fillStyle=BRAKE_COL;
     g.beginPath(); g.arc(-14.6,0,2,0,Math.PI*2); g.fill();
     g.restore();
   }
@@ -2856,9 +2916,21 @@ function drawGlow(g,spr,x,y,rad,a){
 const AI_LABEL_DIST=160;
 
 function drawCar(c){
+  if(c.coolDone) return;   // i mål og ferdig utonet — bilen er ute av bildet
   const night=TOD[todIdx].night;
-  c.trail.forEach(t=>{ ctx.globalAlpha=t.life*.22; ctx.fillStyle='#0a0a12'; ctx.beginPath(); ctx.arc(t.x,t.y,2.6,0,Math.PI*2); ctx.fill(); });
-  ctx.globalAlpha=1;
+  // Avkjølingsrunden tegnes gjennomsiktig. A er en FAKTOR alle alpha-verdiene
+  // i funksjonen ganges med, og er 1 for alle andre biler — altså uendret
+  // tegning for dem.
+  //
+  // HVORFOR en faktor og ikke bare ctx.globalAlpha=... på toppen: funksjonen
+  // setter alpha med absolutte verdier flere steder nedenfor (sporet, lysene,
+  // slipstream-strekene), og hver av dem ville nullet ut en alpha satt på
+  // toppen. Da ble resultatet en bil der karosseriet var gjennomsiktig mens
+  // skyggen og lysene var massive — det leser som en grafikkfeil, ikke som en
+  // bil på utrulling.
+  const A=c.coolAlpha;
+  c.trail.forEach(t=>{ ctx.globalAlpha=t.life*.22*A; ctx.fillStyle='#0a0a12'; ctx.beginPath(); ctx.arc(t.x,t.y,2.6,0,Math.PI*2); ctx.fill(); });
+  ctx.globalAlpha=A;
   ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(c.angle);
   drawCarShadow(ctx,c.angle);
   drawCarWheels(ctx,steerAngle(c));
@@ -2868,11 +2940,11 @@ function drawCar(c){
   const spr=c.spr&&c.spr[c.straightMode?1:0];
   if(spr) ctx.drawImage(spr,-CAR_SPR_HW,-CAR_SPR_HH,CAR_SPR_HW*2,CAR_SPR_HH*2);
   else drawCarStatic(ctx,liveryOf(c),c.straightMode);
-  drawCarLights(ctx,endplateColor(c),c.braking);
+  drawCarLights(ctx,endplateColor(c),c.braking,A);
   if(night){
     // frontlyskjegle + lykter, bak-/baklys — rent visuelt, styrt av den globalt
     // valgte tiden på døgnet, ikke av noen tilstand på bilen selv.
-    ctx.save(); ctx.globalAlpha=.3; ctx.fillStyle='rgba(255,255,255,.4)';
+    ctx.save(); ctx.globalAlpha=.3*A; ctx.fillStyle='rgba(255,255,255,.4)';
     ctx.beginPath(); ctx.moveTo(14,0); ctx.lineTo(33,-6); ctx.lineTo(33,6); ctx.closePath(); ctx.fill();
     ctx.restore();
     // Lyktene: forhåndstegnet glød (se GLOW_WHITE/GLOW_RED) pluss en liten
@@ -2882,13 +2954,13 @@ function drawCar(c){
     // Radius og styrke er prøvd ut mot den gamle shadowBlur-varianten på en
     // 5× forstørret bil: en bredere glød enn dette vasker ut forvingen helt,
     // og vingene er noe av det som gjør bilen lesbar i 28 px.
-    drawGlow(ctx,GLOW_WHITE,12.7,-4.6,4.2,.45);
-    drawGlow(ctx,GLOW_WHITE,12.7, 4.6,4.2,.45);
+    drawGlow(ctx,GLOW_WHITE,12.7,-4.6,4.2,.45*A);
+    drawGlow(ctx,GLOW_WHITE,12.7, 4.6,4.2,.45*A);
     ctx.fillStyle='#fff';
     ctx.beginPath(); ctx.arc(12.7,-4.6,1,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(12.7, 4.6,1,0,Math.PI*2); ctx.fill();
-    drawGlow(ctx,GLOW_RED,-12.5,-4.6,3.8,.45);
-    drawGlow(ctx,GLOW_RED,-12.5, 4.6,3.8,.45);
+    drawGlow(ctx,GLOW_RED,-12.5,-4.6,3.8,.45*A);
+    drawGlow(ctx,GLOW_RED,-12.5, 4.6,3.8,.45*A);
     ctx.fillStyle='#ff4444';
     ctx.beginPath(); ctx.arc(-12.5,-4.6,1,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(-12.5, 4.6,1,0,Math.PI*2); ctx.fill();
@@ -2898,11 +2970,11 @@ function drawCar(c){
     // flimrende slik at det leses som luftstrøm og ikke som faste linjer.
     ctx.strokeStyle='#ffffff'; ctx.lineWidth=1.2;
     for(let k=0;k<3;k++){
-      ctx.globalAlpha=c.slipstreamT*(0.35+Math.random()*0.55);
+      ctx.globalAlpha=c.slipstreamT*(0.35+Math.random()*0.55)*A;
       const yy=(k-1)*3.4;
       ctx.beginPath(); ctx.moveTo(-15,yy); ctx.lineTo(-21-Math.random()*6,yy+(Math.random()-.5)*2); ctx.stroke();
     }
-    ctx.globalAlpha=1;
+    ctx.globalAlpha=A;
   }
   ctx.restore();
   // Plassnummeret: en skjermjustert etikett like bak bilen. Konteksten er
@@ -2921,6 +2993,10 @@ function drawCar(c){
     ctx.fillStyle='#e2e8f0'; ctx.fillText(txt,0,0);
     ctx.restore();
   }
+  // MÅ stå her: alpha er fortsatt A på dette punktet, og bilene tegnes etter
+  // hverandre på samme kontekst. Uten nullstillingen ville den utonede bilen
+  // gjort alle bilene som tegnes etter den gjennomsiktige også.
+  ctx.globalAlpha=1;
 }
 
 // Flomlysets ytre radius, og hvor langt utenfor bildekanten en mast fortsatt
