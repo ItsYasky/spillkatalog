@@ -1930,9 +1930,17 @@ function startPractice(){
   c.prevProg=c.curProg;
   cars=[c]; player=c;
   buildCarSprites();
+  // MÅ komme etter buildCarSprites(): den kaller freeCarSprites(), som krymper
+  // alle sprites til 0×0 — også spøkelsets, hvis det ble bygd først.
+  ghostSpr=makeCarSprite(GHOST_LIVERY,false);
   camX=player.x; camY=player.y; camAngle=player.angle;
   particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; raceTime=0;
   bestSector=[Infinity,Infinity,Infinity]; bestLap=Infinity; finalResults=null;
+  // MÅ komme etter raceTime=0: nyGhostRunde() setter tidspunktet for neste
+  // opptakspunkt ut fra raceTime, og med forrige løps klokke ville det punktet
+  // ligget tusenvis av steg fram i tid — altså ingen opptak i det hele tatt.
+  ghostLap=lesGhost();
+  nyGhostRunde(c);
   state='practice';
 }
 
@@ -1972,6 +1980,183 @@ const COOL_LAPS=0.50;    // borte etter en halv runde
 // lå i veien visuelt. Den holder COOL_ALPHA mesteparten av tiden og toner ned
 // først over den siste tredjedelen, så den er synlig så lenge den er der.
 const COOL_FADE_AT=0.34; // runder siden mål før nedtoningen begynner
+
+// ── Spøkelsesbil (bare i øving) ──────────────────────────────────────────────
+// Den beste GYLDIGE runden lagres og spilles av igjen som en hvit bil. Den er
+// ikke en AI: den gjentar punkt for punkt posisjonene du selv kjørte, så linja
+// du jager er garantert en linje som er mulig å kjøre — og den er din egen.
+const GHOST_STEP=3;              // ett punkt hvert tredje fysikksteg ...
+const GHOST_HZ=60/GHOST_STEP;    // ... altså 20 punkter i sekundet
+const GHOST_FIELDS=4;            // x, y, vinkel og tilbakelagt runde per punkt
+const GHOST_VER=1;               // formatversjon i localStorage
+// HVORFOR 20 Hz og ikke ett punkt per fysikksteg: en runde på 90 s er 5400
+// steg, og med fire tall per steg blir det en JSON-streng på over en halv
+// megabyte — i et localStorage som deles med alle de andre spillene i
+// katalogen. Mellom punktene interpoleres det lineært, og en bil som flytter
+// seg rundt 6 px på de 50 ms et punktintervall varer, har ingen knekk stor nok
+// til å avsløre at punktene ligger så spredt.
+const GHOST_MAX=4800;            // tak på 240 s runde, se lagreGhostRunde()
+// HVORFOR 0,36 og ikke 0,35: spøkelset er hvitt oppå asfalten, og 35 % hvitt
+// blandet med ASPHALT gir #7a7a82 — 2,94:1, altså rett UNDER prosjektets
+// 3:1-krav for en bil mot banedekket. 36 % gir #7c7c83 og 3,03:1. De to er
+// ikke til å skille med øyet, men bare den ene består kravet.
+const GHOST_ALPHA=0.36;
+// Flat hvit, ikke en lysnet utgave av din egen lakkering: lå spøkelset i dine
+// farger, var det umulig å se hvem som var hvem i en sving der de to ligger
+// oppå hverandre — og det er nettopp DER du leser av hvem som kjører best
+// linje. Formen er den samme bilformen som alt annet bruker (drawCarStatic),
+// slik at det er LINJA og ikke silhuetten som skiller dem.
+const GHOST_LIVERY={base:'#ffffff',acc:'#ffffff',dark:'#ffffff',hel:'#ffffff',spc:'#ffffff',pat:'solid'};
+const GHOST_COL='#f8fafc';       // spøkelsets farge i HUD-en og i toastene
+// Teksten i spøkelsespanelet. HVORFOR ikke ledertavlas egne toner: panelet har
+// samme bakgrunn som ledertavla — rgba(5,7,10,.78) oppå asfalten, altså #0f1115
+// — og der måler ledertavlas #475569 bare 2,49:1 og #64748b 3,97:1. Begge er
+// under 4,5:1-kravet for 9 px tekst. Den dempede tonen er målt til det dimmeste
+// som faktisk består (#707f96 = 4,65:1), ikke til det som så dempet nok ut.
+const GHOST_TXT='#94a3b8';       // 7,37:1 — overskrift når spøkelset er på
+// Avslått tilstand kan ikke vises ved å dempe under lesbarhetsgrensa, så det er
+// TEKSTEN som bærer forskjellen («G AV» / «G PÅ»); denne tonen er bare et hint.
+const GHOST_TXT_DIM='#707f96';   // 4,65:1 — avslått overskrift, rundetid, Δ-strek
+
+let ghostOn=true;        // slås av og på med G
+let ghostRec=[];         // punktene i runden som kjøres nå
+let ghostLap=null;       // {t, pts} — beste lagrede runde for denne banen og modusen
+let ghostSpr=null;       // den hvite sprite-en
+let ghostDist0=0;        // raceDist da inneværende runde begynte
+let ghostProgMax=0;      // største tilbakelagte del av runden, se ghostDelta()
+let ghostNextT=0;        // raceTime for neste punkt som skal tas opp
+
+// Nøkkelen skiller på bane OG modus: realistisk og casual har ulik toppfart og
+// ulikt grep, så en tid satt i den ene er ikke en tid det er meningsfullt å
+// jage i den andre.
+function ghostKey(){ return `gp_ghost_${TR.name}_${REALISTIC?'REALISTISK':'CASUAL'}`; }
+
+// Både lesing og skriving må tåle at lagring er blokkert: i privat modus, med
+// avslåtte cookies eller full kvote kaster selve localStorage-oppslaget. Da
+// skal øvingen gå videre uten spøkelse, ikke dø på en hvit skjerm.
+function lesGhost(){
+  let raa=null;
+  try { raa=localStorage.getItem(ghostKey()); }
+  catch(e){ return null; }
+  if(!raa) return null;
+  try {
+    const d=JSON.parse(raa);
+    // Ukjent eller manglende versjon: kjør uten spøkelse framfor å tolke tall
+    // vi ikke kjenner rekkefølgen på. Et punkt er fire tall, så en liste som
+    // ikke går opp i fire er ødelagt uansett hva versjonen sier.
+    if(!d || typeof d!=='object' || d.v!==GHOST_VER) return null;
+    if(typeof d.t!=='number' || !(d.t>0) || !Array.isArray(d.pts)) return null;
+    if(d.pts.length%GHOST_FIELDS!==0 || d.pts.length<GHOST_FIELDS*2) return null;
+    if(d.pts.some(n=>typeof n!=='number' || !isFinite(n))) return null;
+    return {t:d.t, pts:d.pts};
+  } catch(e){ return null; }
+}
+
+function skrivGhost(t,pts){
+  try { localStorage.setItem(ghostKey(),JSON.stringify({v:GHOST_VER,t:+t.toFixed(3),pts})); }
+  catch(e){ /* lagring blokkert eller kvoten full — spøkelset lever da bare ut økten */ }
+}
+
+// Nullstilling ved rundestart. ghostDist0 er raceDist i det runden begynte, og
+// det er DEN runden regnes fra. HVORFOR raceDist og ikke curProg: raceDist er
+// sammenhengende og vet om rundeskiftet, mens curProg hopper fra 0,99 til 0,00
+// ved streken — samme grunn som recordGapMarks bruker den.
+// Punkt nummer 0 tas med én gang, altså posisjonen i det runden begynner.
+// Uten det ville punkt 0 på øktas FØRSTE runde blitt posisjonen tre steg inn
+// (det tar tre steg før neste punkt er ventet), mens det på alle senere runder
+// er posisjonen på streken — og da betyr ikke punkt i det samme tidspunktet
+// fra runde til runde.
+function nyGhostRunde(c){
+  ghostRec=[]; ghostProgMax=0; ghostDist0=c.raceDist; ghostNextT=raceTime;
+  tickGhost(c);
+}
+
+// Ett skritt av opptaket. Punktene lagres som heltall, og det er de SAMME
+// tallene som spilles av i minnet. HVORFOR det er viktig: hadde avrundingen
+// bare skjedd på vei til localStorage, ville spøkelset flyttet seg litt i det
+// du lastet siden på nytt, og en Δ-tid som endrer seg uten at du har kjørt
+// annerledes er en feil ingen klarer å forstå. 1 px og 0,001 rad er dessuten
+// langt under det som er synlig på en bil som er 28 px lang.
+//
+// Det er ALLTID den største tilbakelagte delen som lagres, aldri den
+// øyeblikkelige. Da er punktlista garantert stigende, og halveringssøket i
+// ghostDelta() har et sortert grunnlag å lete i.
+//
+// ghostNextT er tidspunktet neste punkt er ventet, og den økes med GHOST_STEP
+// i stedet for å settes til raceTime+GHOST_STEP: da ligger punktene på et fast
+// rutenett, og punkt i er garantert tiden i/GHOST_HZ inn i runden. Den er
+// samtidig sperra mot å ta opp det samme punktet to ganger på steget runden
+// skifter — der kalles tickGhost() både av nyGhostRunde() og av update().
+function tickGhost(c){
+  const d=c.raceDist-ghostDist0;
+  if(d>ghostProgMax) ghostProgMax=d;
+  if(raceTime<ghostNextT) return;
+  if(ghostRec.length>=GHOST_MAX*GHOST_FIELDS) return;
+  ghostNextT+=GHOST_STEP;
+  ghostRec.push(
+    Math.round(c.x), Math.round(c.y),
+    Math.round(wrapPi(c.angle)*1000),
+    Math.round(ghostProgMax*1e5)
+  );
+}
+
+// Kalles bare for runder som ER gyldige — slettede runder kommer aldri hit.
+// Returnerer om runden ble den nye rekorden.
+function lagreGhostRunde(t){
+  const n=ghostRec.length/GHOST_FIELDS;
+  if(n<2) return false;
+  // Runden traff taket, så punktene dekker bare de første 240 sekundene. Et
+  // halvt spøkelse er verre enn ingen: det ville forsvunnet midt på banen.
+  if(n>=GHOST_MAX) return false;
+  if(ghostLap && t>=ghostLap.t) return false;
+  ghostLap={t, pts:ghostRec.slice()};
+  skrivGhost(t,ghostLap.pts);
+  return true;
+}
+
+// Posisjonen spøkelset hadde t sekunder inn i runden sin. null når t er forbi
+// slutten — da er spøkelset i mål, og borte fra banen til du selv krysser
+// streken og runden begynner på nytt.
+function ghostPose(t){
+  if(!ghostLap) return null;
+  const pts=ghostLap.pts, n=pts.length/GHOST_FIELDS;
+  const f=t*GHOST_HZ;
+  if(!(f>=0) || f>n-1) return null;
+  const i=Math.min(n-2,Math.floor(f)), u=f-i;
+  const a=i*GHOST_FIELDS, b=a+GHOST_FIELDS;
+  const a0=pts[a+2]/1000, a1=pts[b+2]/1000;
+  return {
+    x: pts[a]  +(pts[b]  -pts[a]  )*u,
+    y: pts[a+1]+(pts[b+1]-pts[a+1])*u,
+    // Vinkelen må interpoleres den KORTE veien rundt: fra +3,14 til −3,14 rad
+    // er 0,003 rad over π-skillet, ikke 6,28 rad tilbake. Uten wrapPi her
+    // snurret spøkelset én gang helt rundt hver gang det passerte det skillet,
+    // altså på det ene punktet på banen der bilen peker rett «bakover».
+    ang: a0+wrapPi(a1-a0)*u
+  };
+}
+
+// Δ-tid: din tid minus tiden spøkelset brukte på å komme like langt. Negativ
+// betyr at du leder. Målt på TILBAKELAGT RUNDE og ikke på klokka, fordi det er
+// det samme spørsmålet en tidtakingsskjerm svarer på: hvem var først hit?
+function ghostDelta(t){
+  if(!ghostLap) return null;
+  const pts=ghostLap.pts, n=pts.length/GHOST_FIELDS;
+  const q=ghostProgMax*1e5;
+  if(q<=pts[3]) return null;                    // ikke forbi spøkelsets første punkt ennå
+  const sisteProg=pts[(n-1)*GHOST_FIELDS+3];
+  // Du har kommet lenger enn spøkelset rakk før det var i mål. Da er svaret
+  // ferdig kjent: differansen mot hele rundetiden dens.
+  if(q>=sisteProg) return t-ghostLap.t;
+  let lo=0, hi=n-1;
+  while(hi-lo>1){
+    const mid=(lo+hi)>>1;
+    if(pts[mid*GHOST_FIELDS+3]<=q) lo=mid; else hi=mid;
+  }
+  const p0=pts[lo*GHOST_FIELDS+3], p1=pts[hi*GHOST_FIELDS+3];
+  const u=p1>p0 ? (q-p0)/(p1-p0) : 0;
+  return t-(lo+u)/GHOST_HZ;
+}
 
 // Lading med runde-tak. Returnerer hvor mye som faktisk kom inn, slik at
 // endeplatelyset kan slutte å blinke når taket er nådd — et lys som sier
@@ -2522,9 +2707,13 @@ function update(){
               if(sb!=null && sb<bestSector[s]) bestSector[s]=sb;
             }
             toast(`RUNDE ${c.lap} FERDIG: ${lt}s`,'#38bdf8');
+            if(lagreGhostRunde(ltNum)) toast('NYTT SPØKELSE',GHOST_COL);
           }
         }
         c.sectorBuf=[null,null,null];
+        // Opptaket begynner på nytt enten runden ble stående eller slettet:
+        // punktene fra en slettet runde skal ikke henge med inn i den neste.
+        if(state==='practice') nyGhostRunde(c);
       }
       c.lapHadViolation=false;
       // !c.finished: avkjølingsrunden er bare en halv runde, så en bil rekker
@@ -2544,6 +2733,10 @@ function update(){
         if(c.isPlayer){ finalizeResults(); state='win'; winTimer=0; buildPodiumCrowd(); if(player.finalPlace===1) spawnConfetti(); }
       }
     }
+    // Opptaket står ETTER målpasseringen i denne løkka med vilje: krysses
+    // streken dette steget, er opptaket alt nullstilt, og punktet havner som
+    // punkt 0 i den nye runden i stedet for som siste punkt i den forrige.
+    if(c.isPlayer && state==='practice') tickGhost(c);
     c.prevProg=pr;
   });
 
@@ -2999,6 +3192,20 @@ function drawCar(c){
   ctx.globalAlpha=1;
 }
 
+// Spøkelset: ingen skygge, ingen hjul og ingen lys — bare karosserisilhuetten.
+// HVORFOR: alt det andre er mørkt, og på 36 % synlighet leses mørke detaljer
+// som hull i bilen i stedet for som deler av den. Silhuetten alene er dessuten
+// det eneste du trenger for å sammenligne to linjer gjennom en sving.
+function drawGhost(){
+  const g=ghostPose((raceTime-player.lapStartT)/60);
+  if(!g) return;
+  ctx.save();
+  ctx.globalAlpha=GHOST_ALPHA;
+  ctx.translate(g.x,g.y); ctx.rotate(g.ang);
+  ctx.drawImage(ghostSpr,-CAR_SPR_HW,-CAR_SPR_HH,CAR_SPR_HW*2,CAR_SPR_HH*2);
+  ctx.restore();
+}
+
 // Flomlysets ytre radius, og hvor langt utenfor bildekanten en mast fortsatt
 // må tegnes. Marginen er radiusen pluss mastehøyden (26) med litt slakk, slik
 // at en mast rett utenfor kanten fortsatt rekker å kaste lyset sitt inn i
@@ -3114,6 +3321,10 @@ function drawTrackScene(){
       ctx.restore();
     }
   });
+
+  // Spøkelset tegnes FØR bilene, altså under dem. Det er en referanse å måle
+  // seg mot, og en referanse skal aldri kunne legge seg oppå bilen du styrer.
+  if(state==='practice' && ghostOn && ghostLap) drawGhost();
 
   // cars — already inside the camera transform, draw directly in world space.
   // Rekkefølgen er fortsatt «dårligst plassering nederst, lederen øverst», men
@@ -3540,6 +3751,38 @@ function draw(){
     else { ctx.fillStyle='#4ade80'; ctx.font='bold 56px Courier New'; ctx.fillText('LIGHTS OUT!',W/2,H/2); }
   }
 
+  // ── spøkelsespanel (øving) ──
+  // Plassen ledertavla har i løp står tom i øving, og Δ-tiden hører hjemme
+  // nettopp her og ikke i toppfeltet: feltet er bare 50 px høyt og alt fullt
+  // (fart, gir, AERO, BOOST), mens Δ er tallet man leser hele tiden og derfor
+  // trenger ro rundt. Samme ramme og samme x som ledertavla, slik at øyet
+  // finner det på den plassen det er vant til at tall står.
+  if(state==='practice'){
+    const vis=ghostOn && !!ghostLap;
+    const gx0=W-116, gy0=HY+8, gw=108, gh=vis?52:26;
+    ctx.fillStyle='rgba(5,7,10,.78)'; ctx.fillRect(gx0,gy0,gw,gh);
+    ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(gx0,gy0,gw,gh);
+    ctx.textAlign='left'; ctx.font='bold 9px Courier New';
+    ctx.fillStyle=ghostOn?GHOST_TXT:GHOST_TXT_DIM;
+    ctx.fillText(ghostOn?'SPØKELSE  G AV':'SPØKELSE  G PÅ',gx0+6,gy0+11);
+    if(vis){
+      const d=ghostDelta((raceTime-player.lapStartT)/60);
+      // Δ-en er det klart største tallet i panelet, for det er det eneste her
+      // man leser i periferien mens man kjører. Grønt = du leder spøkelset.
+      // Strek når du ennå ikke har kommet forbi spøkelsets første punkt — et
+      // «+0,00» der ville vært et svar, og vi har ikke noe svar å gi ennå.
+      ctx.font='bold 15px Courier New';
+      if(d==null){ ctx.fillStyle=GHOST_TXT_DIM; ctx.fillText('—',gx0+6,gy0+28); }
+      else {
+        ctx.fillStyle = d<0 ? '#4ade80' : '#ef4444';
+        ctx.fillText(`${d<0?'−':'+'}${Math.abs(d).toFixed(2)}`,gx0+6,gy0+28);
+      }
+      ctx.font='bold 9px Courier New'; ctx.fillStyle=GHOST_TXT_DIM;
+      ctx.fillText(`RUNDE ${ghostLap.t.toFixed(2)}s`,gx0+6,gy0+44);
+    }
+    ctx.textAlign='center';
+  }
+
   // ── leaderboard panel (top-right) ── with 20 cars on track, show only the
   // top 5 plus the player's own row (with a "···" gap) instead of all 20.
   if(state!=='practice'){
@@ -3795,6 +4038,12 @@ document.addEventListener('keydown',e=>{
   if(state==='practice'){
     if(e.key==='t'||e.key==='T') state='trackselect';
     if(e.key==='r'||e.key==='R') startPractice();
+    // ghostOn nullstilles IKKE av startPractice: har du slått spøkelset av,
+    // skal det bli liggende av når du starter økta på nytt med R.
+    if(e.key==='g'||e.key==='G'){
+      ghostOn=!ghostOn;
+      toast(ghostOn?'SPØKELSE PÅ':'SPØKELSE AV',GHOST_COL);
+    }
   }
   if(e.key===' ')e.preventDefault();
 });
