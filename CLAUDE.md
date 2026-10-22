@@ -47,7 +47,8 @@ Sammenlign dem med:
 | D | ferdig | `709d20a` | 2026-reglene — rett-modus, boost og overtake | `test_boost.js` |
 | E | ferdig | `3e2b859` | Avkjølingsrunde: biler i mål kjører videre på 55 % fart, uten kollisjon, 60 % gjennomsiktige, toner ut etter en halv runde | `test_cooldown.js` (24/24) |
 | F | ferdig | `d2419f9` | Spøkelsesbil i øving: beste gyldige runde i `localStorage` (`gp_ghost_<BANE>_<MODUS>`), spilles av i hvitt med 36 % synlighet, Δ-tid i HUD-en, slås av/på med `G` | `test_ghost.js` (76/76) |
-| G | ikke startet | — | Sluttest og rapport: AI-sim mot «før»-tallene fra A1, tidssteg på 60/120/144 Hz, skjermbilder og rapport per steg | — |
+| G | pågår | — | Sluttest og rapport: AI-sim mot «før»-tallene fra A1, tidssteg på 60/120/144 Hz, skjermbilder og rapport per steg | — |
+| H | pågår | — | Spillerens svingfysikk i REALISTISK: `PHYS_SCRUB` mot `cornerCap`, `severity` i stedet for `smoothCurv`, ULTRA `baseMax` 7,55→8,30 | `test_spiller_sving.js` |
 
 Tidligere deler: `5a4f417` fast tidssteg (akkumulator) i spill-loopen,
 `ce0e0b9` lazy banebakgrunn + nedskalering over 16M px.
@@ -78,6 +79,55 @@ tidspunktet for neste opptakspunkt ut fra `raceTime`, så med forrige løps klok
 blir det ikke tatt opp noe i det hele tatt). `tickGhost()` står sist i
 bil-løkka, etter målpasseringen, slik at punktet på rundeskiftet havner som
 punkt 0 i den nye runden og ikke som siste punkt i den forrige.
+
+**Avvik verdt å vite i steg H:** utgangspunktet var at ULTRA/REALISTISK var for
+lett — 20,52 s på MONTE SPIRA mot 21,4 s for «full toppfart hele runden».
+Regnestykket var riktig, men 21,4 s er ikke et gulv: det er regnet av
+KJØRELINJAS lengde, og en bil som bare kutter svingene kjører 2–4,6 % kortere
+og holder seg innenfor banegrensene. Tiden var altså aldri over toppfarten.
+
+Den EKTE feilen testen fant: `physSafe` senket aldri farten. `overRatio` gikk
+bare til `turnPenalty` og `gripPenalty`, aldri til `MAX`. Med gassen i bånn,
+aldri brems, ingen boost og alene på banen kom bilen rundt ARDENNE 3,0 %
+raskere enn den teoretiske tiden — med Shift+Space 6,0 % — og uten ETT
+banegrensebrudd. Taket fantes på papiret og kostet ingenting.
+
+To feller i selve rettelsen, begge funnet ved måling:
+1. Et skrubb mot `physSafe` straffer boost og rett-modus på RETTSTREKKA, fordi
+   `physSafe` bygges på `PLAYER_MAX` og ikke vet om 2026-reglene. Toppfarten
+   med Shift+Space falt fra 7,62 til 7,05, altså nesten hele steg D. Taket må
+   regnes av et `cornerCap` som har multiplikatorene i seg.
+2. `cornerCap` kan ikke bygges på `MAX` heller, for AI-ens `MAX` kommer fra
+   `aiSpd`, som ALT er redusert for svingen — det trakk fra for samme sving to
+   ganger. Grunnlaget er derfor `c.straightPace` (lagret i AI-grenen).
+Etter rettelsen er AI-tempoet uendret (MONTE SPIRA/ULTRA 26,57 mot 26,50 før),
+mens spillerens runde med gassen i bånn gikk fra 3,0 % RASKERE til 1,7 %
+TREGERE enn teoretisk — altså koster svingen nå mer enn kuttet sparer.
+
+**Tre måltene retninger som ble FORKASTET** (alle traff samme vegg: AI-en
+klarer ikke å HOLDE en raskere linje, den renner bare vidt):
+- `curveK` 4,0→2,0 ga 24,7 s, men hjelper ikke under 2,0 — `hairpinScale` er
+  alt klemt til 1 av `Math.min(1,4/curveK)`, så `hairpinExtra` står urørt.
+- `hairpinExtra` ×6→×3 ga 23,6 s men 6,35 brudd per bil (×1,5: 8,55, og 14,25
+  på DISCESA).
+- `buildRaceLine` som strammet snor (relaksasjon i korridoren) ga en 6,8–8,4 %
+  kortere linje, men NULL tempo (24,35 s, det samme `baseMax` alene gir) og
+  10,55 brudd — og den ødela MIDDELS og CASUAL også. MERK samtidig at den gamle
+  linja ikke er en kjørelinje: å skru GAIN opp gjør den LENGRE (34→8735 px,
+  60→8765, 90→8802 på MONTE SPIRA).
+Rettstrekkfart (`baseMax`) var den eneste knappen som ga tempo uten å ofre
+hvitstripedisiplinen.
+
+Verifisert med full matrise (`ai_baseline_after_H.json` mot `..._after_G.json`):
+alle 26 CASUAL-rader er BIT-IDENTISKE, altså er endringen beviselig bare i
+REALISTISK. Verste spredning i REALISTISK er 0,8528 (ALPEN/ULTRA), under én
+runde. Brudd ligger på ≤0,8 overalt unntatt SERPENTINA/REALISTISK/ULTRA på 6,65
+(6,525 før — det er den gamle, kjente saken, ikke en ny).
+
+**Åpent punkt funnet underveis:** ESSE/CASUAL/ULTRA har spredning 0,9857 — så
+vidt under én runde, og helt uendret fra før, så den er ikke forårsaket av dette
+steget. Den banen var ikke med i de fem som ble målt da `posFactor` ble strammet,
+og er den neste som bør ses på om spredningstaket skal holdes med margin.
 
 ### ASTEROIDER (`asteroids.html`)
 

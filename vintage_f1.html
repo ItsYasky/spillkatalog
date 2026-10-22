@@ -44,6 +44,21 @@ const SLIP_RANGE=95, SLIP_CONE=0.92;
 let REALISTIC=false;
 const PLAYER_MAX_CASUAL=4.8,     PLAYER_MAX_REALISTIC=6.8;
 const PHYS_K=2.6;       // how hard curvature clamps the realistic safe-speed ceiling
+// Hvor mye FART det koster å ligge over physSafe. HVORFOR den måtte inn: før
+// gikk overRatio bare til styreutslag (turnPenalty) og grep (gripPenalty),
+// aldri til farten — `MAX` ble ikke rørt av den i det hele tatt. Taket fantes
+// altså på papiret, men kostet ingenting, og det eneste en sving tok fra deg
+// var en bredere linje, som banebredden svelget. Målt med gassen i bånn og
+// ALDRI en bremsing kom bilen rundt ARDENNE 3,0 % raskere enn «full toppfart
+// hele runden», og med Shift+Space 6,0 % raskere, uten ETT banegrensebrudd.
+// Med denne kostnaden ligger samme runde på −0,9 % til +3,0 % av den
+// teoretiske tiden, altså omtrent der den bør ligge.
+//
+// Verdien er ikke en hard vegg, med vilje: dette er negativ tilbakekobling, så
+// farten legger seg litt OVER physSafe i likevekt (ved physSafe 5,3 blir det
+// ca. 5,6). Man skal fremdeles kunne kjøre bevisst for hardt inn og ta igjen
+// på utgangen — det skal bare koste noe.
+const PHYS_SCRUB=0.8;
 const TURN_BASE=0.046;  // full steering-rack rate available under the safe speed (realistic)
 
 // ══════════════════════════════════════════════════════════════════
@@ -1397,7 +1412,21 @@ const DIFFICULTIES_REALISTIC=[
   {name:'ENKEL',     clr:'#4ade80', baseMax:7.10, curveK:32,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03, defendSkill:.10, overtakeCommit:.55, ersSkill:.30},
   {name:'MIDDELS',   clr:'#38bdf8', baseMax:7.27, curveK:16,  overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05, defendSkill:.40, overtakeCommit:.72, ersSkill:.55},
   {name:'VANSKELIG', clr:'#f97316', baseMax:7.41, curveK:6.0, overspeed:1.035, mistakeChance:.00008, steerPrec:.045, lookAhead:11, rubberRate:.005, rubberThresh:.08, defendSkill:.72, overtakeCommit:.88, ersSkill:.80},
-  {name:'ULTRA',     clr:'#ef4444', baseMax:7.55, curveK:4.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12, defendSkill:1.0, overtakeCommit:1.0, ersSkill:1.0}
+  // ULTRA fikk baseMax 7,55 -> 8,30. HVORFOR: AI-ens beste runde paa
+  // MONTE SPIRA/REALISTISK laa paa 26,5 s, mens en god spiller kjoerer 20,5 s
+  // — nesten 6 sekunder, og det er hovedgrunnen til at ULTRA foeltes for lett.
+  // 8,30 gir 24,35 s med 0,25 brudd per bil. Maalt alternativene:
+  //   curveK 4,0 -> 2,0:    24,7 s, men hjelper ikke lenger under 2,0, fordi
+  //                         hairpinScale alt er klemt til 1 og hairpinExtra
+  //                         dermed staar uroert.
+  //   hairpinExtra x6 -> x3: 23,6 s, men 6,35 brudd per bil (x1,5: 8,55, og
+  //                         14,25 paa DISCESA) — AI-en klarer ikke aa HOLDE den
+  //                         raskere linja, den bare renner vidt. Samme vegg som
+  //                         gain=8,0-proeven traff.
+  //   baseMax 9,00:         23,1 s, men 5,6 brudd — bryter banegrensene igjen.
+  // Rettstrekkfart er altsaa den eneste knappen som gir tempo uten aa ofre
+  // hvitstripedisiplinen, og 8,30 er der brudd-tallet enda er neglisjerbart.
+  {name:'ULTRA',     clr:'#ef4444', baseMax:8.30, curveK:4.0, overspeed:1.012, mistakeChance:0,      steerPrec:.028, lookAhead:11, rubberRate:.002, rubberThresh:.12, defendSkill:1.0, overtakeCommit:1.0, ersSkill:1.0}
 ];
 let DIFFICULTIES=DIFFICULTIES_CASUAL;
 let difficulty=1;
@@ -1537,6 +1566,14 @@ class Car{
     this.penaltySec=0;        // tidsstraff i sekunder (bare spilleren får straff)
     this.warnFlag=false;      // svart-hvitt-flagg vist resten av løpet
     this.contactT=0;          // steg siden siste bil-mot-bil-kontakt, teller ned
+    this.lat=0;               // FORTEGNSATT avstand fra senterlinja, forrige steg.
+                              // nearestOnPath gir bare den usignerte avstanden, men
+                              // AI-en nedenfor må vite HVILKEN side den ligger ute på
+                              // for å kunne styre innover igjen. Settes i update() rett
+                              // etter `near`, altså ETTER at AI-en har styrt — AI-en
+                              // leser derfor verdien fra forrige steg. Det er ett steg
+                              // på 1/60 s og uten praktisk betydning, mens alternativet
+                              // er et ekstra nearestOnPath-kall per bil per steg.
     this.finishT=null;        // raceTime da bilen fullførte — resultatlista trenger den
     this.lapMarks=[];         // raceTime ved hver målpassering, for fartsanslag
     this.sectorBuf=[null,null,null]; // sektortider i runden som kjøres nå, se målpasseringen
@@ -1877,14 +1914,28 @@ function buildCars(){
     // dro de raske ned til 85 % og de trege opp til 118 %, så feltet holdt seg
     // samlet uansett. Med spennet urørt og strikken borte ble siste bil 1,4–1,8
     // runder bak etter åtte runder (målt på alle 13 banene), altså rundet av
-    // lederen. Det er ikke et felt, det er en oppstilling. 0,06 gir 0,5–0,8
-    // runders spredning: et felt som strekker seg naturlig, men der siste bil
-    // fortsatt er i samme løp.
+    // lederen. Det er ikke et felt, det er en oppstilling.
+    //
+    // Så strammet videre fra 0,06 til 0,04 i steg G. HVORFOR: 0,06 traff
+    // riktig den gang, men det var FØR boost og overtake kom inn i steg D, og
+    // de legger på spredning som posFactor ikke kontrollerer. Sluttmålingen
+    // viste snitt 0,750 over alle 52 konfigurasjoner og VULCANO/CASUAL/ULTRA
+    // på 1,0642 — altså siste bil rundet av lederen, nettopp det 0,06 skulle
+    // hindre. Målt på de fem verste banene:
+    //
+    //     0,06 → maks 1,0642, snitt 0,795
+    //     0,05 → maks 0,9499, snitt 0,745
+    //     0,04 → maks 0,8639, snitt 0,688
+    //
+    // 0,05 ble forkastet fordi 0,05 margin til taket er mindre enn
+    // variasjonen mellom to kjøringer (0,02–0,03 med bare 2 forsøk). 0,04 gir
+    // maks 0,864 med reell margin, og snittet ligger fortsatt inne i
+    // målbåndet 0,5–0,8.
     //
     // Midtpunktet er med vilje holdt på 0,97 (som før: snittet av 1,08…0,86).
     // Flyttes det, endres AI-ens absolutte fart og dermed balansen mot
     // spillerens egen toppfart — og det er ikke det dette steget skal gjøre.
-    const posFactor=1.00-0.06*(p/(AI_COUNT-1));
+    const posFactor=1.00-0.04*(p/(AI_COUNT-1));
     c.skillVar=posFactor*(0.97+Math.random()*0.06);
     cars.push(c);
   }
@@ -2307,7 +2358,32 @@ function update(){
       const defendRamp=Math.min(1,c.defendT/25);
       const maxDefendOffset=TR.TW*0.4*D.defendSkill;
       const defendOffset = c.defendT>0 ? c.defendSide*maxDefendOffset*defendRamp*curvAllow : 0;
-      const lateralOffset = overtakeOffset+defendOffset;
+
+      // Hvitlinje-disiplin. AI-en hadde ingen: den planla farten mot FYSIKKEN,
+      // der grusen fra TW til TW+GRAVEL_SAFE (23 px) er helt fartsnøytral, mens
+      // REGELEN teller brudd alt fra TW+LIMIT_MARGIN (8 px). Mellom de to ligger
+      // et 15 px bredt felt der en bil bryter banegrensene uten å tape noe som
+      // helst, og en fartsoptimaliserende AI bor naturligvis der.
+      //
+      // Målingen var entydig: ARDENNE hadde 4,6–6,7 brudd per bil, men
+      // offFracPerCar på 0–0,0006 — altså så godt som ingen tid forbi grusen.
+      // Bilene lå ikke utenfor banen, de lå i gratisfeltet. SERPENTINA 8,9 og
+      // DISCESA 2,6 på samme vis, mens ni baner lå på null.
+      //
+      // Korreksjonen er den en ekte sjåfør gjør: strammer linja når han merker
+      // at han er på vei ut over linja. Den biter først 10 px INNENFOR linja, så
+      // bilen rekker å svare før bruddet er et faktum, og styrker seg
+      // proporsjonalt med hvor langt ute den er. Den står med vilje UTENFOR
+      // curvAllow-dempingen som overtake/defend har: det er nettopp midt i
+      // svingen, der curvAllow er lavest, at en bil skyter vidt.
+      //
+      // HVORFOR ikke lavere svingfart i stedet: farten er finstemt mot
+      // spillerens toppfart (se baseMax/overspeed per nivå), og å senke den
+      // ville flyttet hele balansen for å rette noe som er et linjeproblem.
+      const keepIn=TR.TW-16;
+      const over=Math.abs(c.lat)-keepIn;
+      const lineKeep = over>0 ? -Math.sign(c.lat)*over*2.5 : 0;
+      const lateralOffset = overtakeOffset+defendOffset+lineKeep;
 
       const lookI=(li+D.lookAhead)%PN;
       const [rtx,rty]=TR.raceLine[lookI];
@@ -2334,6 +2410,10 @@ function update(){
       // svingene, og er samtidig teller i `corner`, så den beregnes bare én
       // gang her.
       const straightPace=c.skillVar*D.baseMax;
+      // Lagres på bilen fordi svingtaket (cornerCap, nedenfor) må bygges på
+      // farten UTEN svingreduksjon. `aiSpd` er alt redusert for svingen, så et
+      // tak regnet av den ville straffet AI-en for samme sving to ganger.
+      c.straightPace=straightPace;
       const corner=straightPace/(1+maxCurv*effK+hairpinExtra);
 
       // Gummistrikk, versjon 3: nesten usynlig.
@@ -2405,6 +2485,13 @@ function update(){
 
     const near=nearestOnPath(TR.PATH,c.x,c.y);
     const dist=near.dist;
+    // Fortegnet på avstanden, langs samme normal (-sin h, cos h) som kjørelinja
+    // og AI-ens sidesving bruker. Positiv = ute på den ene siden, negativ = den
+    // andre; hvilken er uvesentlig, AI-en bruker den bare til å styre motsatt vei.
+    {
+      const hN=TR.heading[near.idx], pN=TR.PATH[near.idx];
+      c.lat=-(c.x-pN[0])*Math.sin(hN)+(c.y-pN[1])*Math.cos(hN);
+    }
     const wasOff=c.offtrack;
     // the gravel/runoff fringe (GRAVEL_SAFE px beyond the tarmac, see top of
     // file) is now a genuinely usable, pace-neutral part of the surface —
@@ -2504,7 +2591,15 @@ function update(){
     c.slipstreamT = c.slipstreamActive ? Math.min(1,c.slipstreamT+0.15) : Math.max(0,c.slipstreamT-0.08);
 
     const PLAYER_MAX=REALISTIC?PLAYER_MAX_REALISTIC:PLAYER_MAX_CASUAL;
-    const curvForPhys=Math.abs(TR.smoothCurv[Math.floor(c.curProg*TR.PN)]||0);
+    // `severity` og ikke `smoothCurv` her. HVORFOR: smoothCurv er det SIGNERTE
+    // snittet over 21 punkter, og kommentaren ved computeHeadingCurv sier selv
+    // at det målet kan nulle seg ut nær null i en chicane — det er nettopp
+    // derfor severity ble laget. Brukt som fartstak arvet physSafe den
+    // svakheten, og taket forsvant på de stedene banen faktisk svinger mest.
+    // Målt: minste physSafe gikk fra 77–85 % av toppfarten til 68–79 %.
+    // Alene flyttet byttet lite (de åpne banene har lav severity også) — det er
+    // kombinasjonen med PHYS_SCRUB som gjør svingen dyr.
+    const curvForPhys=TR.severity[Math.floor(c.curProg*TR.PN)]||0;
     // REALISTISK adds a universal physical grip-loss: a shared safe-speed
     // ceiling grounded in the track's actual curvature right under the car,
     // applied to player AND AI alike. Go in hotter than this and you
@@ -2553,6 +2648,29 @@ function update(){
       else       c.speed*=.978;
       if(brake)  c.speed*=.86;
     }
+    // Dekkene skrubber fart når bilen bærer mer inn i svingen enn den tåler.
+    // Dette er den ENE linja som gjør svingen dyr for spilleren — se PHYS_SCRUB.
+    //
+    // MERK at taket her regnes av `MAX` og IKKE av physSafe over. Det var
+    // nødvendig: physSafe bygges på PLAYER_MAX og vet ingenting om boost eller
+    // rett-modus, så et skrubb mot den straffet bilen for å bruke 2026-reglene
+    // på en RETT strekke. Målt ble toppfarten med Shift+Space 7,05 i stedet for
+    // 7,62 — altså spiste skrubbet nesten hele rett-modusen, og da forsvinner
+    // poenget med steg D. Med `MAX` som utgangspunkt er taket lik MAX på en
+    // rett (krumning ~0, ingen straff i det hele tatt), mens det i en hårnål
+    // ligger langt under og biter som det skal.
+    //
+    // physSafe beholdes uendret for turnPenalty/gripPenalty: der SKAL taket
+    // være felles for alle biler og bygd på banens krumning alene, slik
+    // kommentaren over sier.
+    // Grunnlaget er bilens RETTSTREKKFART, ikke `MAX`. For spilleren er de to
+    // det samme, men for AI-en er MAX bygd på `aiSpd`, som alt er redusert for
+    // svingen — et tak regnet av den ville trukket fra for samme sving to
+    // ganger og gjort AI-en kunstig treg uten at noe var galt.
+    const capBase=(c.isPlayer?PLAYER_MAX:(c.straightPace||c.aiSpd))
+      *(straightOn?STRAIGHT_MAX_MUL:1)*boostMaxMul*(1+slipStrength*0.10);
+    const cornerCap=capBase/(1+curvForPhys*PHYS_K);
+    if(REALISTIC && c.speed>cornerCap) c.speed/=(1+(c.speed/cornerCap-1)*PHYS_SCRUB);
     c.speed*=dragMul;
     c.speed=Math.max(0,Math.min(c.speed,MAX*1.02));
 

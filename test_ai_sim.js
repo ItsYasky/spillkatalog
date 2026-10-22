@@ -255,6 +255,14 @@ function simulate(game, opts){
   player.isPlayer = false;
 
   const stats = cars.map(function(){ return { wallHits:0, offSteps:0, limitViolations:0, otLaps:0, laps:0 }; });
+  // Rundetider per bil. HVORFOR de måtte inn i målingen: spredning, brudd og
+  // overtake sier hvordan feltet OPPFØRER seg, men ingenting om hvor FORT det
+  // går. Da physSafe fikk en fartskostnad, var nettopp pacen det som sto i
+  // fare — physSafe regnes av PLAYER_MAX, mens ULTRA har baseMax 7,55, så
+  // AI-en kan straffes hardere enn spilleren av samme tak. Uten rundetider
+  // her ville den effekten vært usynlig i denne testen.
+  const lapTider = [];
+  const sisteMaal = cars.map(function(){ return 0; });
   const prevWall = cars.map(function(){ return false; });
   const prevViol = cars.map(function(c){ return c.limitViolations || 0; });
   // Overtake mode (steg D) settes ved målpasseringen og varer en hel runde.
@@ -279,7 +287,13 @@ function simulate(game, opts){
       prevWall[i] = !!c.wallHit;
       const v = c.limitViolations || 0;
       if(v > prevViol[i]){ stats[i].limitViolations += (v - prevViol[i]); prevViol[i] = v; }
-      if(c.lap > prevLap[i]){ prevLap[i] = c.lap; stats[i].laps++; if(c.overtakeMode) stats[i].otLaps++; }
+      if(c.lap > prevLap[i]){
+        prevLap[i] = c.lap; stats[i].laps++; if(c.overtakeMode) stats[i].otLaps++;
+        // Runde 1 hoppes over: den starter fra stillestående grid og er ikke
+        // en representativ rundetid.
+        if(stats[i].laps > 1) lapTider.push((steps - sisteMaal[i])/60);
+        sisteMaal[i] = steps;
+      }
     }
     // Spredningen måles i det LEDEREN fullfører runden, ikke når alle gjør det
     // — det er det øyeblikket en seer faktisk ville sett feltet strukket ut.
@@ -311,10 +325,18 @@ function simulate(game, opts){
     lapsRun += stats[i].laps;
   }
   liveSteps = steps * cars.length;
+  lapTider.sort(function(a,b){ return a-b; });
+  // Beste runde = det feltets raskeste bil klarte, altså det spilleren må slå.
+  // Median sier om feltet som helhet holder tempoet, slik at ett enkelt
+  // heldig utbrudd ikke blir lest som at AI-en er rask.
+  const besteLap = lapTider.length ? +lapTider[0].toFixed(3) : null;
+  const medLap = lapTider.length ? +lapTider[Math.floor(lapTider.length/2)].toFixed(3) : null;
   return {
     steps: steps,
     finished: cars.filter(function(c){ return c.finished; }).length,
     spread: spreadAt,
+    besteLap: besteLap,
+    medLap: medLap,
     wallHitsPerCar: +(wallHits / cars.length).toFixed(3),
     offFracPerCar: +(offSteps / Math.max(1, liveSteps)).toFixed(5),
     violPerCar: +(viol / cars.length).toFixed(3),
@@ -422,7 +444,9 @@ function main(argv){
           wallHitsPerCar: avg(function(r){ return r.wallHitsPerCar; }),
           offFracPerCar: avg(function(r){ return r.offFracPerCar; }),
           violPerCar: avg(function(r){ return r.violPerCar; }),
-          otFrac: avg(function(r){ return r.otFrac; })
+          otFrac: avg(function(r){ return r.otFrac; }),
+          besteLap: avg(function(r){ return r.besteLap; }),
+          medLap: avg(function(r){ return r.medLap; })
         };
         spreadLaps.forEach(function(l){
           row['spreadLap'+l] = avg(function(r){ return r.spread['lap'+l]; });
@@ -431,7 +455,7 @@ function main(argv){
         console.log(row.track + ' / ' + row.mode + ' / ' + row.diff +
           '  spredning L1=' + row.spreadLap1 + ' L4=' + row.spreadLap4 + ' L8=' + row.spreadLap8 +
           '  vegg=' + row.wallHitsPerCar + ' utenfor=' + row.offFracPerCar + ' brudd=' + row.violPerCar +
-          ' overtake=' + row.otFrac);
+          ' overtake=' + row.otFrac + ' beste=' + row.besteLap + ' med=' + row.medLap);
       });
     });
   });

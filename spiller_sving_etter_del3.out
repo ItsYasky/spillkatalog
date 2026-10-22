@@ -1,0 +1,94 @@
+Spillerens svingfart i REALISTISK  (PLAYER_MAX=6.8, PHYS_K=2.6)
+
+physSafe = PLAYER_MAX/(1+|smoothCurv|*PHYS_K) — taket spilleren straffes for aa bryte.
+"% av runden naer topp" = andel av banen der taket er over 95 % av toppfarten,
+altsaa der det i praksis ikke finnes noe fartstak i det hele tatt.
+
+BANE          min physSafe  % naer topp  min m/severity
+MONTE SPIRA     5.30 (78%)          43%      4.74 (70%)
+ARDENNE         5.51 (81%)          76%      5.04 (74%)
+DESERTO         5.72 (84%)          67%      5.36 (79%)
+LABIRINTO       5.24 (77%)          47%      4.65 (68%)
+SERPENTINA      5.42 (80%)          58%      4.90 (72%)
+VULCANO         5.47 (80%)          49%      4.98 (73%)
+TEMPIO          5.56 (82%)          69%      5.10 (75%)
+CAMPAGNA        5.77 (85%)          64%      5.36 (79%)
+ESSE            5.36 (79%)          48%      4.76 (70%)
+DISCESA         5.29 (78%)          40%      4.72 (69%)
+ALPEN           5.73 (84%)          39%      5.36 (79%)
+DUNA            5.39 (79%)          48%      4.86 (71%)
+VISTANOTTE      5.45 (80%)          63%      4.97 (73%)
+
+KREVD vs TILGJENGELIG svingrate ved toppfart. physSafe senker aldri farten,
+bare styreutslag og grep, saa staar gassen i baann ligger bilen paa 6.8 uansett.
+"% maa bremse" = andel av banen der krevd giringsrate er STOERRE enn den
+tilgjengelige — altsaa de eneste stedene spilleren fysisk MAA ned i fart.
+"teoretisk" = kjoerelinjas lengde delt paa toppfarten: full gass hele runden.
+
+BANE          kjlinje px  senter px  teoretisk  verste krav/tilgj  % maa bremse
+MONTE SPIRA         8735       8695    21.41 s               4.13         15.2%
+ARDENNE            11176      11157    27.39 s               1.76          3.8%
+DESERTO            12686      12669    31.09 s               1.28          2.6%
+LABIRINTO           7942       7887    19.47 s               3.51         21.6%
+SERPENTINA         10763      10739    26.38 s               1.83          3.4%
+VULCANO             9492       9458    23.26 s               2.87         12.6%
+TEMPIO             12991      12973    31.84 s               1.69          2.5%
+CAMPAGNA           11429      11414    28.01 s               1.35          2.8%
+ESSE                9996       9945    24.50 s               3.55         17.5%
+DISCESA             9226       9168    22.61 s               3.50         21.6%
+ALPEN               7335       7304    17.98 s               2.40         17.6%
+DUNA                8005       7974    19.62 s               2.94         10.4%
+VISTANOTTE         13359      13327    32.74 s               2.69          6.4%
+
+NEDRE GRENSER for rundetid, med de fartstakene som faktisk staar i koden:
+
+BANE            kjlinje   +2% cap  +slipstr  senter+begge
+MONTE SPIRA       21.41     20.99     19.08         18.99
+ARDENNE           27.39     26.85     24.41         24.37
+DESERTO           31.09     30.48     27.71         27.67
+LABIRINTO         19.47     19.08     17.35         17.23
+SERPENTINA        26.38     25.86     23.51         23.46
+VULCANO           23.26     22.81     20.73         20.66
+TEMPIO            31.84     31.22     28.38         28.34
+CAMPAGNA          28.01     27.46     24.97         24.93
+ESSE              24.50     24.02     21.84         21.72
+DISCESA           22.61     22.17     20.15         20.03
+ALPEN             17.98     17.63     16.02         15.96
+DUNA              19.62     19.24     17.49         17.42
+VISTANOTTE        32.74     32.10     29.18         29.11
+
+Runde med gassen i baann, aldri brems, ingen boost, ingen rett-modus:
+
+BANE           beste runde  teoretisk kjoert vei vs kjlinje  % utenfor  brudd
+MONTE SPIRA        22.95 s    21.41 s       8482      -2.9%       3.7%      6
+ARDENNE            27.85 s    27.39 s      10811      -3.3%       0.0%      0
+DESERTO            31.87 s    31.09 s      12371      -2.5%       0.0%      0
+LABIRINTO    kom ikke rundt    19.47 s          -          -      99.5%      1
+SERPENTINA         26.98 s    26.38 s      10336      -4.0%       0.1%      3
+VULCANO            23.87 s    23.26 s       9068      -4.5%       0.0%      0
+TEMPIO             32.55 s    31.84 s      12669      -2.5%       0.0%      0
+CAMPAGNA           28.80 s    28.01 s      11161      -2.3%       0.0%      0
+ESSE               25.33 s    24.50 s       9483      -5.1%       0.9%      4
+DISCESA            23.30 s    22.61 s       8651      -6.2%       0.0%      1
+ALPEN              18.60 s    17.98 s       6991      -4.7%       0.0%      0
+DUNA               20.03 s    19.62 s       7591      -5.2%       0.0%      0
+VISTANOTTE         33.50 s    32.74 s      12990      -2.8%       0.0%      0
+
+Samme runde, men MED boost (Shift) og rett-modus (Space) inne — slik banen spilles:
+
+BANE           beste runde  teoretisk  vs teoretisk  maks fart  % utenfor  brudd
+MONTE SPIRA        22.83 s    21.41 s          6.7%       7.52       4.4%      6
+ARDENNE            26.95 s    27.39 s         -1.6%       7.60       0.0%      0
+DESERTO            31.25 s    31.09 s          0.5%       8.00       0.0%      0
+LABIRINTO    kom ikke rundt    19.47 s             -       6.78      99.6%      1
+SERPENTINA         26.30 s    26.38 s         -0.3%       7.54       0.1%      4
+VULCANO            23.52 s    23.26 s          1.1%       7.48       0.0%      0
+TEMPIO             31.78 s    31.84 s         -0.2%       7.58       0.0%      0
+CAMPAGNA           28.17 s    28.01 s          0.5%       7.60       0.0%      0
+ESSE               24.88 s    24.50 s          1.6%       7.58       0.7%      6
+DISCESA            23.08 s    22.61 s          2.1%       8.02       0.7%      2
+ALPEN              18.42 s    17.98 s          2.4%       7.46       0.0%      0
+DUNA               19.78 s    19.62 s          0.8%       7.57       0.0%      1
+VISTANOTTE         32.63 s    32.74 s         -0.3%       7.97       0.0%      0
+
+Toppfarten er 6.8. Er "min fart" nær den, er svingene gratis.
