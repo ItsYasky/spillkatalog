@@ -145,7 +145,7 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
 | A | ferdig | `10612a9` | Seedet tilfeldighet (banenavn som frø), verdistøy, tema per bane (asfalt/grus/kerb/bakketoner), bakken som myke flekker i stedet for 1400 prikker, vegetasjon i klynger, avstandsrutenett | `test_banetema.js` (137/137), `test_banegeometri.js` (13/13) |
-| B | første pulje ferdig | — | Landemerker + bakkelag for fem baner (MONTE SPIRA, ARDENNE, DESERTO, ALPEN, DUNA) + nattlys koblet inn | `test_banetema.js` (152/152), `test_banegeometri.js` (13/13) |
+| B | første pulje ferdig | `15cdf0c` | Landemerker + bakkelag for fem baner (MONTE SPIRA, ARDENNE, DESERTO, ALPEN, DUNA) + nattlys koblet inn | `test_banetema.js` (152/152), `test_banegeometri.js` (13/13) |
 | C | ikke begynt | — | Bykvartaler (`dBuildingGrid`) — se kommentaren i city-grenen i `buildTrackBg` | — |
 
 **`test_banetema.js` er ny i steg A.** Den måler det `contrastCheck()` i spillet
