@@ -145,7 +145,7 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
 | A | ferdig | `10612a9` | Seedet tilfeldighet (banenavn som frø), verdistøy, tema per bane (asfalt/grus/kerb/bakketoner), bakken som myke flekker i stedet for 1400 prikker, vegetasjon i klynger, avstandsrutenett | `test_banetema.js` (137/137), `test_banegeometri.js` (13/13) |
-| B | ikke begynt | — | Landemerker + bakkelag per bane (`groundLayer`, `landmark`, `landmarkT` står tomme i `makeTheme`) | — |
+| B | første pulje ferdig | — | Landemerker + bakkelag for fem baner (MONTE SPIRA, ARDENNE, DESERTO, ALPEN, DUNA) + nattlys koblet inn | `test_banetema.js` (152/152), `test_banegeometri.js` (13/13) |
 | C | ikke begynt | — | Bykvartaler (`dBuildingGrid`) — se kommentaren i city-grenen i `buildTrackBg` | — |
 
 **`test_banetema.js` er ny i steg A.** Den måler det `contrastCheck()` i spillet
@@ -179,12 +179,64 @@ opp 25–65 % (sum 108 → 149 ms, verste bane VISTANOTTE 18 ms, budsjettet er
 100 ms per bane). Bildekosten er UENDRET til litt bedre (verste 1,92 → 1,79 ms)
 — bakken bakes inn i bakgrunnen én gang og koster ingenting per bilde.
 
-**Åpent punkt:** nattlys-stillaset i `buildTrackBg` (`NIGHT_LIGHT_MAX`,
-`nightLights`, `addLight`) er skrevet, men ikke koblet til noe: `addLight`
-kalles aldri, `TR.nightLights` settes aldri, og `drawTrackScene` tegner ingen
-glød. Derfor står nattlys-kolonnen i byggemålingen på 0 for alle baner. Enten
-kobles det inn (kildene finnes: vindusrutenettet i `dBuilding` og hodet i
-`dLamp`) eller så bør stillaset tas ut — det er dødkode slik det står nå.
+**Nattlys-stillaset er koblet inn i steg B** og er ikke lenger dødkode.
+Landemerkene kaller `addLight`, og `drawTrackScene` tegner glød. Målt antall:
+ARDENNE 2, DESERTO 22, ALPEN 8, DUNA 4 — og MONTE SPIRA 0, som er RIKTIG: en
+steinviadukt uten strøm skal ikke lyse. **Merk at `addLight` lagrer
+VERDENSKOORDINATER** (`nightLights.push({x:x-ox,…})`), altså det motsatte av
+blobbene fra `belte()`, som leveres i bg-koordinater med `+ox` påtrykt.
+`drawTrackScene` leser dem rett inn i `worldToScreen`.
+
+**Avvik verdt å vite i steg B:**
+
+1. **Store flater må ligge LANGS banen, ikke i indre felt.** Det første
+   forsøket plasserte hver flate på det punktet som lå lengst fra asfalten
+   (`apenPlass()`). På en rundbane er det alltid midt i indre felt — 1000+ px
+   fra veien, mens spillvisningen bare ser ~500 px rundt bilen. Flaten ble
+   dermed aldri sett under kjøring, og i oversiktsbildet leste den som en
+   innsjø midt på banen i stedet for et landskap banen går langs. `apenPlass`
+   er fjernet og erstattet av `belte()` (følger banen) + `utside()` (velger
+   siden som peker bort fra indre felt, stemt fram over hele banen og vektet
+   med avstanden til tyngdepunktet, så én hårnål ikke kan velte svaret).
+2. **`nAt` deler SELV på bildestørrelsen** (`noise(x/bw,y/bh)`), så argumentet
+   er bg-piksler og å gange OPP korter ned bølgelengden. Å gange ned — slik
+   «lav frekvens» intuitivt skulle tilsi — låser støyen til én konstant.
+   ARDENNEs elv forsvant HELT av `nAt(a[0]*0.0015,…)`: driften ble et fast
+   innoverskyv, og klaringssjekken kastet hver eneste blob.
+3. **En blokkert blob SLØYFES, den skyves ikke utover.** Det opprinnelige
+   skyvet gikk opp til 12 × `radius*0.5`, altså +567 px på DUNA, og i en hårnål
+   peker «lenger ut fra mitt banepunkt» rett mot en annen del av banen —
+   resultatet var løsrevne sirkler strødd over hele bildet. Et hull der banen
+   kommer nær er dessuten riktig: det er der elva går i rør under veien.
+   Avstanden mellom sirklene er `radius*0.55` og ikke `radius`, ellers ligger
+   de kant i kant i stedet for å overlappe (den fella gikk ARDENNE rett i).
+4. **`chrome_harness.py shot` tok HVERT spillbilde på startstreken.** Den gamle
+   løkka kalte `update()` tjue tusen ganger, men `update()` leser
+   `keys['ArrowUp']` for spillerbilen, så uten tastetrykk står den bom stille —
+   `rundepos` kom tilbake som `-0.000` uansett `landmarkT`. Å holde gassen inne
+   kjører bilen rett ut i terrenget i første sving, for ingen styrer. Kameraet
+   SETTES nå rett på `TR.raceLine[i]`, og `update` nulles, ellers triller bilen
+   vekk fra punktet mens rAF-løkka kjører videre gjennom
+   `--virtual-time-budget`.
+5. Tre nye sjekker i `test_banetema.js`: landemerketonene måles mot den verste
+   bakketonen på 3:1 (`lagPal`), et tema som tegner noe eget MÅ oppgi tonene
+   som data, og `landmarkT` må ligge i [0,1). Svakeste landemerketone er 3,15:1
+   (DESERTO `saltKant`). `lagMot` navngir unntakene — toner som står mot en
+   annen tone i samme bygg og ikke mot bakken.
+
+**Kostnad, målt i steg B:** byggetid sum 146,8 ms (steg A: 149), verste bane
+VISTANOTTE 17,1 ms — altså FLAT, og de 17,1 ms bekrefter samtidig at steg A-ens
+22,6/74,5 ms var GC-støy. Bildetid verste 1,90 ms (ARDENNE/NATT) mot 1,79 i
+steg A og 1,92 før runde 4, altså innenfor støyen. MONTE SPIRA, LABIRINTO,
+ALPEN og DUNA måler ~0,3 ms mot ~1,8 for resten — det mønsteret står i
+«før»-tallene også og er en egenskap ved banene, ikke ved temaene.
+
+**Åpent punkt i steg B:** ARDENNEs skog har praktisk talt usynlige trær —
+`treeTint:['#0e2e1c','#14472a','#071d12']` måler ~1,3:1 mot
+`ground:['#0b1710','#122017','#1b2c1e']`. Det er et steg A-palettspørsmål og
+ble bevisst ikke rørt her. Dessuten: `cfg.treeTint`/`rockTint`/`bushTint`/
+`groundBase`/`speckle` på cfg-nivå har INGEN lesere i det hele tatt etter at
+tonene flyttet inn i temaet — dødkode som bør ryddes for seg.
 
 ### ASTEROIDER (`asteroids.html`)
 

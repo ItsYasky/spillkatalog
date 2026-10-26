@@ -253,7 +253,64 @@ function kjør(game){
     }
   });
 
-  return { res: res, verste: verste, refL: refL, lakkAntall: lakk.length };
+  // 13. Landemerkepaletten mot bakken. Et landemerke er den STØRSTE flaten på
+  //     bildet etter asfalten og bakken, så 3:1 er kravet — samme bar som for
+  //     bilene. Målt mot den VERSTE av banens bakketoner, for flekkene blandes
+  //     og bygget kan havne på hvilken som helst av dem.
+  //
+  //     `lagMot` navngir unntakene: noen toner står aldri mot bakken, men mot
+  //     en annen tone i samme landemerke (et tak ligger på en vegg, ikke i
+  //     gresset). Unntaket må finnes som DATA og ikke som en utelatelse, ellers
+  //     er forskjellen mellom «måles mot noe annet» og «måles ikke» usynlig.
+  let versteLag = { v: Infinity, hvor: '' };
+  TRACKS.forEach(function(t){
+    const P = t.theme.lagPal;
+    if(P == null) return;
+    const mot = t.theme.lagMot || {};
+    const g = (t.theme.ground || []).filter(erHex);
+    if(!g.length){ sjekk('lagpalett: ' + t.name, false, 'ingen gyldige bakketoner å måle mot'); return; }
+    const stryker = [];
+    Object.keys(P).forEach(function(k){
+      const tone = P[k];
+      if(!erHex(tone)){ stryker.push(k + ' er ikke hex (' + tone + ')'); return; }
+      let v, hvor;
+      if(mot[k] != null){
+        const ref = P[mot[k]];
+        if(!erHex(ref)){ stryker.push(k + ' skal måles mot «' + mot[k] + '», som ikke finnes i paletten'); return; }
+        v = game.contrastRatio(tone, ref);
+        hvor = k + ' mot ' + mot[k];
+      } else {
+        v = Infinity;
+        g.forEach(function(gt){ v = Math.min(v, game.contrastRatio(tone, gt)); });
+        hvor = k + ' mot bakken';
+      }
+      if(v < versteLag.v) versteLag = { v: v, hvor: t.name + ' ' + hvor };
+      if(v < 3) stryker.push(hvor + ' (' + v.toFixed(2) + ':1)');
+    });
+    sjekk('lagpalett: ' + t.name, stryker.length === 0, stryker.join(', '));
+  });
+
+  // 14. Et tema som TEGNER noe eget må oppgi tonene som data. Står fargene som
+  //     bokstavelige hex inne i tegnefunksjonen, kommer testen over aldri til
+  //     dem, og et usynlig landemerke blir bare rapportert som «alt består».
+  TRACKS.forEach(function(t){
+    if(!t.theme.landmark && !t.theme.groundLayer) return;
+    sjekk('lagpalett finnes: ' + t.name,
+      t.theme.lagPal != null && typeof t.theme.lagPal === 'object',
+      'tegner landemerke/bakkelag uten lagPal — tonene kan ikke måles');
+  });
+
+  // 15. `landmarkT` er en rundeposisjon og brukes to steder: den plasserer
+  //     bygget langs banen, og den er dessuten der harnessen setter kameraet
+  //     når skjermbildet tas. Utenfor [0,1) peker begge på ingenting.
+  TRACKS.forEach(function(t){
+    if(!t.theme.landmark) return;
+    const T = t.theme.landmarkT;
+    sjekk('landmarkT: ' + t.name, typeof T === 'number' && T >= 0 && T < 1,
+      'landmarkT=' + T + ' er ikke et tall i [0,1)');
+  });
+
+  return { res: res, verste: verste, versteLag: versteLag, refL: refL, lakkAntall: lakk.length };
 }
 
 // ── kjøring ─────────────────────────────────────────────────────────────────
@@ -300,6 +357,9 @@ function argv(){
   });
   linjer.push('');
   linjer.push('svakeste lakkontrast noe sted: ' + ut.verste.v.toFixed(2) + ':1 (' + ut.verste.hvor + ')');
+  linjer.push('svakeste landemerketone:        ' + (isFinite(ut.versteLag.v)
+    ? ut.versteLag.v.toFixed(2) + ':1 (' + ut.versteLag.hvor + ')'
+    : 'ingen lagPal målt ennå'));
   linjer.push('');
   linjer.push('RESULTAT: ' + (ut.res.length - feil.length) + '/' + ut.res.length +
     (feil.length ? '  — ' + feil.length + ' sjekk(er) stryker' : '  — alt består'));

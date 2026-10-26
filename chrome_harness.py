@@ -176,7 +176,7 @@ def shot_js(bane, tod, modus, ved_landemerke=True):
   trackSel=idx; lapsIdx=4; LAPS=20; difficulty=2;
   startRace();
   state='playing';
-  var MODUS=%s, VEDLM=%s;
+  var MODUS=%s, VEDLM=%s, naadd='-';
   if(MODUS==='bg'){
     ensureTrackBg(TR);
     // Spillets egen rAF-løkke kjører fortsatt, og --virtual-time-budget lar den
@@ -211,14 +211,29 @@ def shot_js(bane, tod, modus, ved_landemerke=True):
     // ligger i LANDMARK_T (en rundeposisjon lagret i temaet) der banen har
     // ett, ellers tas bildet rett etter start.
     var maalT = VEDLM && TR.theme && TR.theme.landmarkT!=null ? TR.theme.landmarkT : 0.02;
-    var vakt=0;
-    while(player.raceDist/TR.PATH.length < maalT && vakt<20000){ update(); vakt++; }
-    for(var f=0;f<4;f++){ update(); draw(); }
+    // Kameraet SETTES på kjørelinja; feltet kjøres ikke fram dit.
+    //
+    // To forsøk som ikke virker, begge prøvd: å kalle update() i løkke flytter
+    // ingenting, for update() leser keys['ArrowUp'] for spillerbilen og uten
+    // tastetrykk står den bom stille — den gamle løkka gikk tjue tusen runder
+    // og tok hvert eneste bilde på startstreken, uansett landmarkT. Og holder
+    // man bare gassen inne, kjører bilen rett ut i terrenget i første sving,
+    // for det er ingen som styrer. Et kulissebilde trenger uansett bare
+    // kameraet på rett sted, ikke en bil som har kjørt dit.
+    // update() nulles først: spillets rAF-løkke kjører videre gjennom hele
+    // --virtual-time-budget, og med fysikken i gang ville bilen trillet vekk
+    // fra punktet vi nettopp satte den på før bildet ble tatt.
+    update=function(){};
+    var i=Math.round(maalT*TR.PATH.length)%%TR.PATH.length;
+    var rl=TR.raceLine[i];
+    player.x=rl[0]; player.y=rl[1]; player.angle=TR.heading[i];
+    camX=player.x; camY=player.y; camAngle=player.angle;
     draw();
+    naadd = maalT.toFixed(3);
   }
   var pre=document.createElement('pre'); pre.id='gpout'; document.body.appendChild(pre);
   pre.style.display='none';
-  pre.textContent='OK '+TRACKS[idx].name;
+  pre.textContent='OK '+TRACKS[idx].name+' rundepos '+naadd;
 })();
 """ % (json.dumps(bane), tod, json.dumps(modus), "true" if ved_landemerke else "false")
 
