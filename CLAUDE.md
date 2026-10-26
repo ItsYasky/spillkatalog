@@ -129,6 +129,63 @@ vidt under én runde, og helt uendret fra før, så den er ikke forårsaket av d
 steget. Den banen var ikke med i de fem som ble målt da `posFactor` ble strammet,
 og er den neste som bør ses på om spredningstaket skal holdes med margin.
 
+### GRAND PRIX runde 4 — pynterunden (`vintage_f1.html`)
+
+Målet: hver bane skal kjennes igjen på et skjermbilde. Før runde 4 var alle
+tretten bygget av nøyaktig samme byggeklosser, og to baner med samme
+terrain-type var ikke til å skille uten å lese navnet.
+
+**Runden er en PYNTERUNDE — geometrien skal ikke flytte seg én piksel.** Det
+håndheves av `test_banegeometri.js`, som låser de syv tallsettene fysikken og
+AI-en leser (PATH, heading, smoothCurv, severity, raceLine, wallOffsArr,
+straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
+
+    osascript -l JavaScript test_banegeometri.js --mot geo_laas.json
+
+| Steg | Status | Innhold | Test |
+|---|---|---|---|
+| A | ferdig, IKKE committet | Seedet tilfeldighet (banenavn som frø), verdistøy, tema per bane (asfalt/grus/kerb/bakketoner), bakken som myke flekker i stedet for 1400 prikker, vegetasjon i klynger, avstandsrutenett | `test_banetema.js` (137/137), `test_banegeometri.js` (13/13) |
+| B | ikke begynt | Landemerker + bakkelag per bane (`groundLayer`, `landmark`, `landmarkT` står tomme i `makeTheme`) | — |
+| C | ikke begynt | Bykvartaler (`dBuildingGrid`) — se kommentaren i city-grenen i `buildTrackBg` | — |
+
+**`test_banetema.js` er ny i steg A.** Den måler det `contrastCheck()` i spillet
+ikke lenger dekker: spillets egen sjekk måler lakkeringene mot ASPHALT_BASE
+alene, men nå har hver bane sin egen asfalt. Testen regner hele krysstabellen —
+atten lakkeringer mot tretten dekker. Svakeste verdi er 3,45:1 (CORALIS mot
+DUNA), altså over 3:1-kravet.
+
+**Avvik verdt å vite i steg A:**
+
+1. `cityColour()` ble kalt i city-grenen uten å være skrevet — alle tre
+   bybanene (LABIRINTO, SERPENTINA, VISTANOTTE) KASTET under
+   `buildTrackBg`. JSC-testene kan ikke fange dette, for der er hvert
+   tegnekall en no-op på en stub-ctx; det dukket først opp da
+   `chrome_harness.py maal` kom tom tilbake. **Lærdom: en ren JSC-test beviser
+   ikke at bakgrunnen lar seg bygge.** Kjør byggemålingen som røyktest.
+2. DISCESAs grønn/gul-kerb målte 2,15:1 mellom de to tonene — en kerb er et
+   vekselmønster, så to toner som ligger så nær hverandre blir én stripe.
+   Grønnen er mørknet til `#166534` (4,66:1, over den røde/hvite standardens
+   4,26:1). At grønnen nå bare er 1,68:1 mot asfalten er med vilje greit: det
+   er GULET som bærer kerben mot banen (7,81:1), akkurat som hvitt gjør i
+   standardkerben, der rødt selv bare er 2,67:1 mot dekket.
+3. VISTANOTTE målte 74,5 ms byggetid én gang og 17–18 ms i alle senere
+   kjøringer. **Det var støy, ikke en regresjon** — isolert bygger den på
+   21 ms, og en serie på tre ga 21/22/54. Median-av-tre i harnessen er ikke
+   robust når én av tre kjøringer treffer en GC-pause. Ett enkelt høyt tall
+   skal måles på nytt før det tolkes.
+
+**Kostnad, målt (`maal_bygg_*.txt`, `maal_fps_*.txt`):** byggetiden per bane er
+opp 25–65 % (sum 108 → 149 ms, verste bane VISTANOTTE 18 ms, budsjettet er
+100 ms per bane). Bildekosten er UENDRET til litt bedre (verste 1,92 → 1,79 ms)
+— bakken bakes inn i bakgrunnen én gang og koster ingenting per bilde.
+
+**Åpent punkt:** nattlys-stillaset i `buildTrackBg` (`NIGHT_LIGHT_MAX`,
+`nightLights`, `addLight`) er skrevet, men ikke koblet til noe: `addLight`
+kalles aldri, `TR.nightLights` settes aldri, og `drawTrackScene` tegner ingen
+glød. Derfor står nattlys-kolonnen i byggemålingen på 0 for alle baner. Enten
+kobles det inn (kildene finnes: vindusrutenettet i `dBuilding` og hodet i
+`dLamp`) eller så bør stillaset tas ut — det er dødkode slik det står nå.
+
 ### ASTEROIDER (`asteroids.html`)
 
 | Steg | Status | Commit | Innhold |

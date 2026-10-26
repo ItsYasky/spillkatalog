@@ -188,6 +188,66 @@ function findStraightZones(smoothCurv, want){
 // drawTrackScene) — samme bilde, færre piksler.
 const MAX_BG_PX=16e6;
 
+// ── seedet tilfeldighet for bakgrunnen ─────────────────────────────────────
+// HVORFOR denne finnes: etter at bakgrunnsbyggingen ble gjort lat (bygges
+// først når banen faktisk startes, se ensureTrackBg) kjøres buildTrackBg på
+// nytt hver gang du går inn på en bane. Med Math.random() i tegnekoden betød
+// det at trær, steiner, tribunefolk og tagger FLYTTET SEG mellom hvert løp på
+// samme bane. En bane du har kjørt tjue runder på skal kjennes igjen, og et
+// skogholt du bruker som bremsepunkt kan ikke stå et annet sted neste løp.
+//
+// Frøet er banenavnet, ikke en teller: da er bildet det samme i dag og om et
+// år, uansett hvilken rekkefølge banene ble bygget i, og uansett om spilleren
+// har vært inne på tre andre baner først.
+//
+// MERK at dette med vilje BARE gjelder bakgrunnsbyggingen. AI, fysikk,
+// partikler og tribunenes kamerablitz bruker fortsatt Math.random() — de SKAL
+// variere mellom løp.
+function seedFromName(navn){
+  // FNV-1a over navnet. Trenger ikke være kryptografisk, bare spre to navn som
+  // ligner («DESERTO»/«DISCESA») til helt ulike frø.
+  let h=0x811c9dc5;
+  for(let i=0;i<navn.length;i++){ h^=navn.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
+  return h>>>0;
+}
+function mulberry32(seed){
+  let a=seed>>>0;
+  return function(){
+    a=(a+0x6D2B79F5)>>>0;
+    let t=a;
+    t=Math.imul(t^(t>>>15),1|t);
+    t=(t+Math.imul(t^(t>>>7),61|t))^t;
+    return ((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+
+// ── verdistøy ──────────────────────────────────────────────────────────────
+// To jobber i runde 4 trenger det SAMME organiske mønsteret: bakketonene (store
+// myke flekker i stedet for 1400 jevnt spredte prikker) og hvor vegetasjonen
+// får stå (skogholt og lunder i stedet for jevnt strødde trær). Deler de én
+// støyfunksjon, havner lundene faktisk der bakken er mørkest og grønnest, og
+// terrenget leser som ett landskap i stedet for to lag som ikke vet om hverandre.
+//
+// Verdistøy på et 64×64-rutenett med smoothstep-interpolasjon og to oktaver.
+// Perlin/simplex ville vært finere, men dette er store myke flater i
+// bakgrunnen — forskjellen er usynlig, og dette er tjue linjer uten tabeller.
+const NOISE_N=64;
+function makeNoise(rnd){
+  const g=new Float32Array(NOISE_N*NOISE_N);
+  for(let i=0;i<g.length;i++) g[i]=rnd();
+  function at(ix,iy){ return g[(iy&(NOISE_N-1))*NOISE_N+(ix&(NOISE_N-1))]; }
+  function oktav(x,y,f){
+    const fx=x*f, fy=y*f;
+    const ix=Math.floor(fx), iy=Math.floor(fy);
+    let tx=fx-ix, ty=fy-iy;
+    tx=tx*tx*(3-2*tx); ty=ty*ty*(3-2*ty);
+    const a=at(ix,iy), b=at(ix+1,iy), c=at(ix,iy+1), d=at(ix+1,iy+1);
+    return (a*(1-tx)+b*tx)*(1-ty)+(c*(1-tx)+d*tx)*ty;
+  }
+  // x,y forventes i [0,1) over banens bakgrunn. Returnerer [0,1).
+  return function(x,y){ return oktav(x,y,7)*0.65+oktav(x+0.37,y+0.71,19)*0.35; };
+}
+
 // Å bygge en bane er delt i to deler, fordi de koster vilt forskjellig:
 //
 //  1. buildTrack()   — geometrien. Billig, og må finnes for ALLE baner med én
@@ -248,9 +308,13 @@ function buildTrack(cfg){
   // bgScale<1 = banen er for stor for ett canvas, bakgrunnen tegnes nedskalert
   return {CP,PATH,PN,heading,smoothCurv,severity,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
     straightZones,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,terrain:cfg.terrain||'forest',cfg,
+    // Temaet hører til geometri-halvdelen selv om det bare styrer pynt:
+    // baneutvalget tegner minikart i banens egen bakketone, og det skjer før
+    // bakgrunnen noensinne bygges.
+    theme:makeTheme(cfg.name),
     bgW:bw,bgH:bh,bgScale:Math.min(1,Math.sqrt(MAX_BG_PX/(bw*bh))),
     bgOx:-minX,bgOy:-minY,bgMinX:minX,bgMinY:minY,
-    bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null};
+    bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null,nightLights:null};
 }
 
 // Den dyre halvdelen: baker underlag, asfalt, høydeskygge, curbs, barrierer,
@@ -274,27 +338,114 @@ function buildTrackBg(TR){
   // identisk, bare med færre piksler, og drawTrackScene blåser det opp til
   // full verdensstørrelse igjen.
   if(TR.bgScale!==1) bx.scale(TR.bgScale,TR.bgScale);
-  // desert tracks get a sandy base instead of grass — speckle colour/shape
-  // switches too (soft dune grain, not grass blades), so "ørken" reads from
-  // the ground up, not just from the scattered bushes/rocks on top. Several
-  // tracks share the same broad terrain TYPE (forest/mountain/arid each
-  // appear 2-3x across the roster) — cfg.groundBase/cfg.speckle let each of
-  // those tracks still get its own distinct ground colour/grain (snowy
-  // alpine, autumn forest floor, dry Mediterranean hillside, coastal dune
-  // sand...) on top of the shared terrain-type dispatch below, same idea as
-  // cityPal already does for the city tracks.
-  const isArid=cfg.terrain==='arid';
-  const groundBase = cfg.groundBase || (isArid ? '#3a2e1c' : '#0d1a0f');
-  const speckle = cfg.speckle || (isArid ? 'arid' : 'grass');
-  bx.fillStyle = groundBase; bx.fillRect(0,0,bw,bh);
-  for(let i=0;i<1400;i++){
-    if(speckle==='arid') bx.fillStyle=`rgba(${150+Math.random()*70},${118+Math.random()*55},${65+Math.random()*40},.4)`;
-    else if(speckle==='dune') bx.fillStyle=`rgba(${205+Math.random()*40},${160+Math.random()*45},${120+Math.random()*35},.4)`;
-    else if(speckle==='snow') bx.fillStyle=`rgba(${195+Math.random()*45},${205+Math.random()*35},${215+Math.random()*30},.3)`;
-    else if(speckle==='autumn') bx.fillStyle=`rgba(${110+Math.random()*70},${60+Math.random()*40},${18+Math.random()*22},.5)`;
-    else if(speckle==='dry') bx.fillStyle=`rgba(${100+Math.random()*50},${95+Math.random()*45},${40+Math.random()*30},.45)`;
-    else bx.fillStyle=`rgba(${20+Math.random()*26},${60+Math.random()*40},${20+Math.random()*18},.55)`;
-    bx.fillRect(Math.random()*bw,Math.random()*bh,1+Math.random(),2+Math.random()*5);
+
+  const TH=TR.theme;
+  // ALL tilfeldighet under denne linjen går gjennom `rnd`, aldri Math.random().
+  // Frøet er banenavnet, så samme bane ser bit-identisk ut hver gang den
+  // bygges — se seedFromName/mulberry32 for hvorfor det måtte til.
+  const rnd=mulberry32(seedFromName(cfg.name));
+  const noise=makeNoise(rnd);
+  // Støyen slås opp i normaliserte bane-koordinater, slik at mønsteret skalerer
+  // med banen og ikke blir finere på en stor bane enn på en liten.
+  function nAt(x,y){ return noise(x/bw,y/bh); }
+
+  // ── nattlys ──────────────────────────────────────────────────────────────
+  // Vinduer, gatelys, havnelys og neonskilt er malt inn i bakgrunnen som
+  // flate fargeflater — de ser riktige ut på DAG, men på NATT skal de GLØDE,
+  // og en glød kan ikke bakes inn: den må tegnes over bilene og terrenget for
+  // å lyse opp noe. Hvert lys som settes her får derfor to liv: flaten i
+  // bakgrunnen (bakt én gang) og et punkt i denne lista, som drawTrackScene
+  // tegner glød-sprite-en på når det er mørkt.
+  //
+  // Taket på 150 er ikke pynt: gløden er et drawImage med alpha per lys, og
+  // på en bane som VISTANOTTE er det tusenvis av opplyste vinduer i
+  // bakgrunnen. Uten taket ville nattløpet der kostet mer i glød enn i biler.
+  // addLight slipper derfor stille det som kommer over taket — bakgrunnsflaten
+  // står der uansett, så vinduet forsvinner ikke, det slutter bare å gløde.
+  const NIGHT_LIGHT_MAX=150;
+  const nightLights=[];
+  function addLight(x,y,clr,size){
+    if(nightLights.length>=NIGHT_LIGHT_MAX) return;
+    // Lagres i VERDENSKOORDINATER, ikke bg-koordinater, fordi drawTrackScene
+    // tegner dem i samme verdenstransform som bilene — samme regel som
+    // standRects/floodlights alt følger.
+    nightLights.push({x:x-ox,y:y-oy,clr,size});
+  }
+
+  // ── bakken: store myke flekker, ikke 1400 jevne prikker ──────────────────
+  // HVORFOR en liten ImageData blåst opp, og ikke hundrevis av store sirkler:
+  // flekkene skal dekke hele bakgrunnen (opptil 4,6k × 4,5k px). Tegnet som
+  // sirkler med lav opasitet ble det titalls millioner piksler fyll, og
+  // byggetiden gikk fra 8 ms til over 100 ms på de største banene. Her regnes
+  // støyen i et 96×96-rutenett — 9216 piksler — og skaleres opp med
+  // interpolering. Resultatet er mykere enn sirkler ville blitt, og koster
+  // ett drawImage.
+  {
+    const GN=96;
+    const liten=document.createElement('canvas');
+    liten.width=GN; liten.height=GN;
+    const lx=liten.getContext('2d');
+    const img=lx.createImageData(GN,GN);
+    const d=img.data;
+    // Tonene parses én gang. 2 eller 3 toner: verdien fra støyen deler
+    // intervallet [0,1) i like mange bånd, og det blandes mykt over grensene
+    // slik at det blir flyter og ikke flekker med skarp kant.
+    const toner=TH.ground.map(h=>{
+      const n=parseInt(h.slice(1),16);
+      return [(n>>16)&255,(n>>8)&255,n&255];
+    });
+    const seg=toner.length-1;
+    for(let y=0;y<GN;y++) for(let x=0;x<GN;x++){
+      const v=noise(x/GN,y/GN);
+      const f=Math.max(0,Math.min(0.999999,v))*seg;
+      const i0=Math.floor(f), i1=Math.min(seg,i0+1);
+      let t=f-i0; t=t*t*(3-2*t);
+      const a=toner[i0], b=toner[i1];
+      const o=(y*GN+x)*4;
+      d[o]  =a[0]+(b[0]-a[0])*t;
+      d[o+1]=a[1]+(b[1]-a[1])*t;
+      d[o+2]=a[2]+(b[2]-a[2])*t;
+      d[o+3]=255;
+    }
+    lx.putImageData(img,0,0);
+    bx.imageSmoothingEnabled=true;
+    bx.imageSmoothingQuality='high';
+    bx.drawImage(liten,0,0,bw,bh);
+    liten.width=0; liten.height=0;   // slipp pikselbufferet med en gang
+  }
+  // Klippestriper i plenen (bare parkbanen): lyse og mørke bånd på skrå, slik
+  // en gressklipper legger dem. Tegnes som brede streker med lav opasitet, så
+  // de leses som klippemønster og ikke som malte linjer.
+  if(TH.mow){
+    const {ang,width}=TH.mow;
+    const dx=Math.cos(ang), dy=Math.sin(ang);
+    const diag=Math.hypot(bw,bh);
+    bx.save();
+    bx.lineWidth=width;
+    for(let k=-Math.ceil(diag/width);k<=Math.ceil(diag/width);k++){
+      bx.strokeStyle=k%2===0?'rgba(255,255,255,.045)':'rgba(0,0,0,.055)';
+      const cx0=bw/2+(-dy)*k*width, cy0=bh/2+dx*k*width;
+      bx.beginPath();
+      bx.moveTo(cx0-dx*diag,cy0-dy*diag);
+      bx.lineTo(cx0+dx*diag,cy0+dy*diag);
+      bx.stroke();
+    }
+    bx.restore();
+  }
+  // Finkornet tekstur oppå flekkene. Antallet er nede fra 1400 til 420:
+  // prikkene var før den ENESTE teksturen bakken hadde, og måtte dekke alt.
+  // Nå gjør flekkene grovarbeidet, og prikkene skal bare bryte opp flatene.
+  const speckle=TH.speckle;
+  for(let i=0;i<420;i++){
+    if(speckle==='arid') bx.fillStyle=`rgba(${150+rnd()*70},${118+rnd()*55},${65+rnd()*40},.4)`;
+    else if(speckle==='dune') bx.fillStyle=`rgba(${205+rnd()*40},${160+rnd()*45},${120+rnd()*35},.4)`;
+    else if(speckle==='snow') bx.fillStyle=`rgba(${195+rnd()*45},${205+rnd()*35},${215+rnd()*30},.3)`;
+    else if(speckle==='autumn') bx.fillStyle=`rgba(${110+rnd()*70},${60+rnd()*40},${18+rnd()*22},.5)`;
+    else if(speckle==='dry') bx.fillStyle=`rgba(${100+rnd()*50},${95+rnd()*45},${40+rnd()*30},.45)`;
+    // 'ash' er ny i runde 4: kald vulkansk aske, ikke varm ørkensand.
+    else if(speckle==='ash') bx.fillStyle=`rgba(${70+rnd()*40},${66+rnd()*34},${68+rnd()*34},.4)`;
+    else bx.fillStyle=`rgba(${20+rnd()*26},${60+rnd()*40},${20+rnd()*18},.55)`;
+    bx.fillRect(rnd()*bw,rnd()*bh,1+rnd(),2+rnd()*5);
   }
   function tPath(ctxr){
     ctxr.beginPath();
@@ -303,11 +454,64 @@ function buildTrackBg(TR){
     ctxr.closePath();
   }
   bx.lineCap='round'; bx.lineJoin='round';
-  // gravel/runoff fringe
-  bx.strokeStyle='#7a6c54'; bx.lineWidth=cfg.TW*2+46; tPath(bx); bx.stroke();
+
+  // ── BAKKELAGET ───────────────────────────────────────────────────────────
+  // De store formene som definerer STEDET: innsjøer, hav, åkre, rullebaner,
+  // lavaelver, bygater. Tegnes her, altså ETTER bakken men FØR asfalten.
+  //
+  // HVORFOR rekkefølgen er hele poenget: alt som tegnes her havner UNDER banen
+  // og grusen. Da trenger et bakkelag ingen avstandssjekk mot banen i det hele
+  // tatt — en innsjø kan gjerne strekke seg inn under asfalten, for asfalten
+  // males rett oppå den etterpå. Det er forskjellen på å kunne tegne en
+  // innsjø som faktisk fyller innsiden av banen, og å måtte dytte den så langt
+  // unna at den blir en pyttt i utkanten av bildet.
+  // Byggeklossene er definert lenger ned i samme funksjonskropp. De er vanlige
+  // funksjonsdeklarasjoner, som JS hoister til toppen av buildTrackBg, så de
+  // finnes allerede her — samme mekanisme scatterGraffiti alt bygger på.
+  //
+  // `scene` er den ENE pakka alle temafunksjonene (bakkelag i steg A, landemerker
+  // i steg B og C) får. HVORFOR en pakke og ikke ti argumenter: et tema skal
+  // kunne tegne hva som helst uten at signaturen må endres hver gang et nytt
+  // tema trenger én ting mer, og uten at tegnekoden kan rote seg til å lese
+  // noe den ikke skal (som cfg.TW, som er geometri).
+  const scene={
+    bx, bw, bh, ox, oy, PATH, PN, heading, severity, smoothCurv, TH, rnd, noise, nAt,
+    TW:cfg.TW, name:cfg.name, sfx, sfy, sfAng,
+    // Verdenspunktet ved rundeposisjon t (0–1) og enhetsnormalen der.
+    atT(t){
+      const i=((Math.round(t*PN)%PN)+PN)%PN;
+      const h=heading[i];
+      return {x:PATH[i][0],y:PATH[i][1],h,nx:-Math.sin(h),ny:Math.cos(h),i};
+    },
+    // Samme punkt, men i bg-canvasets koordinater (altså med +ox/+oy påsatt).
+    bgAtT(t){ const p=this.atT(t); return {...p,x:p.x+ox,y:p.y+oy}; }
+  };
+  if(TH.groundLayer) TH.groundLayer(scene);
+
+  // gravel/runoff fringe — fargen kommer fra temaet nå. Bredden er den SAMME
+  // som før (cfg.TW*2+46): dette er bare maling, og GRAVEL_SAFE/fysikken leser
+  // ikke herfra.
+  bx.strokeStyle=TH.runoff.clr; bx.lineWidth=cfg.TW*2+46; tPath(bx); bx.stroke();
+  // Asfaltert utkjøring: samme sone, men malt som asfalt med tverrstriper i
+  // stedet for grus — det er slik moderne gate- og ørkenbaner ser ut.
+  if(TH.runoff.type==='asfalt'){
+    for(let i=0;i<PN;i+=3){
+      const h=heading[i], nx=-Math.sin(h), ny=Math.cos(h);
+      const [px,py]=PATH[i];
+      bx.save(); bx.translate(px+ox,py+oy); bx.rotate(h);
+      bx.fillStyle=TH.runoff.stripe||'rgba(241,245,249,.25)';
+      // To stolper, én på hver side, i det ytre tredjedelen av utkjøringen —
+      // der ekte baner har dem, og langt nok ut at de ikke kan forveksles med
+      // en kantlinje på selve banen.
+      [1,-1].forEach(side=>{
+        bx.fillRect(-2.5,side*(cfg.TW+GRAVEL_SAFE+6),5,14);
+      });
+      bx.restore();
+    }
+  }
   // tarmac border + surface
   bx.strokeStyle='#15151c'; bx.lineWidth=cfg.TW*2+10; tPath(bx); bx.stroke();
-  bx.strokeStyle='#33333e'; bx.lineWidth=cfg.TW*2; tPath(bx); bx.stroke();
+  bx.strokeStyle=TH.asphalt; bx.lineWidth=cfg.TW*2; tPath(bx); bx.stroke();
   bx.strokeStyle='rgba(255,255,255,.025)'; bx.lineWidth=cfg.TW*2-14; tPath(bx); bx.stroke();
   // elevation shading: a synthetic rolling-hill brightness gradient painted
   // along the surface — lighter where the road is "climbing", a touch darker
@@ -378,7 +582,8 @@ function buildTrackBg(TR){
     [1,-1].forEach(side=>{
       const px=PATH[i][0]+nx*side*(cfg.TW+2), py=PATH[i][1]+ny*side*(cfg.TW+2);
       bx.save(); bx.translate(px+ox,py+oy); bx.rotate(h);
-      bx.fillStyle=(Math.floor(i/2)%2===0)?'#d63a2e':'#f1f5f9';
+      // Mønsteret er det samme som før — bare de to fargene kommer fra temaet.
+      bx.fillStyle=(Math.floor(i/2)%2===0)?TH.curb[0]:TH.curb[1];
       bx.fillRect(-4,-6,8,12);
       bx.restore();
     });
@@ -495,22 +700,80 @@ function buildTrackBg(TR){
   // scenery — never mistakable for part of the drivable surface. Drawn last,
   // on top of the fully-finished track render, so there's zero chance of a
   // decoration bleeding onto an edge line or curb.
-  function distToPath(x,y){
-    let best=1e15;
-    for(let i=0;i<PN;i++){
-      const dx=x-PATH[i][0], dy=y-PATH[i][1];
-      const d=dx*dx+dy*dy;
-      if(d<best) best=d;
-    }
-    return Math.sqrt(best);
-  }
+  // ── avstandsrutenettet ───────────────────────────────────────────────────
+  // Den gamle distToPath() skannet ALLE punktene på banen (PN = 540–1044) for
+  // hvert forsøk på å plassere ETT objekt. Det holdt så lenge en bane hadde
+  // 150–200 objekter. Runde 4 legger på reklameskilt, dekkvegger, bygningsrader,
+  // landemerker og klyngebasert vegetasjon med mange flere forkastede forsøk
+  // per treff, og da er den skanningen det som koster.
+  //
+  // I stedet regnes avstanden ut ÉN gang per bakgrunnsbygging, i et rutenett
+  // med 16 × 16 px celler, og slås opp med to divisjoner.
+  //
+  // HVORFOR OPPSLAGET ER KONSERVATIVT — altså aldri slipper et objekt nærmere
+  // banen enn den gamle koden gjorde:
+  // For hver celle lagres den MINSTE avstanden fra noe punkt INNE I CELLEN til
+  // et banepunkt, ikke avstanden fra cellens midtpunkt. Det regnes med
+  // boks-til-punkt-avstand, som er eksakt. Oppslaget for (x,y) returnerer
+  // dermed en verdi som per definisjon er ≤ den sanne avstanden fra (x,y), så
+  // en test på `< CLEAR` forkaster minst like mye som før — litt mer, langs
+  // cellegrensene, og det er riktig vei å ta feil.
+  //
+  // Celler som ligger lenger unna enn RMAX får RMAX. Det er fortsatt en gyldig
+  // nedre grense (den sanne avstanden er større), og RMAX er satt med god
+  // margin over den største klaringen noen kaller med.
   const CLEAR=cfg.TW+GRAVEL_SAFE+26;
-  function scatterTerrain(count,minSpace,draw){
+  const GRID_CELL=16;
+  const RMAX=CLEAR+160;
+  const gw=Math.ceil(bw/GRID_CELL)+1, gh=Math.ceil(bh/GRID_CELL)+1;
+  const clearGrid=new Float32Array(gw*gh).fill(RMAX);
+  {
+    const span=Math.ceil(RMAX/GRID_CELL)+1;
+    for(let i=0;i<PN;i++){
+      // Banepunktet i bg-canvasets koordinater, siden rutenettet dekker bg.
+      const px=PATH[i][0]+ox, py=PATH[i][1]+oy;
+      const cx=Math.floor(px/GRID_CELL), cy=Math.floor(py/GRID_CELL);
+      const x0=Math.max(0,cx-span), x1=Math.min(gw-1,cx+span);
+      const y0=Math.max(0,cy-span), y1=Math.min(gh-1,cy+span);
+      for(let gy=y0;gy<=y1;gy++){
+        const by0=gy*GRID_CELL, by1=by0+GRID_CELL;
+        // Avstand fra punktet til cellens y-intervall (0 om punktet ligger inni).
+        const dy=py<by0 ? by0-py : (py>by1 ? py-by1 : 0);
+        if(dy>=RMAX) continue;
+        const row=gy*gw;
+        for(let gx=x0;gx<=x1;gx++){
+          const bx0=gx*GRID_CELL, bx1=bx0+GRID_CELL;
+          const dx=px<bx0 ? bx0-px : (px>bx1 ? px-bx1 : 0);
+          const d=Math.sqrt(dx*dx+dy*dy);
+          if(d<clearGrid[row+gx]) clearGrid[row+gx]=d;
+        }
+      }
+    }
+  }
+  // Tar verdenskoordinater, som den gamle distToPath gjorde, slik at alle
+  // kallestedene står uendret.
+  function distToPath(x,y){
+    const gx=Math.floor((x+ox)/GRID_CELL), gy=Math.floor((y+oy)/GRID_CELL);
+    if(gx<0||gy<0||gx>=gw||gy>=gh) return RMAX;
+    return clearGrid[gy*gw+gx];
+  }
+  // Klyngebasert spredning. `thresh` er terskelen i verdistøyen: et objekt får
+  // bare stå der støyen er høy nok. Det er dette som gjør skog til SKOGHOLT og
+  // lar det bli åpne sletter mellom, i stedet for trær strødd jevnt utover som
+  // før runde 4.
+  //
+  // Forsøksbudsjettet er opp fra count*16 til count*45, fordi terskelen
+  // forkaster en stor del av kandidatene. Uten det ville en bane med høy
+  // terskel (ørkenen, vulkanen) endt med langt færre objekter enn bedt om, og
+  // sett tomslitt ut i stedet for sparsom.
+  function scatterTerrain(count,minSpace,draw,thresh){
+    const t=thresh==null?TH.cluster:thresh;
     const pts=[]; let tries=0;
-    while(pts.length<count && tries<count*16){
+    while(pts.length<count && tries<count*45){
       tries++;
-      const x=Math.random()*bw, y=Math.random()*bh;
+      const x=rnd()*bw, y=rnd()*bh;
       if(distToPath(x-ox,y-oy)<CLEAR) continue;
+      if(t>0 && nAt(x,y)<t) continue;
       if(pts.some(p=>{const dx=p[0]-x,dy=p[1]-y;return dx*dx+dy*dy<minSpace*minSpace;})) continue;
       pts.push([x,y]);
       draw(x,y);
@@ -521,18 +784,18 @@ function buildTrackBg(TR){
     const shades=tint||['#14532d','#1b6b3a','#0f3d22'];
     for(let k=0;k<3;k++){
       bx.fillStyle=shades[k%shades.length];
-      bx.beginPath(); bx.arc((Math.random()-.5)*6*s,(Math.random()-.5)*6*s-4*s,7*s+Math.random()*3*s,0,Math.PI*2); bx.fill();
+      bx.beginPath(); bx.arc((rnd()-.5)*6*s,(rnd()-.5)*6*s-4*s,7*s+rnd()*3*s,0,Math.PI*2); bx.fill();
     }
     bx.fillStyle='#4a3420'; bx.fillRect(-1.5*s,2*s,3*s,6*s);
     bx.restore();
   }
   function dRock(x,y,s,tint){
     bx.save(); bx.translate(x,y);
-    bx.fillStyle=tint||(Math.random()<.5?'#5b5b63':'#6b6b74');
+    bx.fillStyle=tint||(rnd()<.5?'#5b5b63':'#6b6b74');
     bx.beginPath();
-    const n=5+Math.floor(Math.random()*2);
+    const n=5+Math.floor(rnd()*2);
     for(let k=0;k<n;k++){
-      const a=k/n*Math.PI*2, r=(6+Math.random()*4)*s;
+      const a=k/n*Math.PI*2, r=(6+rnd()*4)*s;
       const px=Math.cos(a)*r, py=Math.sin(a)*r*.8;
       k===0?bx.moveTo(px,py):bx.lineTo(px,py);
     }
@@ -541,7 +804,7 @@ function buildTrackBg(TR){
     bx.restore();
   }
   function dHedge(x,y,s){
-    bx.save(); bx.translate(x,y); bx.rotate(Math.random()*Math.PI);
+    bx.save(); bx.translate(x,y); bx.rotate(rnd()*Math.PI);
     bx.fillStyle='#1d5a35';
     const w=14*s,h=9*s;
     bx.beginPath();
@@ -553,7 +816,7 @@ function buildTrackBg(TR){
   function dBush(x,y,s,tint){
     bx.save(); bx.translate(x,y);
     const t=tint||['#7a7a42','#8a8350','#5f5c33'];
-    bx.fillStyle=Math.random()<.5?t[0]:t[1];
+    bx.fillStyle=rnd()<.5?t[0]:t[1];
     bx.beginPath(); bx.arc(0,0,5*s,0,Math.PI*2); bx.fill();
     bx.fillStyle=t[2];
     bx.beginPath(); bx.arc(3*s,1*s,3*s,0,Math.PI*2); bx.fill();
@@ -563,14 +826,14 @@ function buildTrackBg(TR){
     bx.save(); bx.translate(x,y);
     bx.fillStyle='#2b2320';
     bx.beginPath();
-    const n=5+Math.floor(Math.random()*2);
+    const n=5+Math.floor(rnd()*2);
     for(let k=0;k<n;k++){
-      const a=k/n*Math.PI*2, r=(6+Math.random()*5)*s;
+      const a=k/n*Math.PI*2, r=(6+rnd()*5)*s;
       const px=Math.cos(a)*r, py=Math.sin(a)*r*.85;
       k===0?bx.moveTo(px,py):bx.lineTo(px,py);
     }
     bx.closePath(); bx.fill();
-    if(Math.random()<.35){ bx.fillStyle='rgba(249,115,22,.75)'; bx.beginPath(); bx.arc(0,0,1.6*s,0,Math.PI*2); bx.fill(); }
+    if(rnd()<.35){ bx.fillStyle='rgba(249,115,22,.75)'; bx.beginPath(); bx.arc(0,0,1.6*s,0,Math.PI*2); bx.fill(); }
     bx.restore();
   }
   function dLavaPool(x,y,s){
@@ -672,7 +935,7 @@ function buildTrackBg(TR){
     chosen.forEach(s=>{
       const h=heading[s.i], [px,py]=PATH[s.i];
       const side=s.c>=0?-1:1;
-      const w=64+Math.random()*28;
+      const w=64+rnd()*28;
       // sit well past the grandstand ring (~TW+GRAVEL_SAFE+36..47) so the
       // cliff reads as a rock backdrop behind the scenery, not a smear over
       // the gravel fringe — and flip the draw angle by side so the jagged
@@ -697,8 +960,8 @@ function buildTrackBg(TR){
     const cols=['#ef4444','#38bdf8','#eab308','#f1f5f9','#4ade80','#fb923c','#f472b6'];
     const rows=Math.max(3,Math.floor(h/7));
     for(let r=0;r<rows;r++) for(let c=0;c<Math.floor(w/7);c++){
-      if(Math.random()<0.15) continue;
-      bx.fillStyle=cols[Math.floor(Math.random()*cols.length)];
+      if(rnd()<0.15) continue;
+      bx.fillStyle=cols[Math.floor(rnd()*cols.length)];
       bx.beginPath(); bx.arc(-w/2+4+c*7,-h/2+6+r*7,1.6,0,Math.PI*2); bx.fill();
     }
     // barrier fence along the front edge
@@ -706,22 +969,37 @@ function buildTrackBg(TR){
     bx.beginPath(); bx.moveTo(-w/2,h/2+2); bx.lineTo(w/2,h/2+2); bx.stroke();
     bx.restore();
   }
+  // Fasadetonen for ETT bygg. Temaets cityPal er en PALETT på fire toner, ikke
+  // den ene faste fargen cfg.cityPal hadde før runde 4: en by der hvert hus har
+  // nøyaktig samme fasade leser som en kulisse, og det var nettopp det runde 4
+  // skulle vekk fra. Plukkes med `rnd` og ikke Math.random(), slik at kvartalet
+  // har de samme husene i de samme fargene hver gang banen bygges.
+  //
+  // At paletten ER en array håndheves av test_banetema.js, ikke av en sjekk
+  // her: en tone oppgitt som streng ville plukket ut ett enkelt tegn («#») og
+  // gitt en ugyldig farge, og det skal fanges av en test én gang for alle
+  // temaer, ikke av en gren som gjør koden utydelig for alle tretten baner.
+  function cityColour(){
+    const p=TH.cityPal;
+    if(!p) return null;   // dBuilding faller til sin egen standardtone
+    return p[Math.floor(rnd()*p.length)];
+  }
   // city street-circuit building, drawn "standing up" out of the gravel —
   // a tinted facade block with a lit-window grid and an optional rooftop
   // plant unit, so the skyline reads instantly as urban rather than forest.
   function dBuilding(x,y,s,pal){
     bx.save(); bx.translate(x,y);
-    const h=(20+Math.random()*30)*s, w=(11+Math.random()*7)*s;
+    const h=(20+rnd()*30)*s, w=(11+rnd()*7)*s;
     bx.fillStyle=pal||'#2d3344';
     bx.fillRect(-w/2,-h,w,h);
     bx.fillStyle='rgba(255,255,255,.07)'; bx.fillRect(-w/2,-h,w*.35,h);
     bx.fillStyle='rgba(250,204,21,.6)';
     const rows=Math.floor(h/7), cols=Math.max(1,Math.floor(w/5));
     for(let r=0;r<rows;r++) for(let cc=0;cc<cols;cc++){
-      if(Math.random()<0.4) continue;
+      if(rnd()<0.4) continue;
       bx.fillRect(-w/2+3+cc*5, -h+4+r*7, 2.4,3.2);
     }
-    if(Math.random()<.5){ bx.fillStyle='#1b1f29'; bx.fillRect(-w*.18,-h-6*s,w*.36,6*s); }
+    if(rnd()<.5){ bx.fillStyle='#1b1f29'; bx.fillRect(-w*.18,-h-6*s,w*.36,6*s); }
     bx.restore();
   }
   // street lamp — warm glow pool + pole + head, lines the street-circuit
@@ -739,7 +1017,7 @@ function buildTrackBg(TR){
   function dCliff(x,y,ang,w){
     bx.save(); bx.translate(x,y); bx.rotate(ang);
     const pts=[]; const steps=6;
-    for(let k=0;k<=steps;k++) pts.push([-w/2+k*(w/steps), -14-Math.random()*20]);
+    for(let k=0;k<=steps;k++) pts.push([-w/2+k*(w/steps), -14-rnd()*20]);
     bx.fillStyle='#4a4038';
     bx.beginPath(); bx.moveTo(-w/2,0);
     pts.forEach(p=>bx.lineTo(p[0],p[1]));
@@ -757,8 +1035,8 @@ function buildTrackBg(TR){
   function dGraffiti(x,y,ang,scale){
     bx.save(); bx.translate(x,y); bx.rotate(ang);
     const palette=['#f472b6','#facc15','#34d399','#38bdf8','#fb923c','#a78bfa'];
-    const c1=palette[Math.floor(Math.random()*palette.length)];
-    const c2=palette[Math.floor(Math.random()*palette.length)];
+    const c1=palette[Math.floor(rnd()*palette.length)];
+    const c2=palette[Math.floor(rnd()*palette.length)];
     bx.globalAlpha=0.5;
     bx.fillStyle=c1;
     bx.beginPath(); bx.ellipse(0,0,10*scale,5*scale,0,0,Math.PI*2); bx.fill();
@@ -767,7 +1045,7 @@ function buildTrackBg(TR){
     for(let k=0;k<3;k++){
       bx.beginPath();
       const ox2=(k-1)*6*scale;
-      bx.moveTo(ox2,-4*scale); bx.lineTo(ox2+(Math.random()-.5)*3,6*scale+Math.random()*4*scale);
+      bx.moveTo(ox2,-4*scale); bx.lineTo(ox2+(rnd()-.5)*3,6*scale+rnd()*4*scale);
       bx.stroke();
     }
     bx.globalAlpha=1;
@@ -775,37 +1053,48 @@ function buildTrackBg(TR){
   }
   function scatterGraffiti(count){
     for(let i=0;i<count;i++){
-      const idx=Math.floor(Math.random()*PN);
+      const idx=Math.floor(rnd()*PN);
       const [px,py]=PATH[idx], h=heading[idx];
       const latMax=cfg.TW-10; if(latMax<4) continue;
-      const side=Math.random()<0.5?-1:1;
-      const lat=side*(4+Math.random()*(latMax-4));
+      const side=rnd()<0.5?-1:1;
+      const lat=side*(4+rnd()*(latMax-4));
       const nx=-Math.sin(h), ny=Math.cos(h);
-      dGraffiti(px+nx*lat+ox, py+ny*lat+oy, h+Math.PI/2, 0.8+Math.random()*0.6);
+      dGraffiti(px+nx*lat+ox, py+ny*lat+oy, h+Math.PI/2, 0.8+rnd()*0.6);
     }
   }
+  // ── vegetasjon og terreng, nå i KLYNGER ──────────────────────────────────
+  // Antallene er opp fra før (f.eks. 120 → 190 trær i skog), men de dekker
+  // mindre areal, fordi støyterskelen samler dem i holt. Netto blir det
+  // tettere der det er skog og helt åpent der det ikke er — som er hele
+  // poenget. Steiner og busker får en LAVERE terskel enn trærne på samme bane,
+  // så de ligger som en spredt underskog rundt og mellom holtene i stedet for
+  // å stå i nøyaktig de samme klyngene.
   const terrain=TR.terrain;
+  const CL=TH.cluster;
   if(terrain==='mountain'){
-    scatterTerrain(75,22,(x,y)=>dRock(x,y,0.9+Math.random()*0.6,cfg.rockTint));
-    scatterTerrain(42,26,(x,y)=>dTree(x,y,0.65+Math.random()*0.35,cfg.treeTint));
+    scatterTerrain(110,22,(x,y)=>dRock(x,y,0.9+rnd()*0.6,TH.rockTint),CL-0.08);
+    scatterTerrain(70,26,(x,y)=>dTree(x,y,0.65+rnd()*0.35,TH.treeTint),CL+0.05);
     placeCliffs(5);
   } else if(terrain==='forest'){
-    scatterTerrain(120,20,(x,y)=>dTree(x,y,0.8+Math.random()*0.5,cfg.treeTint));
-    scatterTerrain(20,24,(x,y)=>dRock(x,y,0.8+Math.random()*0.4,cfg.rockTint));
+    scatterTerrain(190,20,(x,y)=>dTree(x,y,0.8+rnd()*0.5,TH.treeTint),CL);
+    scatterTerrain(34,24,(x,y)=>dRock(x,y,0.8+rnd()*0.4,TH.rockTint),CL-0.10);
   } else if(terrain==='parkland'){
-    scatterTerrain(75,24,(x,y)=>dTree(x,y,0.7+Math.random()*0.4,cfg.treeTint));
+    scatterTerrain(120,24,(x,y)=>dTree(x,y,0.7+rnd()*0.4,TH.treeTint),CL);
   } else if(terrain==='hedge'){
-    scatterTerrain(95,22,(x,y)=>dHedge(x,y,0.9+Math.random()*0.3));
+    scatterTerrain(140,22,(x,y)=>dHedge(x,y,0.9+rnd()*0.3),CL);
   } else if(terrain==='arid'){
-    scatterTerrain(80,18,(x,y)=>dBush(x,y,0.8+Math.random()*0.5,cfg.bushTint));
-    scatterTerrain(36,22,(x,y)=>dRock(x,y,0.7+Math.random()*0.5,cfg.rockTint||'#8a7a66'));
+    scatterTerrain(130,18,(x,y)=>dBush(x,y,0.8+rnd()*0.5,TH.bushTint),CL);
+    scatterTerrain(55,22,(x,y)=>dRock(x,y,0.7+rnd()*0.5,TH.rockTint||'#8a7a66'),CL-0.12);
   } else if(terrain==='volcanic'){
-    scatterTerrain(90,18,(x,y)=>dLavaRock(x,y,0.8+Math.random()*0.6));
-    scatterTerrain(14,40,(x,y)=>dLavaPool(x,y,1.1+Math.random()*0.5));
+    scatterTerrain(140,18,(x,y)=>dLavaRock(x,y,0.8+rnd()*0.6),CL-0.10);
+    scatterTerrain(22,40,(x,y)=>dLavaPool(x,y,1.1+rnd()*0.5),CL+0.06);
     placeCliffs(4);
   } else if(terrain==='city'){
-    scatterTerrain(46,30,(x,y)=>dBuilding(x,y,1+Math.random()*0.6,cfg.cityPal));
-    scatterTerrain(55,14,(x,y)=>dBush(x,y,0.5+Math.random()*0.3));
+    // Byene får bygningene sine fra kvartalsrutenettet (dBuildingGrid) i
+    // bakkelaget per bane i steg B og C. Det som blir igjen her er de spredte
+    // enkeltbyggene i utkanten, busker i gatebildet og gatelysene.
+    scatterTerrain(46,30,(x,y)=>dBuilding(x,y,1+rnd()*0.6,cityColour()),CL);
+    scatterTerrain(70,14,(x,y)=>dBush(x,y,0.5+rnd()*0.3),CL-0.14);
     scatterAlongTrack(15,cfg.TW+GRAVEL_SAFE-6,(x,y)=>dLamp(x,y),true);
   }
   // grandstands + crowd flank the start/finish straight on every track — a
@@ -849,7 +1138,7 @@ function buildTrackBg(TR){
     standSpots.forEach((s,idx)=>{
       const h=heading[s.i], [px,py]=PATH[s.i];
       const side=idx%2===0?1:-1;
-      const w=85+Math.random()*35;
+      const w=85+rnd()*35;
       const baseOffs=cfg.TW+GRAVEL_SAFE+36;
       // these sit at the sharpest curvature points on the whole track BY
       // DESIGN (most dramatic corner to watch from) — exactly where a plain
@@ -880,7 +1169,7 @@ function buildTrackBg(TR){
     }
     chosen.forEach(s=>{
       const h=heading[s.i], [px,py]=PATH[s.i];
-      const side=Math.random()<0.5?1:-1;
+      const side=rnd()<0.5?1:-1;
       const offs=(cfg.walls&&wallOffsArr?wallOffsArr[s.i]:cfg.TW+GRAVEL_SAFE+14)+9;
       const nx=-Math.sin(h), ny=Math.cos(h);
       marshalPosts.push({x:px+nx*offs*side,y:py+ny*offs*side});
@@ -925,6 +1214,141 @@ function ensureTrackBg(t){
   }
   buildTrackBg(t);
   bgTrack=t;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// BANETEMA
+// ══════════════════════════════════════════════════════════════════
+// Før runde 4 var alle 13 banene bygget av NØYAKTIG de samme byggeklossene:
+// samme asfalt (#33333e), samme grus (#7a6c54), samme rød-hvite kerb, og trær,
+// steiner og busker strødd jevnt og tilfeldig utover. Det eneste som skilte dem
+// var bakkefargen og fargen på trærne. To baner med samme terrain-type var
+// praktisk talt umulige å skille på et skjermbilde uten å lese navnet.
+//
+// Temaet samler derfor ALT som bestemmer hvordan en bane ser ut, på ett sted:
+//
+//   ground    2–3 bakketoner. Tegnes som store myke flekker styrt av
+//             verdistøyen (se makeNoise), ikke som jevnt spredte prikker.
+//   speckle   den finkornede teksturen oppå. Samme nøkler som før, men med
+//             langt færre prikker nå som flekkene gjør grovarbeidet.
+//   asphalt   banedekkets egen tone. MÅLT: lysheten holder seg innenfor ±8 %
+//             av det gamle felles #33333e (L=0,2216), slik at
+//             lakkeringskontrasten fra runde 2 fortsatt holder på hver bane.
+//             Verifiseres av test_banetema.js — ikke øyemål.
+//   runoff    utkjøringssonen. 'grus' med egen farge, eller 'asfalt' (mørk
+//             blågrå med malte striper). BARE FARGE: bredden og fysikken er
+//             uendret, se GRAVEL_SAFE og gruskanten i buildTrackBg.
+//   curb      de to kerbfargene. Mønsteret er det samme som før.
+//   cluster   terskelen i støyen for hvor vegetasjon får stå. Lav = tett
+//             skog overalt, høy = spredte lunder med åpne sletter mellom.
+//   mow       klippestriper i plenen (bare TEMPIO).
+//   ads       om banen har reklameskilt langs rettene (alle unntatt de helt
+//             landlige).
+//   landmarkT rundeposisjonen landemerket står ved. Brukes av
+//             skjermbildetesten til å plassere kameraet der det faktisk er
+//             noe å se, og fylles ut i steg B og C.
+//
+// treeTint/rockTint/bushTint/cityPal lå løst på cfg før og er flyttet inn hit,
+// slik at det ikke finnes to steder å lete etter «hvilken farge har denne banen».
+// Asfalten alle banene hadde felles før runde 4, og som de nye tonene måles
+// mot. Står her og ikke nede ved kontrastsjekken fordi makeTheme leser den, og
+// `const` er i TDZ til deklarasjonen er kjørt — TRACKS bygges lenger ned, men
+// THEMES/makeTheme er i bruk før kontrastseksjonen i det hele tatt er nådd.
+const ASPHALT_BASE='#33333e';
+const CURB_RW=['#d63a2e','#f1f5f9'];   // rød/hvit — standarden, som før
+const THEMES={
+  // Alpint fjellpass: kald granitt hele veien, og grusen er knust stein, ikke sand.
+  'MONTE SPIRA':{ ground:['#232a2b','#2f3a36','#3c4441'], speckle:'grass', asphalt:'#32363b',
+    runoff:{type:'grus',clr:'#6e7076'}, curb:CURB_RW, cluster:0.50, ads:true,
+    treeTint:['#1d3b2e','#27503c','#152b22'], rockTint:'#7e858c' },
+  // Våt skog i en dal. Bakken er nesten svart-grønn, og asfalten har et kaldt
+  // stikk — det er «regnbanen» i startfeltet.
+  'ARDENNE':{ ground:['#0b1710','#122017','#1b2c1e'], speckle:'grass', asphalt:'#2e373b',
+    runoff:{type:'grus',clr:'#6b6354'}, curb:CURB_RW, cluster:0.38, ads:true,
+    treeTint:['#0e2e1c','#14472a','#071d12'] },
+  // Ørken: lys sand, og utkjøringen er asfaltert med malte striper slik moderne
+  // ørkenbaner har det, ikke grus.
+  'DESERTO':{ ground:['#5a4526','#6d5631','#836a40'], speckle:'arid', asphalt:'#403d38',
+    runoff:{type:'asfalt',clr:'#2f3942',stripe:'rgba(241,245,249,.30)'}, curb:CURB_RW,
+    cluster:0.58, ads:true, bushTint:['#6b7a3f','#7d8a4c','#4f5c2c'], rockTint:'#8a7a66' },
+  // Middelhavsby: oker, rosa og krem med teglrøde tak. Bakken er tørr by-jord.
+  'LABIRINTO':{ ground:['#43392c','#524636','#605343'], speckle:'dry', asphalt:'#3d3a37',
+    runoff:{type:'grus',clr:'#7a6c54'}, curb:CURB_RW, cluster:0.52, ads:true,
+    cityPal:['#b08d5a','#c9a37a','#d8b48c','#9c7f5e'], roofPal:'#8c3a2a',
+    treeTint:['#2e4a28','#3d5c32','#1f3319'] },
+  // Kveldsby: lilla og blått, asfaltert utkjøring, og kerben er blå/hvit i
+  // stedet for rød/hvit — det ene stedet rød/hvit ville forsvunnet i paletten.
+  'SERPENTINA':{ ground:['#2a2338','#352c46','#403654'], speckle:'dry', asphalt:'#3a333e',
+    runoff:{type:'asfalt',clr:'#2b2638',stripe:'rgba(199,210,254,.30)'}, curb:['#2563eb','#f1f5f9'],
+    cluster:0.55, ads:true, cityPal:['#3a2d4a','#4a3a5e','#2b2138','#574468'],
+    treeTint:['#1f3b2e','#2a4f3c','#15281f'] },
+  // Vulkan: svart basalt, askegrå grus, og gul/svart kerb — fareskilt-fargene,
+  // som er det ene stedet på banene de hører hjemme.
+  'VULCANO':{ ground:['#17141a','#201c22','#2a252b'], speckle:'ash', asphalt:'#373331',
+    runoff:{type:'grus',clr:'#5e5a58'}, curb:['#eab308','#1c1917'], cluster:0.60, ads:false,
+    rockTint:'#332c29' },
+  // Parkbane: frodig grønt med klippestriper i plenene, og beige grus.
+  'TEMPIO':{ ground:['#1b3a1c','#235027','#2d6330'], speckle:'grass', asphalt:'#373c39',
+    runoff:{type:'grus',clr:'#8c7f63'}, curb:CURB_RW, cluster:0.42, ads:true,
+    mow:{ang:0.35,width:120}, treeTint:['#1d5a2a','#2a7236','#14421e'] },
+  // Engelsk landskap: grått og grønt, med lappeteppe av åkre i bakkelaget (steg C).
+  'CAMPAGNA':{ ground:['#2a3524','#36442d','#44533a'], speckle:'grass', asphalt:'#36393b',
+    runoff:{type:'grus',clr:'#7a6c54'}, curb:CURB_RW, cluster:0.44, ads:true },
+  // Høstskog — fargene fra runde 2 beholdes, de var alt bankers.
+  'ESSE':{ ground:['#1f160a','#2c2010','#3a2b16'], speckle:'autumn', asphalt:'#3c3835',
+    runoff:{type:'grus',clr:'#7a6c54'}, curb:CURB_RW, cluster:0.40, ads:true,
+    treeTint:['#7a4a1f','#b8722a','#5c3315'], rockTint:'#7a6b58' },
+  // Rødbrun jord i bakkene, og grønn/gul kerb. Grønnfargen er MÅLT mørk, ikke
+  // valgt: den lyse grønnen (#16a34a) måler bare 2,15:1 mot gulet, og en kerb
+  // er et vekselmønster — to toner som ligger så nær hverandre blir én
+  // grønngul stripe i stedet for vekslende blokker. Dyp skoggrønn gir 4,66:1
+  // og er dermed over den røde/hvite standardens 4,26:1. At grønnen nå ligger
+  // nær asfalten (1,68:1) er med vilje greit: det er GULET som gjør kerben
+  // synlig mot banen, med 7,81:1, akkurat som hvitt gjør det i standardkerben
+  // (der er rødt selv bare 2,67:1 mot dekket). Se test_banetema.js.
+  'DISCESA':{ ground:['#2e1d12','#3c2718','#4b3320'], speckle:'dry', asphalt:'#3d3533',
+    runoff:{type:'grus',clr:'#7d6448'}, curb:['#166534','#facc15'], cluster:0.46, ads:true,
+    treeTint:['#4a5c1f','#6b7a2a','#374512'], rockTint:'#8a5a42',
+    cityPal:['#b8674a','#c9825c','#a8573c','#d49a72'], roofPal:'#6b4030' },
+  // Snø og blågrønn furu — fargene fra runde 2 beholdes.
+  'ALPEN':{ ground:['#0a1620','#14222e','#223445'], speckle:'snow', asphalt:'#353c41',
+    runoff:{type:'grus',clr:'#6f767c'}, curb:CURB_RW, cluster:0.44, ads:true,
+    treeTint:['#0f3d3a','#1a5c4f','#0a2e28'], rockTint:'#7d8a94' },
+  // Strandsand og grønt strandgress.
+  'DUNA':{ ground:['#5c4729','#6d5634','#7e6742'], speckle:'dune', asphalt:'#403e39',
+    runoff:{type:'grus',clr:'#8a7857'}, curb:CURB_RW, cluster:0.50, ads:true,
+    bushTint:['#8a9a52','#9aa860','#6a7a3a'], rockTint:'#9a8878' },
+  // Neonby i ørkenen: magenta/hvit kerb, og en neonstripe i den asfalterte
+  // utkjøringen. Den ENE banen der kerben har lov til å være skrikende.
+  'VISTANOTTE':{ ground:['#2a1f1a','#352821','#40322a'], speckle:'arid', asphalt:'#3a313a',
+    runoff:{type:'asfalt',clr:'#241a2b',stripe:'rgba(244,114,182,.38)'}, curb:['#db2777','#f1f5f9'],
+    cluster:0.62, ads:true, cityPal:['#1d1030','#2a1744','#140a24','#36205a'] }
+};
+// Standardverdiene ligger her i stedet for spredt utover tegnekoden, slik at en
+// bane som mangler et felt får det samme som alle andre og ikke en tilfeldig
+// `||`-fallback på hvert kallested.
+function makeTheme(navn){
+  const t=THEMES[navn]||{};
+  return {
+    ground: t.ground || ['#0d1a0f','#13220f','#1a2b14'],
+    speckle: t.speckle || 'grass',
+    asphalt: t.asphalt || ASPHALT_BASE,
+    runoff: t.runoff || {type:'grus',clr:'#7a6c54'},
+    curb: t.curb || CURB_RW,
+    cluster: t.cluster==null ? 0.45 : t.cluster,
+    ads: t.ads!==false,
+    mow: t.mow || null,
+    treeTint: t.treeTint || null,
+    rockTint: t.rockTint || null,
+    bushTint: t.bushTint || null,
+    cityPal: t.cityPal || null,
+    roofPal: t.roofPal || null,
+    // Fylles ut i steg B og C. Står her med vilje, slik at det finnes ÉN liste
+    // over hva et tema kan inneholde, og ikke tretten baner med hver sine felt.
+    landmarkT: t.landmarkT==null ? null : t.landmarkT,
+    groundLayer: t.groundLayer || null,
+    landmark: t.landmark || null
+  };
 }
 
 // The three original tracks are redesigned around real circuit-design
@@ -1264,7 +1688,7 @@ function teamFullName(t){ return t.sponsor+' '+t.name; }
 // ikke mot asfalten, forsvinner den. Derfor måles hver lakkering mot de tre
 // flatene den faktisk ligger oppå, og tallene kan skrives ut med
 // contrastReport() i konsollen i stedet for å måtte vurderes med øyemål.
-const ASPHALT='#33333e';           // banedekket bilen ses mot
+const ASPHALT=ASPHALT_BASE;        // banedekket bilen ses mot (se ASPHALT_BASE)
 const COCKPIT_BG='#0b0b0e';        // cockpitåpningen hjelmen ligger i
 function srgbToLin(v){ v/=255; return v<=0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055,2.4); }
 function relLuminance(hex){
