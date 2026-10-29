@@ -231,6 +231,23 @@ steg A og 1,92 før runde 4, altså innenfor støyen. MONTE SPIRA, LABIRINTO,
 ALPEN og DUNA måler ~0,3 ms mot ~1,8 for resten — det mønsteret står i
 «før»-tallene også og er en egenskap ved banene, ikke ved temaene.
 
+**Neste pulje i steg B — de åtte som står igjen:** LABIRINTO, SERPENTINA,
+VULCANO, TEMPIO, CAMPAGNA, ESSE, DISCESA, VISTANOTTE. Oppskriften er fastlagt
+av de fem første: `groundLayer` bygges av `belte(t0,t1,utside(),avstand,radius,
+rader,sving)`, tonene legges i `lagPal` (ellers stryker sjekk 14), unntak fra
+bakkemålingen navngis i `lagMot`, `landmarkT` settes i [0,1), og nattlys legges
+med `addLight` i VERDENSKOORDINATER. MERK at LABIRINTO, SERPENTINA og
+VISTANOTTE er bybaner og overlapper med steg C — vurder å ta dem der i stedet,
+så bykvartalene og landemerket ikke skrives to ganger.
+
+**Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
+utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til
+`333276467+ItsYasky@users.noreply.github.com` (GitHubs noreply-form, bygget av
+konto-ID fra `gh api user`, siden den private adressen er skjult og tokenet
+mangler `user`-scope). De 18 commitene som alt er pushet bærer fortsatt den
+gamle `.local`-adressen og er ikke knyttet til GitHub-profilen — å rette det
+krever force-push til `main` og er IKKE gjort.
+
 **Åpent punkt i steg B:** ARDENNEs skog har praktisk talt usynlige trær —
 `treeTint:['#0e2e1c','#14472a','#071d12']` måler ~1,3:1 mot
 `ground:['#0b1710','#122017','#1b2c1e']`. Det er et steg A-palettspørsmål og
