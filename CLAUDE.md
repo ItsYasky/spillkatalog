@@ -314,13 +314,39 @@ VISTANOTTE 17,5 ms mot et budsjett på 100 ms per bane. De fem nye banene koster
 9,2–11,7 ms hver. Nattlys: VULCANO 22, TEMPIO 2, CAMPAGNA 1, ESSE 1, DISCESA 2
 — alle godt under taket på 150.
 
-**Åpent punkt funnet i steg B2, IKKE rettet:** nattgløden på de FEM FØRSTE
-landemerkene regnes ut i verdensrommet uten å ta med at `p.side>0` snur den
-lokale x-aksen 180°. En asymmetrisk glød (DUNAs fyrlampe) kan derfor havne i
-motsatt ende av bygget enn vinduet den skal komme fra; ARDENNE går fri fordi
-gløden der er symmetrisk om midten. De fem nye er flip-bevisste via faktoren
-`vend`. De gamle ble bevisst ikke rørt — de er skjermbildeverifiserte, og en
-retting bør gjøres og verifiseres for seg.
+**Vend-feilen på de fem første landemerkene er RETTET (`vend` i DUNA).**
+Nattgløden regnes ut i verdensrommet, utenfor den roterte tegnerammen, og tok
+ikke med at `p.side>0` snur den lokale x-aksen 180°. Målingen — `scene.plasser`
+snappet fra innsiden av hvert tema — viser at feilen bare slo ut på ÉN bane:
+
+| bane | bedt side | fikk | vendt | nattlys | utslag |
+|---|---|---|---|---|---|
+| MONTE SPIRA | 1 | 1 | ja | 0 | ingen, den har ikke lys |
+| DESERTO | 1 | 1 | ja | 22 | ingen, settet er symmetrisk |
+| DUNA | 1 | 1 | ja | 4 | **fyrlampa i feil ende av moloen** |
+| ARDENNE | −1 | −1 | nei | 2 | ingen |
+| ALPEN | −1 | −1 | nei | 8 | ingen |
+
+Altså må BÅDE vendingen og en asymmetrisk glød til før feilen er synlig, og
+bare DUNA har begge. Ingen bane ble dessuten vendt av `clearFootprint`s
+`allowFlip` — alle fikk sida de ba om. De tre symmetriske settene (DESERTO
+`k=−5..5` på begge sider, ARDENNE `[−0.25,0.25]`, ALPEN `−0.5+k/(n−1)`) er
+speilsymmetriske om midten, så faktoren er bokstavelig talt en no-op der og
+ble ikke lagt inn — den ville bare stokket om rekkefølgen i `nightLights`.
+
+Verifisert med 1:1-utsnitt på NATT av alle fem, der spillets EGEN `drawGlow`
+legges oppå den ferdige bakgrunnen (ikke en kopi av den, ellers kunne probet
+hatt samme feil som koden). FØR/ETTER på DUNA viser gløden flytte seg fra den
+tomme enden av moloen til fyrtårnet. **Merk at et slikt utsnitt må ta med
+`TR.bgScale`** — på de fire største banene er `TR.bg` tegnet i redusert
+oppløsning, så et 1:1-utsnitt uten skaleringen glir fra gløden, og DESERTO
+kom først ut som to rader lys uten rullebane under.
+
+**Ny observasjon fra de samme bildene, IKKE rettet:** ALPENs åtte gløder ligger
+på landsbyens senterlinje (lokal y = 0), mens vinduene tegnes 25–45 px lenger
+bak i lokal y, og hyttene bruker en litt annen fordeling (`-L/2+10+k*(L-20)/(n-1)`)
+enn gløden (`L*(-0.5+k/(n-1))`). Alle åtte er forskjøvet likt, så det leses som
+lys i en landsby og ikke som feil — men det er en forskyvning, ikke et treff.
 
 **CAMPAGNAs møllehatt er mørk med vilje** (`lagMot:{tak:'mur'}`), og det betyr
 at den nesten forsvinner mot den mørkegrønne enga. Det er et bevisst bytte:

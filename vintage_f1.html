@@ -2127,7 +2127,15 @@ const THEMES={
       const P=s.TH.lagPal, bx=s.bx;
       const p=s.plasser(s.TH.landmarkT,1,150,s.TW+s.GRAVEL_SAFE+88);
       const L=p.halvLengde*2;
-      const tx=Math.cos(p.ang), ty=Math.sin(p.ang);
+      // Rotasjonen under snur den lokale x-aksen 180° når side>0, så et lokalt
+      // punkt til høyre for midten ligger til VENSTRE i verden. Gløden tegnes
+      // utenfor rammen og må derfor ta med samme vending, ellers havner
+      // fyrlampa i den andre enden av moloen enn tårnet. DUNA er den ENESTE av
+      // de fem første landemerkene der dette slår ut: målt side er 1 (vendt)
+      // her, på MONTE SPIRA (som ikke har lys) og på DESERTO (der gløden er
+      // symmetrisk om midten) — resten står uvendt.
+      const vend=p.side>0?-1:1;
+      const tx=Math.cos(p.ang)*vend, ty=Math.sin(p.ang)*vend;
       bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
       bx.fillStyle=P.molo; bx.fillRect(-L/2,-13,L,18);
       // Tårnet er smalere i toppen enn i foten — en trapes, ikke et rektangel,
