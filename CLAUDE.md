@@ -149,6 +149,7 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | B2 | ferdig | `eb6f117` | Landemerker + bakkelag for fem til (VULCANO, TEMPIO, CAMPAGNA, ESSE, DISCESA) | `test_banetema.js` (167/167), `test_banegeometri.js` (13/13) |
 | B3 | ferdig | `fde0f71` | Vend-feilen i nattgløden på de fem første landemerkene (slo bare ut på DUNA) | `test_banetema.js` (167/167), `test_banegeometri.js` (13/13), `chrome_harness.py maal` |
 | B4 | ferdig | `e94db19` | `scene.lokal()`: gløden på selve lyskilden (ALPEN, ARDENNE, DUNA), og radier målt opp igjen | samme tre porter |
+| B5 | ferdig | — | Bakkeflis som gjentakende mønster under hele skjermen + uttonet ytterkant på bakgrunnsbildet, så lerretskanten ikke lenger synes | samme tre porter + skjøtemåling |
 | C | ikke begynt | — | Bykvartaler (`dBuildingGrid`) for LABIRINTO, SERPENTINA, VISTANOTTE — se kommentaren i city-grenen i `buildTrackBg` | — |
 
 **De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
@@ -366,6 +367,97 @@ ALPEN mistet altså 63 % av lyset av en retting som var geometrisk riktig.
 DUNA trengte ingen justering: lykta ligger over moloen mot mørk bakke, så der
 er det ikke noe lyst å blende mot. **Lærdom: flytter du en glød, må du måle
 lysmengden på nytt — posisjonen og styrken henger sammen gjennom blendingen.**
+
+**Avvik verdt å vite i steg B5 (bakkeflisen):**
+
+Utgangspunktet: `pad = TW*4+40` gir bare 184–280 px lerret utenfor banens
+omriss, mens det fjerneste SKJERMHJØRNET ligger 545 px fra kameraankeret på et
+520×680-lerret (bildet roteres med kjøreretningen, så hjørnet svinger utover).
+Bakgrunnsbildet kan altså ALDRI dekke skjermen når bilen er ute ved kanten —
+det er en egenskap ved forholdet mellom `pad` og lerretsdiagonalen, ikke en
+feil i en enkelt bane.
+
+1. **Verdistøyen banen bruker går ikke opp i seg selv**, så den kan ikke flises.
+   Flisen bygges i stedet av plane bølger med HELTALLIGE frekvenser over 256 px
+   — de er periodiske på flisa per konstruksjon, og skjøten finnes ikke.
+2. **Prikkene legges i samme TETTHET som i bakgrunnen, ikke i samme ANTALL**
+   (420 prikker over hele banen → `420*N*N/(bw*bh)` på flisa). Hver prikk
+   tegnes i ni kopier (±N i begge retninger), ellers blir de som ligger inntil
+   kanten kuttet i stedet for å fortsette på andre siden.
+3. **`speckleFarge` er skilt ut som egen funksjon** fordi bakgrunnen og flisa MÅ
+   bruke samme tekstur. Hver gren bruker nøyaktig TRE `rnd()`-kall — legges en
+   ny `speckle`-type inn må den også bruke tre, ellers forskyves hele banens
+   tilfeldighet. Verifisert med sjekksum av bildets indre (innsatt 100 px ×
+   `bgScale`, så fjæra er utenfor): BIT-IDENTISK på alle 13 baner.
+4. **Flisa må ha EGET frø** (`seedFromName(navn+'|flis')`). Trakk den fra
+   bakgrunnens `rnd`-sekvens ville alt etterpå flyttet seg.
+5. **Separabel sinus halverte byggetiden for flisa.** 393 000 `Math.sin`-kall
+   kostet 6,7 ms per bane; `sin(A+B) = sinA·cosB + cosA·sinB` med én
+   oppslagstabell per bølge gir 0,9 ms.
+
+**Skjøten er målt, ikke vurdert med øyet** (luminans 6 px innenfor mot 6 px
+utenfor grenselinja, 156 punkter):
+
+| bane / tid | før | etter |
+|---|---|---|
+| MONTE SPIRA DAG | 0,0374 | **0,0034** |
+| MONTE SPIRA NATT | 0,0101 | **0,0015** |
+| ARDENNE DAG | 0,1801 | **0,0061** |
+| ARDENNE NATT | 0,0363 | **0,0032** |
+
+Det verste ENKELTspranget (~0,048) er uendret før og etter — det er elva og
+banekanten som krysser linja, altså ekte terreng og ikke skjøten.
+
+**At mønsteret ikke glir er bevist, ikke antatt:** samme VERDENSPUNKT utenfor
+bildet leses av på skjermen med 17 ulike kameravinkler og gir samme farge
+(MONTE SPIRA 37–38/45–46/45–46, ARDENNE 21/35–36/25). Fyllet skjer inne i
+verdenstransformen, så mønsteret forankres i verdenskoordinater.
+
+**Kostnadsfella: et ROTERT mønsterfyll er dyrt per piksel.** Første versjon la
+et kvadrat rundt kameraet som var stort nok i alle rotasjoner og lot
+lerretsklippen ta resten — bildetiden steg 1,3 ms. Fyllet er nå klippet til
+skjermens verdensboks MINUS den ugjennomsiktige delen av bildet (omrisset
+krympet `BG_FJAER`), altså opptil fire akseparallelle striper. Målt per piksel
+(2000 fyll per tall, `getImageData` til slutt for å tvinge rasteriseringen
+ferdig):
+
+| metode | ns/piksel |
+|---|---|
+| mønster, rotert | 2,21 |
+| mønster, akseparallelt | 0,36 |
+| mønster, rotasjon i mønstermatrisen | 2,49 |
+| halv oppløsning + oppblåsing | 1,37 |
+| flat farge, rotert | 0,14 |
+
+**Det er ROTASJONEN som koster, ikke mønsteret.** Flisens størrelse er
+irrelevant (16×16 til 256×256 måler alle 2,07–2,12 ns/px, så det er ikke
+cache), og GPU hjelper ikke nevneverdig (1,76 mot 2,19 — Chrome rasteriserer
+2D-lerretet på CPU uansett). Å legge rotasjonen i mønstermatrisen og fylle
+akseparallelt er DYRERE. Den billige veien finnes bare for et mønster uten
+rotasjon, og den ville latt teksturen gli i forhold til banen.
+
+**Restkostnad, målt presist** (300 bilder i ett tidtatt stykke, beste av tre —
+`performance.now()` er klemt til 0,1 ms, så den vanlige `fps`-metrikken kan
+ikke skille 0,3 ms fra støy): 22 av 26 tilfeller ligger innenfor ±0,07 ms. De
+to som betaler er VULCANO (1,53 → 1,79 DAG, 1,54 → 1,85 NATT) og VISTANOTTE
+(1,60 → 1,84 / 1,70 → 1,91). Det er nøyaktig de to banene der mest av skjermen
+lå UTENFOR bildet før: målt andel av skjermen utenfor den ugjennomsiktige delen
+er VULCANO 30 %, LABIRINTO 26 %, VISTANOTTE 15 %, ALPEN 13 %, og 0–6 % på
+resten. Kostnaden er altså prisen for å tegne noe der det før ikke ble tegnet
+noe som helst, og arealet er alt nede på det bevislige minimum (skjermen minus
+det dekkende bildet). Begge banene ligger fortsatt på ~540 bilder/s.
+
+**Metodefelle i `chrome_harness.py fps`: kameraet STÅR STILLE.** `update()`
+leser `keys['ArrowUp']` for spillerbilen, så uten tastetrykk beveger den seg
+ikke — målt kameraflytting over 300 bilder er 0,0 px / 0,0 grader på alle 13
+banene. Hver banes fps-tall er altså ÉN kamerapose (startstreken), ikke et
+snitt over runden. Det forklarer også hvorfor stripearealet var bit-likt i alle
+300 bilder, og det betyr at tallene er sammenlignbare mellom kjøringer, men
+ikke er et snitt over hvor banen er verst.
+
+**Byggetid:** sum 160,6 → 180,3 ms (+1,5 ms per bane), verste bane 18,0 ms mot
+budsjettet på 100. TEMPIO målte 47,5 og 50,2 ms i to kjøringer og 13–14 ms i
+alle andre — samme GC-støy som VISTANOTTE i steg A, bekreftet nok en gang.
 
 **CAMPAGNAs møllehatt er mørk med vilje** (`lagMot:{tak:'mur'}`), og det betyr
 at den nesten forsvinner mot den mørkegrønne enga. Det er et bevisst bytte:

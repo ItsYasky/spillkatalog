@@ -319,7 +319,8 @@ function buildTrack(cfg){
     // regnes ikke ut på nytt i bakgrunnsbyggingen: to kopier av `TW*4+40` er to
     // steder å glemme å endre den.
     bgPad:pad,
-    bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null,nightLights:null};
+    bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null,nightLights:null,
+    groundTile:null,groundPat:null};
 }
 
 // Den dyre halvdelen: baker underlag, asfalt, høydeskygge, curbs, barrierer,
@@ -328,6 +329,118 @@ function buildTrack(cfg){
 // som må finnes før første frame av løpet. Idempotent: er bakgrunnen allerede
 // bygget, er det ingenting å gjøre — å kjøre samme bane om igjen etter et løp
 // skal ikke koste noe.
+// Den finkornede prikketeksturen i bakken. Lagt i en egen funksjon fordi den
+// brukes to steder — i bakgrunnsbildet og i bakkeflisen under det — og de to
+// MÅ være samme tekstur, ellers ser man hvor bildet slutter.
+// Merk at hver gren bruker nøyaktig TRE `rnd()`-kall. Det er ikke tilfeldig:
+// bakgrunnen er seedet på banenavnet og skal være bit-identisk fra gang til
+// gang, så en gren som trakk et annet antall tall ville flyttet alt som tegnes
+// etterpå. Legges en ny `speckle`-type inn, må den også bruke tre.
+function speckleFarge(speckle,rnd){
+  if(speckle==='arid') return `rgba(${150+rnd()*70},${118+rnd()*55},${65+rnd()*40},.4)`;
+  if(speckle==='dune') return `rgba(${205+rnd()*40},${160+rnd()*45},${120+rnd()*35},.4)`;
+  if(speckle==='snow') return `rgba(${195+rnd()*45},${205+rnd()*35},${215+rnd()*30},.3)`;
+  if(speckle==='autumn') return `rgba(${110+rnd()*70},${60+rnd()*40},${18+rnd()*22},.5)`;
+  if(speckle==='dry') return `rgba(${100+rnd()*50},${95+rnd()*45},${40+rnd()*30},.45)`;
+  // 'ash' er ny i runde 4: kald vulkansk aske, ikke varm ørkensand.
+  if(speckle==='ash') return `rgba(${70+rnd()*40},${66+rnd()*34},${68+rnd()*34},.4)`;
+  return `rgba(${20+rnd()*26},${60+rnd()*40},${20+rnd()*18},.55)`;
+}
+
+// Bakkeflis: et lite, gjentakbart utsnitt av banens egen bakke.
+//
+// HVORFOR den trengs: bakgrunnsbildet har bare `pad` (= TW*4+40) piksler
+// utenfor banens omriss — ~230 px på MONTE SPIRA — mens et skjermhjørne kan
+// ligge 545 px fra bilen, fordi bildet roterer med kjøreretningen og hjørnet
+// svinger utover. Kjører man nær yttersiden, kom kanten av bakgrunnsbildet inn
+// i bildet som en knivrett strek mot svart.
+//
+// HVORFOR ikke bare større bakgrunn: de fire største banene er alt klemt under
+// 16 MP-taket (`bgScale<1`), og arealet vokser med kvadratet av marginen. En
+// flis koster 256×256 piksler én gang, uansett hvor stor banen er.
+const GROUND_TILE=256;
+// Bredden på den uttonede ytterkanten av bakgrunnsbildet. Tallet står her
+// fordi BEGGE sidene av skjøten må kjenne det: `buildTrackBg` toner ut akkurat
+// så mange piksler, og `drawTrackScene` må vite hvor langt inn bildet er helt
+// ugjennomsiktig for å kunne la være å tegne mønster under der.
+const BG_FJAER=80;
+function buildGroundTile(TH,navn,bw,bh){
+  const N=GROUND_TILE;
+  const c=document.createElement('canvas');
+  c.width=N; c.height=N;
+  const q=c.getContext('2d');
+  // Eget frø. Flisen MÅ ikke trekke fra bakgrunnens `rnd`-sekvens — gjør den
+  // det, flytter alt som tegnes etterpå seg, og de tretten banene er ikke
+  // lenger de samme bildene som før.
+  const rnd=mulberry32(seedFromName(navn+'|flis'));
+  // Verdistøyen bakgrunnen bruker går ikke opp i seg selv, så en flis skåret
+  // ut av den får en synlig rutenettstrek hver 256. piksel. Feltet bygges
+  // derfor av plane bølger med HELTALLIGE frekvenser: de er periodiske per
+  // konstruksjon, og med tilfeldig retning og fase leses summen som myke
+  // flekker og ikke som bølger.
+  const boelger=[];
+  for(let k=0;k<6;k++){
+    let fx=Math.floor(rnd()*5)-2, fy=Math.floor(rnd()*5)-2;
+    if(fx===0&&fy===0) fx=1;
+    boelger.push({fx,fy,fase:rnd()*Math.PI*2,amp:1/(1+k*0.6)});
+  }
+  const sumAmp=boelger.reduce((a,b)=>a+b.amp,0);
+  const toner=TH.ground.map(h=>{
+    const n=parseInt(h.slice(1),16);
+    return [(n>>16)&255,(n>>8)&255,n&255];
+  });
+  const seg=toner.length-1;
+  // Feltet summeres opp SEPARABELT: sin(A+B) = sinA·cosB + cosA·sinB, der A
+  // bare avhenger av x og B bare av y. Da trengs 4·256 sinusoppslag per bølge
+  // i stedet for ett per piksel. Målt kuttet det flisen fra 6,7 til 0,9 ms per
+  // bane — den naive løkka var 393 000 Math.sin-kall, og alene stod den for
+  // hele økningen i byggetid.
+  const felt=new Float32Array(N*N);
+  for(let k=0;k<boelger.length;k++){
+    const b=boelger[k];
+    const sA=new Float64Array(N), cA=new Float64Array(N);
+    const sB=new Float64Array(N), cB=new Float64Array(N);
+    for(let i=0;i<N;i++){
+      const a=2*Math.PI*b.fx*i/N+b.fase, bb=2*Math.PI*b.fy*i/N;
+      sA[i]=Math.sin(a); cA[i]=Math.cos(a);
+      sB[i]=Math.sin(bb); cB[i]=Math.cos(bb);
+    }
+    for(let y=0;y<N;y++){
+      const sBy=sB[y], cBy=cB[y], rad=y*N;
+      for(let x=0;x<N;x++) felt[rad+x]+=b.amp*(sA[x]*cBy+cA[x]*sBy);
+    }
+  }
+  const img=q.createImageData(N,N), d=img.data;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    let v=0.5+0.5*(felt[y*N+x]/sumAmp);
+    // Samme båndinndeling som bakgrunnen bruker, så flisen får NØYAKTIG samme
+    // tonefordeling — det er den som avgjør om skjøten synes.
+    const f=Math.max(0,Math.min(0.999999,v))*seg;
+    const i0=Math.floor(f), i1=Math.min(seg,i0+1);
+    let t=f-i0; t=t*t*(3-2*t);
+    const a=toner[i0], b2=toner[i1];
+    const o=(y*N+x)*4;
+    d[o]  =a[0]+(b2[0]-a[0])*t;
+    d[o+1]=a[1]+(b2[1]-a[1])*t;
+    d[o+2]=a[2]+(b2[2]-a[2])*t;
+    d[o+3]=255;
+  }
+  q.putImageData(img,0,0);
+  // Prikkene legges i samme TETTHET som i bakgrunnen (420 over hele banen),
+  // ikke i samme antall — ellers ville en flis på 65 000 piksler fått like
+  // mange prikker som en bane på 7 millioner, og mønsteret lest som et
+  // rutenett av grus. Hver prikk tegnes i ni kopier (±N i begge retninger)
+  // slik at de som ligger inntil kanten fortsetter på den andre siden; uten
+  // det blir hver flisskjøt en stripe med halve prikker.
+  const antall=Math.max(3,Math.min(24,Math.round(420*N*N/(bw*bh))));
+  for(let i=0;i<antall;i++){
+    q.fillStyle=speckleFarge(TH.speckle,rnd);
+    const px=rnd()*N, py=rnd()*N, pw=1+rnd(), ph=2+rnd()*5;
+    for(let gx=-1;gx<=1;gx++) for(let gy=-1;gy<=1;gy++) q.fillRect(px+gx*N,py+gy*N,pw,ph);
+  }
+  return c;
+}
+
 function buildTrackBg(TR){
   if(TR.bg) return;
   const cfg=TR.cfg;
@@ -443,14 +556,7 @@ function buildTrackBg(TR){
   // Nå gjør flekkene grovarbeidet, og prikkene skal bare bryte opp flatene.
   const speckle=TH.speckle;
   for(let i=0;i<420;i++){
-    if(speckle==='arid') bx.fillStyle=`rgba(${150+rnd()*70},${118+rnd()*55},${65+rnd()*40},.4)`;
-    else if(speckle==='dune') bx.fillStyle=`rgba(${205+rnd()*40},${160+rnd()*45},${120+rnd()*35},.4)`;
-    else if(speckle==='snow') bx.fillStyle=`rgba(${195+rnd()*45},${205+rnd()*35},${215+rnd()*30},.3)`;
-    else if(speckle==='autumn') bx.fillStyle=`rgba(${110+rnd()*70},${60+rnd()*40},${18+rnd()*22},.5)`;
-    else if(speckle==='dry') bx.fillStyle=`rgba(${100+rnd()*50},${95+rnd()*45},${40+rnd()*30},.45)`;
-    // 'ash' er ny i runde 4: kald vulkansk aske, ikke varm ørkensand.
-    else if(speckle==='ash') bx.fillStyle=`rgba(${70+rnd()*40},${66+rnd()*34},${68+rnd()*34},.4)`;
-    else bx.fillStyle=`rgba(${20+rnd()*26},${60+rnd()*40},${20+rnd()*18},.55)`;
+    bx.fillStyle=speckleFarge(speckle,rnd);
     bx.fillRect(rnd()*bw,rnd()*bh,1+rnd(),2+rnd()*5);
   }
   function tPath(ctxr){
@@ -1408,11 +1514,37 @@ function buildTrackBg(TR){
     }
   }
 
+  // Ytterkanten tones ut mot gjennomsiktig, slik at bakkeflisen under slipper
+  // gjennom gradvis i stedet for at bildet slutter i en rett strek. 80 px er
+  // valgt fordi det er bredt nok til at øyet ikke finner en grense, og smalt
+  // nok til at det ikke spiser av marginen banen faktisk bruker: `pad` er
+  // 184–280 px, så selv etter fjæra står det 100+ px helt dekket bakgrunn
+  // utenfor banens omriss. Dette må stå HELT til slutt — alt som tegnes
+  // etterpå ville lagt seg oppå den uttonede kanten igjen.
+  {
+    const FJAER=BG_FJAER;
+    bx.save();
+    bx.globalCompositeOperation='destination-out';
+    const kant=(x0,y0,x1,y1,rx,ry,rw,rh)=>{
+      const g=bx.createLinearGradient(x0,y0,x1,y1);
+      g.addColorStop(0,'rgba(0,0,0,1)');
+      g.addColorStop(1,'rgba(0,0,0,0)');
+      bx.fillStyle=g; bx.fillRect(rx,ry,rw,rh);
+    };
+    kant(0,0,FJAER,0,        0,0,FJAER,bh);
+    kant(bw,0,bw-FJAER,0,    bw-FJAER,0,FJAER,bh);
+    kant(0,0,0,FJAER,        0,0,bw,FJAER);
+    kant(0,bh,0,bh-FJAER,    0,bh-FJAER,bw,FJAER);
+    bx.restore();
+  }
+
   // Alt er bakt/plassert — legg det på banen. standRects/flagPoles/
   // marshalPosts/floodlights settes sammen med bg, så det levende laget i
   // drawTrackScene alltid finnes så snart bg finnes (de kommer fra samme
   // clearFootprint-plassering som tribunene som er tegnet inn i bakgrunnen).
   TR.bg=bg;
+  TR.groundTile=buildGroundTile(TH,cfg.name,bw,bh);
+  TR.groundPat=null;
   TR.standRects=standRects; TR.flagPoles=flagPoles;
   TR.marshalPosts=marshalPosts; TR.floodlights=floodlights;
   TR.nightLights=nightLights;
@@ -4659,6 +4791,61 @@ function drawTrackScene(){
   ctx.translate(W/2,CHASE_Y);
   ctx.rotate(-(camAngle+Math.PI/2));
   ctx.translate(-camX,-camY);
+
+  // Bakkeflisen legges FØR bakgrunnsbildet, inne i SAMME verdenstransform.
+  // Det er hele poenget: mønsteret forankres da i verdenskoordinater, ikke i
+  // skjermkoordinater, så det roterer og flytter seg med banen i stedet for å
+  // gli under den når bilen svinger.
+  //
+  // Men den må fylles SMALT. Første versjon la et kvadrat rundt kameraet som var
+  // stort nok i alle rotasjoner (hjørnet ligger 545 px ute på et 520×680 lerret)
+  // og lot lerretsklippen ta resten — og bildetiden steg 1,3 ms (opp mot
+  // 1,89 → 4,59 på VULCANO/NATT). Et roterende mønsterfyll er ikke gratis per
+  // piksel: nettleseren må regne teksturkoordinatet gjennom transformen for hver
+  // piksel, og her dekket den hele skjermen hvert bilde — også det meste av den,
+  // der bakgrunnsbildet alt er helt dekkende og mønsteret ikke kan ses.
+  //
+  // Derfor: skjermhjørnene regnes tilbake til verden, og av den boksen trekkes
+  // den delen av bakgrunnsbildet som er HELT ugjennomsiktig (omrisset minus
+  // fjæra). Begge bokser er akseparallelle i verdensrommet, så differansen er
+  // eksakt og blir opptil fire striper. Midt på banen ligger skjermen helt inne
+  // i bildet, og da fylles ingenting i det hele tatt.
+  if(TR.groundTile){
+    const rot=-(camAngle+Math.PI/2), cs=Math.cos(rot), sn=Math.sin(rot);
+    let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    [[0,HY],[W,HY],[0,H],[W,H]].forEach(p=>{
+      const ex=p[0]-W/2, ey=p[1]-CHASE_Y;
+      const wx=camX+ex*cs+ey*sn, wy=camY-ex*sn+ey*cs;
+      if(wx<x0)x0=wx; if(wx>x1)x1=wx; if(wy<y0)y0=wy; if(wy>y1)y1=wy;
+    });
+    // Den dekkende delen av bildet. `bgMinX/bgMinY` er bildets hjørne i verden;
+    // fjæra spises innenfra, så det ugjennomsiktige er omrisset krympet BG_FJAER.
+    const dx0=TR.bgMinX+BG_FJAER, dy0=TR.bgMinY+BG_FJAER;
+    const dx1=TR.bgMinX+TR.bgW-BG_FJAER, dy1=TR.bgMinY+TR.bgH-BG_FJAER;
+    const striper=[];
+    if(x0<dx0||x1>dx1||y0<dy0||y1>dy1){
+      if(x0<dx0){ striper.push([x0,y0,Math.min(x1,dx0)-x0,y1-y0]); }
+      if(x1>dx1){ const a=Math.max(x0,dx1); striper.push([a,y0,x1-a,y1-y0]); }
+      const mx0=Math.max(x0,dx0), mx1=Math.min(x1,dx1);
+      if(mx1>mx0){
+        if(y0<dy0) striper.push([mx0,y0,mx1-mx0,Math.min(y1,dy0)-y0]);
+        if(y1>dy1){ const b=Math.max(y0,dy1); striper.push([mx0,b,mx1-mx0,y1-b]); }
+      }
+    }
+    if(striper.length){
+      if(!TR.groundPat) TR.groundPat=ctx.createPattern(TR.groundTile,'repeat');
+      // Nærmeste nabo, ikke bilineær. Flisen legges i skala 1:1 — én flispiksel
+      // er én skjermpiksel — så filtreringen har ingenting å interpolere bort
+      // fra. Målt gevinst er liten (VULCANO/NATT 0,50 → 0,40 ms, på kanten av
+      // målerens 0,1 ms-oppløsning), men den er gratis. Må settes TILBAKE etter
+      // fyllet: bakgrunnsbildet på de fire største banene tegnes med bgScale<1
+      // og TRENGER utjevning for ikke å bli trappetrinnet.
+      ctx.imageSmoothingEnabled=false;
+      ctx.fillStyle=TR.groundPat;
+      striper.forEach(s=>{ if(s[2]>0&&s[3]>0) ctx.fillRect(s[0],s[1],s[2],s[3]); });
+      ctx.imageSmoothingEnabled=true;
+    }
+  }
 
   // Målstørrelsen er alltid banens fulle verdensstørrelse (bgW/bgH). For de
   // største banene er selve canvaset tegnet i redusert oppløsning (bgScale<1,
