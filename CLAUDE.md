@@ -146,7 +146,7 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 |---|---|---|---|---|
 | A | ferdig | `10612a9` | Seedet tilfeldighet (banenavn som frø), verdistøy, tema per bane (asfalt/grus/kerb/bakketoner), bakken som myke flekker i stedet for 1400 prikker, vegetasjon i klynger, avstandsrutenett | `test_banetema.js` (137/137), `test_banegeometri.js` (13/13) |
 | B | første pulje ferdig | `15cdf0c` | Landemerker + bakkelag for fem baner (MONTE SPIRA, ARDENNE, DESERTO, ALPEN, DUNA) + nattlys koblet inn | `test_banetema.js` (152/152), `test_banegeometri.js` (13/13) |
-| B2 | ferdig | — | Landemerker + bakkelag for fem til (VULCANO, TEMPIO, CAMPAGNA, ESSE, DISCESA) | `test_banetema.js` (167/167), `test_banegeometri.js` (13/13) |
+| B2 | ferdig | `eb6f117` | Landemerker + bakkelag for fem til (VULCANO, TEMPIO, CAMPAGNA, ESSE, DISCESA) | `test_banetema.js` (167/167), `test_banegeometri.js` (13/13) |
 | C | ikke begynt | — | Bykvartaler (`dBuildingGrid`) for LABIRINTO, SERPENTINA, VISTANOTTE — se kommentaren i city-grenen i `buildTrackBg` | — |
 
 **De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
