@@ -723,6 +723,22 @@ function buildTrackBg(TR){
       const r=clearFootprint(p.x,p.y,p.h,side,halvLengde,ut,CLEAR,{allowFlip:true});
       return {x:r.cx+ox, y:r.cy+oy, ang:p.h, halvLengde:r.halfLen, side:r.side};
     },
+    // Et punkt i landemerkets EGEN tegneramme, regnet om til bg-koordinater.
+    //
+    // Nattgløden er den eneste delen av et landemerke som tegnes utenfor
+    // `translate`+`rotate`-rammen — `addLight` lagrer punkter `drawTrackScene`
+    // bruker i sin egen transform — og hvert tema har derfor måttet gjøre
+    // omregningen selv. To feil kom ut av det, begge skjermbildeverifiserte:
+    // rammen roteres `p.ang+(side>0?π:0)`, så med `side>0` ligger et lokalt
+    // punkt til høyre for midten til VENSTRE i verden (DUNAs fyrlampe havnet i
+    // motsatt ende av moloen), og en glød satt på `lokal y = 0` havner ved
+    // FOTEN av det som lyser, ikke på lyset (ALPENs vinduer står 25–45 px opp,
+    // ARDENNEs 23, DUNAs lykt 97). Begge deler står nå ett sted.
+    lokal(p,lx,ly){
+      const vend=p.side>0?-1:1;
+      const c=Math.cos(p.ang)*vend, s2=Math.sin(p.ang)*vend;
+      return {x:p.x+lx*c-ly*s2, y:p.y+lx*s2+ly*c};
+    },
     // Verdenspunktet ved rundeposisjon t (0–1) og enhetsnormalen der.
     atT(t){
       const i=((Math.round(t*PN)%PN)+PN)%PN;
@@ -1556,8 +1572,15 @@ const THEMES={
       // Gløden settes i to punkter langs skipet og ikke ett per vindu: vinduene
       // står 4 px brede og tettere enn gløden er bred, så fire glød oppå
       // hverandre ville bare blitt en lysere flekk til fire ganger prisen.
-      const tx=Math.cos(p.ang), ty=Math.sin(p.ang);
-      [-0.25,0.25].forEach(f=>s.lys(p.x+tx*L*f,p.y+ty*L*f,P.vindu,18));
+      // ...men de to punktene må ligge i VINDUSRADA (lokal y −kH+19), ikke på
+      // skipets senterlinje, ellers lyser bakken foran kirka og ikke kirka.
+      // Radien opp fra 18 til 22 av samme grunn som på ALPEN: en glød blender,
+      // og på vinduet den skal komme fra løfter den mindre enn på bar mur.
+      // Målt sum lagt lys per glød: 32,2 før, 20,5 på vinduet med 18, 32,4 med 22.
+      [-0.25,0.25].forEach(f=>{
+        const w=s.lokal(p,L*f,-kH+19);
+        s.lys(w.x,w.y,P.vindu,22);
+      });
       s.sperr(p.x,p.y,L*0.6);
     } },
   // Ørken: lys sand, og utkjøringen er asfaltert med malte striper slik moderne
@@ -2076,8 +2099,11 @@ const THEMES={
       const P=s.TH.lagPal, bx=s.bx;
       const p=s.plasser(s.TH.landmarkT,-1,160,s.TW+s.GRAVEL_SAFE+85);
       const L=p.halvLengde*2;
-      const tx=Math.cos(p.ang), ty=Math.sin(p.ang);
       const n=8;
+      // Vinduene SAMLES mens de tegnes. Høyden kommer fra `rnd()`, så gløden
+      // kan ikke regne seg fram til den i en egen løkke etterpå uten å kalle
+      // `rnd()` en gang til og dermed flytte hele banens tilfeldighet.
+      const vinduer=[];
       bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
       for(let k=0;k<n;k++){
         const hx=-L/2+10+k*((L-20)/(n-1));
@@ -2089,14 +2115,18 @@ const THEMES={
         bx.beginPath(); bx.moveTo(hx-w/2-5,hy-h); bx.lineTo(hx,hy-h-16); bx.lineTo(hx+w/2+5,hy-h);
         bx.closePath(); bx.fill();
         bx.fillStyle=P.vindu; bx.fillRect(hx-5,hy-h+8,10,8);
+        vinduer.push([hx,hy-h+12]);
       }
       bx.restore();
       // Ett glød per hytte, ikke per vindu: hyttene står 15–20 px fra hverandre,
       // altså omtrent én glødbredde, så de leses som enkeltlys i en landsby.
-      for(let k=0;k<n;k++){
-        const f=(-0.5+k/(n-1));
-        s.lys(p.x+tx*L*f,p.y+ty*L*f,P.vindu,17);
-      }
+      //
+      // Radien er 23 og ikke 17 fordi gløden flyttet INN på vinduet: en glød
+      // blender, så den løfter bare det som er mørkt, og over en lys vindusrute
+      // tilfører den nesten ingenting. Målt sum lagt lys per hytte falt fra
+      // 26,1 til 9,7 da den kom på plass — 23 gir 27 og altså det samme lyset
+      // som før, men nå med vinduet som kilde.
+      vinduer.forEach(v=>{ const w=s.lokal(p,v[0],v[1]); s.lys(w.x,w.y,P.vindu,23); });
       s.sperr(p.x,p.y,L*0.6);
     } },
   // Strandsand og grønt strandgress.
@@ -2127,15 +2157,6 @@ const THEMES={
       const P=s.TH.lagPal, bx=s.bx;
       const p=s.plasser(s.TH.landmarkT,1,150,s.TW+s.GRAVEL_SAFE+88);
       const L=p.halvLengde*2;
-      // Rotasjonen under snur den lokale x-aksen 180° når side>0, så et lokalt
-      // punkt til høyre for midten ligger til VENSTRE i verden. Gløden tegnes
-      // utenfor rammen og må derfor ta med samme vending, ellers havner
-      // fyrlampa i den andre enden av moloen enn tårnet. DUNA er den ENESTE av
-      // de fem første landemerkene der dette slår ut: målt side er 1 (vendt)
-      // her, på MONTE SPIRA (som ikke har lys) og på DESERTO (der gløden er
-      // symmetrisk om midten) — resten står uvendt.
-      const vend=p.side>0?-1:1;
-      const tx=Math.cos(p.ang)*vend, ty=Math.sin(p.ang)*vend;
       bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
       bx.fillStyle=P.molo; bx.fillRect(-L/2,-13,L,18);
       // Tårnet er smalere i toppen enn i foten — en trapes, ikke et rektangel,
@@ -2153,8 +2174,14 @@ const THEMES={
       bx.beginPath(); bx.arc(fx,-13-fh-6,7,0,Math.PI*2); bx.fill();
       for(let k=1;k<=3;k++) bx.fillRect(-L/2+L*k/4-2.5,-19,5,6);
       bx.restore();
-      s.lys(p.x+tx*(-L/2+34),p.y+ty*(-L/2+34),P.lys,38);
-      for(let k=1;k<=3;k++) s.lys(p.x+tx*(-L/2+L*k/4),p.y+ty*(-L/2+L*k/4),P.lys,14);
+      // Gløden legges på lykta og på havnelysene, i samme lokale punkter som de
+      // ble tegnet i — `s.lokal` tar både vendingen og høyden over moloen.
+      const lykt=s.lokal(p,fx,-13-fh-6);
+      s.lys(lykt.x,lykt.y,P.lys,38);
+      for(let k=1;k<=3;k++){
+        const h=s.lokal(p,-L/2+L*k/4,-16);
+        s.lys(h.x,h.y,P.lys,14);
+      }
       s.sperr(p.x,p.y,L*0.6);
     } },
   // Neonby i ørkenen: magenta/hvit kerb, og en neonstripe i den asfalterte

@@ -343,11 +343,28 @@ tomme enden av moloen til fyrtårnet. **Merk at et slikt utsnitt må ta med
 oppløsning, så et 1:1-utsnitt uten skaleringen glir fra gløden, og DESERTO
 kom først ut som to rader lys uten rullebane under.
 
-**Ny observasjon fra de samme bildene, IKKE rettet:** ALPENs åtte gløder ligger
-på landsbyens senterlinje (lokal y = 0), mens vinduene tegnes 25–45 px lenger
-bak i lokal y, og hyttene bruker en litt annen fordeling (`-L/2+10+k*(L-20)/(n-1)`)
-enn gløden (`L*(-0.5+k/(n-1))`). Alle åtte er forskjøvet likt, så det leses som
-lys i en landsby og ikke som feil — men det er en forskyvning, ikke et treff.
+**Gløden ligger nå PÅ lyskilden, ikke ved foten av den.** Samme bilder viste at
+vendingen bare var halve saken: gløden ble satt på `lokal y = 0`, altså på
+byggets senterlinje, mens det som lyser står lenger opp i lokal y — ALPENs
+vinduer 25–45 px, ARDENNEs 23, DUNAs lykt 97. Begge omregningene (vendingen og
+høyden) ligger nå i ÉN funksjon, `scene.lokal(p,lx,ly)`, som tar et punkt i
+landemerkets egen tegneramme og gir bg-koordinater. Et nytt landemerke skal
+ikke måtte utlede dette på nytt — det var nettopp det som gikk galt to ganger.
+
+**Og en glød BLENDER, så den løfter bare det som er mørkt.** Å flytte gløden inn
+på vinduet gjorde natta MØRKERE, for over en lys vindusrute tilfører blendingen
+nesten ingenting. Målt som sum lagt luminans over glødskiva, per lys:
+
+| bane | før | på kilden, gammel radius | ny radius | etter |
+|---|---|---|---|---|
+| ALPEN | 26,1 | 9,7 (17) | 23 | 27,2 |
+| ARDENNE | 32,2 | 20,5 (18) | 22 | 32,4 |
+| DUNA | 70,9 | 78,5 (38/14) | — | 78,5 |
+
+ALPEN mistet altså 63 % av lyset av en retting som var geometrisk riktig.
+DUNA trengte ingen justering: lykta ligger over moloen mot mørk bakke, så der
+er det ikke noe lyst å blende mot. **Lærdom: flytter du en glød, må du måle
+lysmengden på nytt — posisjonen og styrken henger sammen gjennom blendingen.**
 
 **CAMPAGNAs møllehatt er mørk med vilje** (`lagMot:{tak:'mur'}`), og det betyr
 at den nesten forsvinner mot den mørkegrønne enga. Det er et bevisst bytte:
