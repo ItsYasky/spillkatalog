@@ -146,7 +146,12 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 |---|---|---|---|---|
 | A | ferdig | `10612a9` | Seedet tilfeldighet (banenavn som frø), verdistøy, tema per bane (asfalt/grus/kerb/bakketoner), bakken som myke flekker i stedet for 1400 prikker, vegetasjon i klynger, avstandsrutenett | `test_banetema.js` (137/137), `test_banegeometri.js` (13/13) |
 | B | første pulje ferdig | `15cdf0c` | Landemerker + bakkelag for fem baner (MONTE SPIRA, ARDENNE, DESERTO, ALPEN, DUNA) + nattlys koblet inn | `test_banetema.js` (152/152), `test_banegeometri.js` (13/13) |
-| C | ikke begynt | — | Bykvartaler (`dBuildingGrid`) — se kommentaren i city-grenen i `buildTrackBg` | — |
+| B2 | ferdig | — | Landemerker + bakkelag for fem til (VULCANO, TEMPIO, CAMPAGNA, ESSE, DISCESA) | `test_banetema.js` (167/167), `test_banegeometri.js` (13/13) |
+| C | ikke begynt | — | Bykvartaler (`dBuildingGrid`) for LABIRINTO, SERPENTINA, VISTANOTTE — se kommentaren i city-grenen i `buildTrackBg` | — |
+
+**De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
+VISTANOTTE). De trenger både landemerke og bykvartaler, og å skrive landemerket
+nå ville betydd å skrive det om igjen når kvartalene kommer.
 
 **`test_banetema.js` er ny i steg A.** Den måler det `contrastCheck()` i spillet
 ikke lenger dekker: spillets egen sjekk måler lakkeringene mot ASPHALT_BASE
@@ -231,14 +236,95 @@ steg A og 1,92 før runde 4, altså innenfor støyen. MONTE SPIRA, LABIRINTO,
 ALPEN og DUNA måler ~0,3 ms mot ~1,8 for resten — det mønsteret står i
 «før»-tallene også og er en egenskap ved banene, ikke ved temaene.
 
-**Neste pulje i steg B — de åtte som står igjen:** LABIRINTO, SERPENTINA,
-VULCANO, TEMPIO, CAMPAGNA, ESSE, DISCESA, VISTANOTTE. Oppskriften er fastlagt
-av de fem første: `groundLayer` bygges av `belte(t0,t1,utside(),avstand,radius,
-rader,sving)`, tonene legges i `lagPal` (ellers stryker sjekk 14), unntak fra
-bakkemålingen navngis i `lagMot`, `landmarkT` settes i [0,1), og nattlys legges
-med `addLight` i VERDENSKOORDINATER. MERK at LABIRINTO, SERPENTINA og
-VISTANOTTE er bybaner og overlapper med steg C — vurder å ta dem der i stedet,
-så bykvartalene og landemerket ikke skrives to ganger.
+**Oppskriften, fastlagt av de ti som er gjort:** `groundLayer` bygges av
+`belte(t0,t1,utside(),avstand,radius,rader,sving)`, tonene legges i `lagPal`
+(ellers stryker sjekk 14), unntak fra bakkemålingen navngis i `lagMot`,
+`landmarkT` settes i [0,1), og nattlys legges med `addLight` i
+VERDENSKOORDINATER.
+
+**Avvik verdt å vite i steg B2:**
+
+1. **`pad = TW*4+40` er taket for et landemerkes REKKEVIDDE, ikke bare for
+   avstanden ut.** Et landemerke tegnes i en ramme der lokal y peker BORT fra
+   banen, så det det krever av lerret er `avstandUt + byggets høyde`.
+   Bakgrunnslerretet har bare `pad` px utenfor banens omriss, og der banen
+   ligger ute ved omrisset klippes alt over grensa av en knivrett kant. DISCESA
+   avslørte det: 155 px ut + 84 px høyt = 239 mot et lerret med 240.
+   `scene.plasser` tar nå et `hoyde`-argument og klemmer avstanden selv — taket
+   står ÉTT sted fordi det er en egenskap ved lerretet, ikke ved bygget. Mål med
+   margin-sjekken før commit; minste margin nå er 128 px (DISCESA).
+2. **`pad` fantes ikke i `buildTrackBg`s scope.** Den er en lokal i
+   `buildTrack`, så første versjon av klemmen kastet `ReferenceError: pad is
+   not defined` på ti av tretten baner. JSC-testene så det IKKE (167/167 grønt),
+   for `test_banetema.js` kaller aldri `groundLayer`/`landmark` — det var
+   `chrome_harness.py maal` som fanget det, akkurat som i steg A. Tallet følger
+   nå med som `bgPad` på banen i stedet for å regnes ut to steder.
+3. **En smal flate kan IKKE bygges med `belte`.** `belte` kaster hver sirkel
+   inntil `radius*0,9` sidelengs med ×9-støyleddet, og den støyen har ~48 px
+   bølgelengde mot et PATH-steg på 14–21 px — altså skifter den fortegn omtrent
+   annenhver sirkel. På en bred flate er det kantruhet og helt riktig; på en
+   smal kjerne er sidespranget like stort som kjernen er bred, og flaten faller
+   fra hverandre i perler. Å sette sirklene tettere hjelper ikke: løkka går ett
+   PATH-punkt om gangen, så avstanden har et GULV på ett PATH-steg, og
+   `radius*0,55` under det gulvet gjør ingenting i det hele tatt. VULCANOs
+   lavakjerne er derfor en STREK (`lineCap:'round'`) som leser det samme
+   ×1-støyleddet som skorpa og dropper ×9. Den er også billigere: VULCANO falt
+   fra 11,6 til 9,9 ms.
+4. **Lavaen måtte snus.** `dFlate` tegner kanten bredest og ytterst, så det er
+   KANTEN som må bære 3:1-målingen mot bakken — og en mørk basaltskorpe
+   (`#c2410c`) klarer bare 2,90:1. Eneste retning som holder er lysere, altså
+   gul kjerne og oransje ytterkant.
+5. **Størrelse er en feilkilde på linje med farge.** Første lavaelva var 155 px
+   bred mot en asfalt på 72 (VULCANO har TW=36, den smaleste banen), og leste
+   som en gul vegg og ikke som en elv. Samme feil i byggene: observatoriet var
+   240×26 (9:1) og leste som et termometer, olivengården 280×52 (5,4:1) med et
+   74 px tårn i enden og leste som tallet 1. Alle tre ble rettet ved å KRYMPE,
+   ikke ved å bytte farge.
+6. **Et søylerad trenger en vegg bak seg.** TEMPIOs tempel var først bare søyler
+   mellom to vannrette lister, og da skinte GRESSET gjennom mellomrommene — åtte
+   lyse bar med luft imellom er en stige som ligger i en park. En cella i
+   `stein` bak rekken, og søyler som er breiere enn mellomrommet, gjør den til
+   et tempel.
+7. **`dVann` er splittet i `dFlate` + glimt**, og `scene.flate` er den nye
+   flaten uten glimt. Glimtet er det ENE som skiller en vannflate fra en tørr
+   flate bygget likt: glimt på en kornåker leses som lys som flyter oppå kornet,
+   og på ei myr som åpent vann. Rekkefølgen på `rnd()`-kallene er uendret, så de
+   fem banene fra første pulje er bit-identiske.
+8. **CAMPAGNAs lappeteppe av åkre ble FORKASTET.** Et lappeteppe trenger rette
+   åkerskiller, og `belte` leverer sirkler — seks åkre av sirkler blir seks
+   dammer i ulike korntoner. Skillene har banen dessuten alt: `terrain:'hedge'`
+   tegner hekkene, og det er hekkene som deler et engelsk landskap i ruter.
+9. **DISCESAs olivenlund er ENKELTKRONER, ikke en flate.** Kronene er `0,26` av
+   sirkelradien fordi `belte` setter sentrene `0,55` radier fra hverandre — to
+   kroner på 0,26 så vidt ikke berører hverandre, mens 0,42 (første forsøk)
+   lukket raden til en sammenhengende hekk. Her er den manglende overlappen fra
+   punkt 3 altså POENGET: det er avstanden mellom trærne som sier at noen har
+   plantet dem.
+
+**Forkastede toner, alle strøket på 3:1 mot den verste bakketonen:** lavaKant
+`#b45309` (2,99), TEMPIO vann `#5c8fa8` (2,02) og `#7fa8c0` (2,81), CAMPAGNA
+kornKant `#a89a5e` (2,93), ESSE hogstKant `#6b5940` (2,04) og tak mot mur
+(2,85), DISCESA terrasse `#8a7a5c` (2,80), terrasseKant `#6b5d44` (1,83),
+sypress `#6b7a2a` (2,48). Mønsteret er det samme som DESERTO/DUNA-fella fra
+pulje 1: ligger bakketonene midt i lysintervallet, finnes det INGEN mørk tone
+som når 3:1 — man må gå lysere.
+
+**Kostnad, målt i steg B2:** byggetid sum 150,5 ms (pulje 1: 146,8), verste bane
+VISTANOTTE 17,5 ms mot et budsjett på 100 ms per bane. De fem nye banene koster
+9,2–11,7 ms hver. Nattlys: VULCANO 22, TEMPIO 2, CAMPAGNA 1, ESSE 1, DISCESA 2
+— alle godt under taket på 150.
+
+**Åpent punkt funnet i steg B2, IKKE rettet:** nattgløden på de FEM FØRSTE
+landemerkene regnes ut i verdensrommet uten å ta med at `p.side>0` snur den
+lokale x-aksen 180°. En asymmetrisk glød (DUNAs fyrlampe) kan derfor havne i
+motsatt ende av bygget enn vinduet den skal komme fra; ARDENNE går fri fordi
+gløden der er symmetrisk om midten. De fem nye er flip-bevisste via faktoren
+`vend`. De gamle ble bevisst ikke rørt — de er skjermbildeverifiserte, og en
+retting bør gjøres og verifiseres for seg.
+
+**CAMPAGNAs møllehatt er mørk med vilje** (`lagMot:{tak:'mur'}`), og det betyr
+at den nesten forsvinner mot den mørkegrønne enga. Det er et bevisst bytte:
+hatten måles mot møllekroppen den sitter på, slik kirketaket på ARDENNE gjør.
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til

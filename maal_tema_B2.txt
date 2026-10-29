@@ -1,0 +1,22 @@
+BANETEMA — vintage_f1.html
+baner: 13   lakkeringer: 18   asfaltreferanse: #33333e (L=0.2216)
+
+ASFALT PER BANE
+  MONTE SPIRA  #32363b  L=0.2137  -3.5 %
+  ARDENNE      #2e373b  L=0.2059  -7.1 %
+  DESERTO      #403d38  L=0.2353  +6.2 %
+  LABIRINTO    #3d3a37  L=0.2275  +2.7 %
+  SERPENTINA   #3a333e  L=0.2216  +0.0 %
+  VULCANO      #373331  L=0.2039  -8.0 %
+  TEMPIO       #373c39  L=0.2255  +1.8 %
+  CAMPAGNA     #36393b  L=0.2216  +0.0 %
+  ESSE         #3c3835  L=0.2216  +0.0 %
+  DISCESA      #3d3533  L=0.2196  -0.9 %
+  ALPEN        #353c41  L=0.2314  +4.4 %
+  DUNA         #403e39  L=0.2373  +7.1 %
+  VISTANOTTE   #3a313a  L=0.2098  -5.3 %
+
+svakeste lakkontrast noe sted: 3.45:1 (LAG CORALIS mot DUNA)
+svakeste landemerketone:        3.15:1 (DESERTO saltKant mot bakken)
+
+RESULTAT: 167/167  — alt består

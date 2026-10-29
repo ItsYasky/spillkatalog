@@ -314,6 +314,11 @@ function buildTrack(cfg){
     theme:makeTheme(cfg.name),
     bgW:bw,bgH:bh,bgScale:Math.min(1,Math.sqrt(MAX_BG_PX/(bw*bh))),
     bgOx:-minX,bgOy:-minY,bgMinX:minX,bgMinY:minY,
+    // Polsteret utenfor banens omriss følger med videre fordi det er den eneste
+    // plassen landemerkene har å vokse i — se `plasser`. Det sendes som TALL og
+    // regnes ikke ut på nytt i bakgrunnsbyggingen: to kopier av `TW*4+40` er to
+    // steder å glemme å endre den.
+    bgPad:pad,
     bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null,nightLights:null};
 }
 
@@ -329,6 +334,7 @@ function buildTrackBg(TR){
   const {PATH,PN,heading,smoothCurv,severity,wallOffsArr,sfAng,sfx,sfy}=TR;
   const bw=TR.bgW, bh=TR.bgH;
   const ox=TR.bgOx, oy=TR.bgOy; // world -> bg canvas offset
+  const pad=TR.bgPad;            // px lerret utenfor omrisset, taket for landemerkehøyde
   const bg=document.createElement('canvas');
   bg.width=Math.ceil(bw*TR.bgScale); bg.height=Math.ceil(bh*TR.bgScale);
   const bx=bg.getContext('2d');
@@ -557,15 +563,25 @@ function buildTrackBg(TR){
     }
     return false;
   }
-  // Vannflate bygget av overlappende sirkler: en strandkant tegnes først som en
-  // bredere, lysere flate under, slik at vannet får en synlig bredd mot bakken
-  // i stedet for å ende i en hard kant.
-  function dVann(blobs,pal){
+  // Flate bygget av overlappende sirkler: kanten tegnes først som en bredere
+  // flate UNDER, slik at flaten får en synlig bredd mot bakken i stedet for å
+  // ende i en hard kant. Det er KANTEN som ligger ytterst mot bakken, og derfor
+  // den av de to tonene som må måles mot bakketonene — ikke flaten.
+  function dFlate(blobs,pal){
     bx.save();
     bx.fillStyle=pal.kant;
     blobs.forEach(b=>{ bx.beginPath(); bx.arc(b.x,b.y,b.r+7,0,Math.PI*2); bx.fill(); });
     bx.fillStyle=pal.flate;
     blobs.forEach(b=>{ bx.beginPath(); bx.arc(b.x,b.y,b.r,0,Math.PI*2); bx.fill(); });
+    bx.restore();
+    blobs.forEach(b=>sperrer.push({x:b.x,y:b.y,r:b.r+7}));
+  }
+  // Vann er den samme flaten PLUSS glimt. HVORFOR de to er skilt: glimtet er
+  // det ENE som skiller en vannflate fra en tørr flate bygget likt — en
+  // kornåker eller en olivenlund har ingen overflate å reflektere i, og glimt
+  // på en åker leses som lys som ligger og flyter oppå kornet.
+  function dVann(blobs,pal){
+    dFlate(blobs,pal);
     // Lysrefleksene er korte vannrette streker, ikke sirkler: en sirkel leses
     // som en stein i vannet, en strek som et glimt på overflaten.
     //
@@ -574,6 +590,7 @@ function buildTrackBg(TR){
     // informasjon. Vannet skal være lesbart mot bakken uten glimtet — måles
     // glimtet i stedet for flaten, kan en vannfarge som forsvinner i bakken
     // snike seg gjennom testen på glansen sin.
+    bx.save();
     bx.strokeStyle='rgba(255,255,255,.18)'; bx.lineWidth=2;
     blobs.forEach(b=>{
       for(let k=0;k<3;k++){
@@ -583,7 +600,6 @@ function buildTrackBg(TR){
       }
     });
     bx.restore();
-    blobs.forEach(b=>sperrer.push({x:b.x,y:b.y,r:b.r+7}));
   }
   const scene={
     bx, bw, bh, ox, oy, PATH, PN, heading, severity, smoothCurv, TH, rnd, noise, nAt,
@@ -600,6 +616,8 @@ function buildTrackBg(TR){
     // tegnes på. Tar bg-koordinater, som alt annet et tema ser.
     lys: addLight,
     vann: dVann,
+    // Samme flate uten glimt — til åkre, lunder og lavaelver. Se dVann.
+    flate: dFlate,
     // Sperrer et område for vegetasjon uten å tegne noe — for landemerker som
     // legger sin egen flate (rullebanen på DESERTO, landsbytomta på ALPEN).
     sperr(x,y,r){ sperrer.push({x,y,r}); },
@@ -687,9 +705,22 @@ function buildTrackBg(TR){
     // opp, så `halvLengde` i svaret er den som faktisk ble verifisert og ikke
     // den som ble bedt om — tegn landemerket i den størrelsen, ellers er
     // klaringen bare målt på papiret.
-    plasser(t,side,halvLengde,avstandUt){
+    // `hoyde` er byggets høyde i tegningen, og den er ikke pynt: et landemerke
+    // tegnes i en ramme der lokal y peker BORT fra banen, så rekkevidden ut fra
+    // asfalten er avstandUt PLUSS høyden. Bakgrunnslerretet har bare `pad`
+    // (= TW*4+40) piksler utenfor banens omriss, og der banen ligger helt ute
+    // ved omrisset blir alt over den grensa klippet av en knivrett lerretskant.
+    // Det er nøyaktig det som skjedde med dueslaget på DISCESA: 155 px ut + 84
+    // px høyt = 239, mot et lerret med 240 px å gi.
+    //
+    // Taket står HER og ikke i hvert tema, fordi det er en egenskap ved
+    // lerretet og ikke ved bygget — et nytt landemerke i neste steg skal ikke
+    // måtte finne ut av dette på nytt.
+    plasser(t,side,halvLengde,avstandUt,hoyde){
       const p=this.atT(t);
-      const r=clearFootprint(p.x,p.y,p.h,side,halvLengde,avstandUt,CLEAR,{allowFlip:true});
+      const tak=pad-(hoyde||0)-14;
+      const ut=hoyde ? Math.min(avstandUt,tak) : avstandUt;
+      const r=clearFootprint(p.x,p.y,p.h,side,halvLengde,ut,CLEAR,{allowFlip:true});
       return {x:r.cx+ox, y:r.cy+oy, ang:p.h, halvLengde:r.halfLen, side:r.side};
     },
     // Verdenspunktet ved rundeposisjon t (0–1) og enhetsnormalen der.
@@ -1609,18 +1640,318 @@ const THEMES={
   // som er det ene stedet på banene de hører hjemme.
   'VULCANO':{ ground:['#17141a','#201c22','#2a252b'], speckle:'ash', asphalt:'#373331',
     runoff:{type:'grus',clr:'#5e5a58'}, curb:['#eab308','#1c1917'], cluster:0.60, ads:false,
-    rockTint:'#332c29' },
+    rockTint:'#332c29',
+    landmarkT:0.72,
+    // MÅLT FUNN som snudde lavaen: det er KANTEN som tegnes bredest og ligger
+    // ytterst mot bakken, så den må bære målingen — og en mørk basaltskorpe
+    // (#c2410c) klarer bare 2,90:1 mot den lyseste bakketonen og stryker. Eneste
+    // retning som holder er lysere, altså gult senter og oransje ytterkant. Det
+    // er tilfeldigvis også slik lava kjøles utover fra midten, men rekkefølgen
+    // ble valgt av målingen og ikke av fysikken.
+    lagPal:{ lava:'#fbbf24', lavaKant:'#ea580c', kuppel:'#d6d3d1', mur:'#a8a29e',
+      mast:'#e7e5e4', lys:'#fcd34d' },
+    groundLayer(s){
+      const P=s.TH.lagPal, R=Math.min(s.bw,s.bh)*0.008;
+      // MÅLT FEIL I FØRSTE FORSØKET, og den satt i STØRRELSEN, ikke i fargen:
+      // tre rader med radius min*0,011 ble et belte på ~155 px, mot en asfalt
+      // som her bare er 72 px bred (TW=36, den smaleste banen i katalogen). En
+      // «elv» dobbelt så bred som veien leses ikke som en elv — i bildet ble
+      // den en solid gul vegg langs banen. Elva er derfor smalere enn veien nå.
+      //
+      // Og den er bygget i TO LAG av samme grunn: ett lag der flaten og kanten
+      // har samme tone er uansett en ensfarget flate, uansett hvor smal. Den
+      // brede skorpa er oransje (avkjølt lava), og kjernen er en egen, tett rad
+      // i gult inni den. Det er KONTRASTEN mellom de to som sier at noe renner
+      // — en ensfarget stripe sier bare at noen har malt bakken.
+      //
+      // `sving` er halvert fra 300 til 150: med 300 var driften bredere enn
+      // elva selv, så kjernen falt utenfor skorpa i stedet for å ligge i den.
+      const u=s.utside(), ut=s.TW+s.GRAVEL_SAFE+34, bx=s.bx;
+      // Skorpa er sirkler, og den RUFSETE kanten `belte` gir er riktig her —
+      // en størknet lavarand er ikke en jevn strek.
+      const skorpe=s.belte(0.10,0.30,u,ut,R,2,150);
+      // Videre som en smalere tunge, samme byggekloss i 0,6 størrelse. Da følger
+      // vegetasjonssperrene tungen av seg selv, uten en egen sperre som kan
+      // komme i utakt.
+      const tSkorpe=s.belte(0.30,0.46,u,ut,R*0.6,2,150);
+      s.flate(skorpe,{flate:P.lavaKant,kant:P.lavaKant});
+      s.flate(tSkorpe,{flate:P.lavaKant,kant:P.lavaKant});
+      // MÅLT FUNN, og det gjelder enhver smal flate bygget med `belte`:
+      // kjernen kan IKKE være sirkler. `belte` kaster hver sirkel inntil
+      // `radius*0,9` sidelengs med ×9-støyleddet, og den støyen har ~48 px
+      // bølgelengde mot et PATH-steg på 14–21 px — altså skifter den fortegn
+      // omtrent annenhver sirkel. På en bred flate er det kantruhet og helt
+      // riktig. På en smal kjerne er sidespranget like stort som kjernen er
+      // bred, så den faller fra hverandre i perler uansett hvor tett sirklene
+      // settes. Å sette dem tettere hjelper dessuten ikke: løkka går ett
+      // PATH-punkt om gangen, så avstanden har et gulv på ett PATH-steg.
+      //
+      // En strek har ikke det problemet, og den følger samme meander som skorpa
+      // fordi den leser det SAMME ×1-støyleddet (`sving`) og dropper bare ×9.
+      const kjerne=(t0,t1,avstandUt,halvbredde)=>{
+        const i0=Math.round(t0*s.PN), i1r=Math.round(t1*s.PN);
+        const i1=i1r<=i0?i1r+s.PN:i1r, pkt=[];
+        bx.save();
+        bx.beginPath();
+        let brudd=true;
+        for(let i=i0;i<=i1;i++){
+          const a=s.PATH[i%s.PN], h=s.heading[i%s.PN];
+          const d=avstandUt+s.nAt(a[0],a[1])*150;
+          const x=a[0]-Math.sin(h)*d*u+s.ox, y=a[1]+Math.cos(h)*d*u+s.oy;
+          // Samme regel som i `belte`: kommer streken for nær asfalten, BRYTES
+          // den i stedet for å skyves utover. Der går elva i rør under veien.
+          if(s.avstand(x,y)<s.CLEAR+halvbredde){ brudd=true; continue; }
+          if(brudd){ bx.moveTo(x,y); brudd=false; } else bx.lineTo(x,y);
+          pkt.push({x,y});
+        }
+        bx.lineWidth=halvbredde*2; bx.lineCap='round'; bx.lineJoin='round';
+        bx.strokeStyle=P.lava; bx.stroke();
+        bx.restore();
+        return pkt;
+      };
+      const kPkt=kjerne(0.10,0.30,ut+R*0.58,13).concat(kjerne(0.30,0.46,ut+R*0.35,9));
+      // Lavaen er den ENE flaten i spillet som er sin egen lyskilde, så gløden
+      // kommer herfra og ikke fra et vindu — og den henger på KJERNEN, for det
+      // er den som er varm. Hvert sjuende punkt, ikke hvert: gløden er bredere
+      // enn avstanden mellom sirklene, så ett lys per sirkel ville gitt nøyaktig
+      // samme stripe til sju ganger prisen — og taket på 150 lys ville gått
+      // tomt lenge før elva var ferdig. Her er punktene dessuten ett per
+      // PATH-steg og ikke per sirkel, så det trengs et grovere sprang: hvert
+      // tolvte punkt holder gløden sammenhengende uten å spise av taket.
+      kPkt.forEach((b,i)=>{ if(i%12===0) s.lys(b.x,b.y,P.lava,26); });
+    },
+    // Vulkanobservatorium: kuppel i den ene enden, lav bygningskropp, antennemast
+    // i den andre. Det er KUPPELEN som bærer gjenkjennelsen — en halvkule er den
+    // ene formen ingen av de andre banene har.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      // VULCANO har det STRAMMESTE lerretet av alle tretten: pad = TW*4+40 og
+      // TW=36 gir 184 px utenfor omrisset. Første forsøket stakk 139 px ut med
+      // et 104 px høyt bygg = 243 px rekkevidde, altså 59 px rett ut i luften.
+      // Bygget er krympet i stedet for bare flyttet inn: en mast som er kuttet
+      // på høyden er fortsatt en mast, mens et observatorium som står inne i
+      // grusen ikke lenger er et landskapstrekk.
+      // Halvlengden er 62 og ikke 120: med 120 ble kroppen 240×26, altså 9:1, og
+      // en så lang tynn stripe med en liten kule i enden leser som et termometer.
+      // Kuppelen må dessuten være STOR nok til å bære formen — 24 mot en kropp
+      // på 124 er en kuppel, 20 mot 240 er en kul.
+      const p=s.plasser(s.TH.landmarkT,s.utside(),62,s.TW+s.GRAVEL_SAFE+36,72);
+      const L=p.halvLengde*2, H=26, kr=24;
+      bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      bx.fillStyle=P.mur; bx.fillRect(-L/2,-H,L,H);
+      // Kuppelen sitter i enden og ikke midt på: en halvkule midt på en lav
+      // bygningskropp leses som en kul i taket, i enden leses den som et tårn.
+      const kx=-L/2+kr+8;
+      bx.fillStyle=P.kuppel;
+      bx.beginPath(); bx.arc(kx,-H,kr,Math.PI,Math.PI*2); bx.fill();
+      bx.fillRect(kx-kr,-H-3,kr*2,5);
+      // Observasjonsspalten, i murtonen. Uten den er kuppelen en glatt kule, og
+      // det er spalten som sier teleskop.
+      bx.fillStyle=P.mur; bx.fillRect(kx-4,-H-kr+3,8,kr-3);
+      bx.fillStyle=P.mast;
+      bx.fillRect(L/2-24,-H-46,5,46);
+      bx.fillRect(L/2-38,-H-46,33,4);
+      bx.fillStyle=P.lys; bx.fillRect(L/2-L*0.30,-H+11,9,8);
+      bx.restore();
+      // Gløden må regnes ut i VERDENSRETNINGEN, og da må vendingen over tas med:
+      // med side>0 er den lokale x-aksen snudd 180°, så et lokalt punkt til
+      // høyre for midten ligger til VENSTRE i verden. Uten faktoren havner
+      // gløden i motsatt ende av bygget enn vinduet den skal komme fra.
+      const vend=p.side>0?-1:1;
+      const tx=Math.cos(p.ang)*vend, ty=Math.sin(p.ang)*vend;
+      s.lys(p.x+tx*(L/2-L*0.30),p.y+ty*(L/2-L*0.30),P.lys,17);
+      s.sperr(p.x,p.y,L*0.6);
+    } },
   // Parkbane: frodig grønt med klippestriper i plenene, og beige grus.
   'TEMPIO':{ ground:['#1b3a1c','#235027','#2d6330'], speckle:'grass', asphalt:'#373c39',
     runoff:{type:'grus',clr:'#8c7f63'}, curb:CURB_RW, cluster:0.42, ads:true,
-    mow:{ang:0.35,width:120}, treeTint:['#1d5a2a','#2a7236','#14421e'] },
-  // Engelsk landskap: grått og grønt, med lappeteppe av åkre i bakkelaget (steg C).
+    mow:{ang:0.35,width:120}, treeTint:['#1d5a2a','#2a7236','#14421e'],
+    landmarkT:0.38,
+    // Samme målte felle som DESERTO og DUNA, bare med grønt i stedet for sand:
+    // parkgresset ligger midt i lysintervallet, og et vanlig blått dammvann
+    // (#7fa8c0) måler bare 2,81:1 mot den lyseste bakketonen. Vannet må være
+    // LYSERE — altså himmelspeiling og ikke dyp dam, som dessuten er nøyaktig
+    // det en speildam er til for.
+    //
+    // `stein` gjør dobbel tjeneste med vilje: den er både kantsteinen rundt
+    // dammen og sokkelen under tempelet. To nøkler med samme hex ville bare
+    // gitt to steder å endre den ene tonen.
+    lagPal:{ vann:'#a8c8d8', stein:'#c9c5bd', marmor:'#e7e5e4', lys:'#fde68a' },
+    groundLayer(s){
+      const P=s.TH.lagPal, R=Math.min(s.bw,s.bh)*0.010;
+      // Dette er det ENE stedet der advarselen over `belte` ikke gjelder: der
+      // en elv som ligger i konstant avstand fra veien leses som en kanal, SKAL
+      // en speildam i en formell park være geometrisk. `sving` er derfor satt
+      // lavt (60) og ikke 300–460 som på de andre banene — driften skal bare
+      // bryte opp sirkelraden, ikke lage meandere.
+      //
+      // Dammen starter rett etter tempelet (0,38) og ikke under det: et tempel
+      // tegnet oppå vannflaten leser som et tempel som står i dammen.
+      s.vann(s.belte(0.42,0.56,s.utside(),s.TW+s.GRAVEL_SAFE+42,R,2,60),
+        {flate:P.vann,kant:P.stein});
+    },
+    // Søyletempel i marmor. Det er SØYLEREKKEN under en trekantgavl som gjør
+    // formen entydig — en marmorklump uten søyler er bare et lyst hus.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      // Gavlspissen ligger 107 px over bakken (sokkel 14 + søyle 52 + arkitrav
+      // 11 + gavl 30). TEMPIO er den breieste banen (TW=78), så lerretet gir
+      // 352 px og 191+107 går inn med god margin — høyden oppgis likevel, for
+      // ellers er det bare flaks som holder bygget innenfor.
+      const p=s.plasser(s.TH.landmarkT,s.utside(),95,s.TW+s.GRAVEL_SAFE+90,107);
+      const L=p.halvLengde*2, sH=52, aY=-14-sH;
+      bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      // Sokkelen i to trinn: ett trinn gir en plate, to gir en stylobat.
+      bx.fillStyle=P.stein;
+      bx.fillRect(-L/2-9,-7,L+18,7);
+      bx.fillRect(-L/2,-14,L,7);
+      // CELLAVEGGEN BAK SØYLENE er det som gjør at dette er et tempel og ikke en
+      // stige. Første forsøket tegnet bare søyler, og da skinte GRESSET gjennom
+      // mellomrommene — åtte lyse bar mellom to vannrette lister er en stige som
+      // ligger i en park. Et ekte tempel har en lukket cella bak søylerekken, og
+      // den i `stein` gir samtidig dybden som sier at søylene står FORAN noe.
+      bx.fillStyle=P.stein;
+      bx.fillRect(-L/2,aY,L,sH);
+      // Søylene står tett: mellomrommet er smalere enn søylen selv. Med 11 px
+      // søyle og 30 px luft (første forsøket) leses rekken som sprinkler.
+      const n=8, bredde=15, steg=(L-bredde)/(n-1);
+      bx.fillStyle=P.marmor;
+      for(let k=0;k<n;k++) bx.fillRect(-L/2+k*steg,aY,bredde,sH);
+      // Arkitraven i stein og gavlen i marmor, ikke begge hvite: en ensfarget
+      // hvit trekant på en ensfarget hvit list leses som en kile, ikke som et
+      // tak over en bjelke.
+      bx.fillStyle=P.stein;
+      bx.fillRect(-L/2-7,aY-11,L+14,11);
+      bx.fillStyle=P.marmor;
+      bx.beginPath();
+      bx.moveTo(-L/2-11,aY-11); bx.lineTo(0,aY-11-30); bx.lineTo(L/2+11,aY-11);
+      bx.closePath(); bx.fill();
+      bx.restore();
+      // To parklykter, symmetrisk om midten: med symmetri spiller vendingen av
+      // den lokale x-aksen ingen rolle, så faktoren trengs ikke her.
+      const tx=Math.cos(p.ang), ty=Math.sin(p.ang);
+      [-0.42,0.42].forEach(f=>s.lys(p.x+tx*L*f,p.y+ty*L*f,P.lys,20));
+      s.sperr(p.x,p.y,L*0.62);
+    } },
+  // Engelsk landskap: grått og grønt, med kornåker og vindmølle i bakkelaget.
   'CAMPAGNA':{ ground:['#2a3524','#36442d','#44533a'], speckle:'grass', asphalt:'#36393b',
-    runoff:{type:'grus',clr:'#7a6c54'}, curb:CURB_RW, cluster:0.44, ads:true },
+    runoff:{type:'grus',clr:'#7a6c54'}, curb:CURB_RW, cluster:0.44, ads:true,
+    landmarkT:0.44,
+    lagPal:{ korn:'#c9b878', kornKant:'#ddd0a0', mur:'#cfc9bd', tak:'#3f3f46',
+      vinge:'#e7e5e4', vindu:'#facc15' },
+    // Møllehatten leses mot møllekroppen den sitter på, ikke mot enga. Samme
+    // unntak som kirketaket på ARDENNE.
+    lagMot:{ tak:'mur' },
+    groundLayer(s){
+      const P=s.TH.lagPal, R=Math.min(s.bw,s.bh)*0.012;
+      // ÉN stor kornåker, ikke lappeteppet planen snakket om. Et lappeteppe
+      // trenger rette åkerskiller, og byggeklossen her leverer sirkler — seks
+      // åkre av sirkler blir seks dammer i ulike korntoner, ikke et jordbruks-
+      // landskap. Skillene har banen dessuten alt: `terrain:'hedge'` tegner
+      // hekkene, og det er HEKKENE som deler et engelsk landskap i ruter.
+      //
+      // Seks rader, for en åker har bredde man ser slutten på — i motsetning
+      // til havet på DUNA, som med vilje renner ut av bildet.
+      s.flate(s.belte(0.08,0.38,s.utside(),s.TW+s.GRAVEL_SAFE+36,R,6,340),
+        {flate:P.korn,kant:P.kornKant});
+    },
+    // Vindmølle. Vingekorset er hele gjenkjennelsen: en smalnende tårnkropp
+    // alene er et vanntårn, det er de fire vingene som gjør den til en mølle.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      // Høyden er ikke tårnet, den er VINGEN: navet sitter 72 px opp, og en
+      // vinge på 50 px som står på skrå rekker ~49 px videre, altså 121 px i
+      // alt. Taket på 282 px (pad 296 − 14) tvang avstanden ut fra 173 til 147.
+      const p=s.plasser(s.TH.landmarkT,s.utside(),70,s.TW+s.GRAVEL_SAFE+60,121);
+      const L=p.halvLengde*2, tH=66, fot=L*0.62, topp=L*0.34;
+      bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      // Tårnet smalner oppover — det er innsmalningen som gir høyde på en flat
+      // tegning, samme grep som fyrtårnet på DUNA.
+      bx.fillStyle=P.mur;
+      bx.beginPath();
+      bx.moveTo(-fot/2,0); bx.lineTo(-topp/2,-tH); bx.lineTo(topp/2,-tH); bx.lineTo(fot/2,0);
+      bx.closePath(); bx.fill();
+      // Hatten må stikke FORBI vingenavet, ellers tegner vingekorset den helt
+      // bort — korset kommer sist og dekket en hatt på 16 px fullstendig.
+      bx.fillStyle=P.tak;
+      bx.beginPath();
+      bx.moveTo(-topp/2-6,-tH); bx.lineTo(0,-tH-26); bx.lineTo(topp/2+6,-tH);
+      bx.closePath(); bx.fill();
+      bx.fillStyle=P.vindu; bx.fillRect(-5,-tH*0.45,10,11);
+      // Vingekorset står på skrå og ikke rett opp: et kors med en vinge rett
+      // opp og en rett ned leses som et plusstegn, på skrå leses det som noe
+      // som roterer.
+      bx.translate(0,-tH-6); bx.rotate(0.42);
+      bx.fillStyle=P.vinge;
+      const vl=50, vb=7;
+      bx.fillRect(-vl,-vb/2,vl*2,vb);
+      bx.fillRect(-vb/2,-vl,vb,vl*2);
+      bx.restore();
+      s.lys(p.x,p.y,P.vindu,16);
+      s.sperr(p.x,p.y,L*0.75);
+    } },
   // Høstskog — fargene fra runde 2 beholdes, de var alt bankers.
   'ESSE':{ ground:['#1f160a','#2c2010','#3a2b16'], speckle:'autumn', asphalt:'#3c3835',
     runoff:{type:'grus',clr:'#7a6c54'}, curb:CURB_RW, cluster:0.40, ads:true,
-    treeTint:['#7a4a1f','#b8722a','#5c3315'], rockTint:'#7a6b58' },
+    treeTint:['#7a4a1f','#b8722a','#5c3315'], rockTint:'#7a6b58',
+    landmarkT:0.30,
+    lagPal:{ myr:'#9aa882', myrKant:'#b8c2a0', stolpe:'#b08968', hytte:'#c4a484',
+      tak:'#2a251f', vindu:'#facc15' },
+    // Taket leses mot tårnhytta det ligger på. Mot skogbunnen (#1f160a) måtte et
+    // tak vært lyst for å nå 3:1, og en lys topp på et mørkt tårn snur
+    // silhuetten på hodet.
+    lagMot:{ tak:'hytte' },
+    groundLayer(s){
+      const P=s.TH.lagPal, R=Math.min(s.bw,s.bh)*0.011;
+      // Myra er den ene flaten her som IKKE skal ha glimt, og derfor `flate` og
+      // ikke `vann`: det som ligger øverst på en myr er torvmosematta, ikke
+      // åpent vann. Glimt oppå den ville lest som sollys på en innsjø, og da er
+      // det en innsjø — skogen har alt en elv på ARDENNE.
+      //
+      // En lys myr i en nesten svart høstskog er dessuten den eneste store
+      // flaten som kunne måles her: bakketonene er de mørkeste på alle tretten
+      // baner, så en mørk tjern hadde forsvunnet uansett farge.
+      s.flate(s.belte(0.58,0.76,s.utside(),s.TW+s.GRAVEL_SAFE+32,R,4,300),
+        {flate:P.myr,kant:P.myrKant});
+    },
+    // Branntårn i tre: spretne ben med kryssbånd og en utkikkshytte på toppen.
+    // Et ÅPENT fagverk er formen ingen annen bane har — kirketårnet på ARDENNE
+    // er en lukket steinsøyle, dette er en stige man ser gjennom.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      // Et branntårn skal være høyt, men lerretet her gir bare 216 px (TW=44),
+      // og 141 px ut + 119 px høyt stakk 58 px utenfor. Benhøyden er derfor
+      // kuttet fra 86 til 60: det er FAGVERKET som bærer formen, og tre etasjer
+      // kryssbånd leses like godt på 60 px — en lavere avstand ut hadde i
+      // stedet satt tårnet nede i grusen.
+      const p=s.plasser(s.TH.landmarkT,s.utside(),60,s.TW+s.GRAVEL_SAFE+40,93);
+      const L=p.halvLengde*2, H=60, fot=L*0.58, topp=L*0.24;
+      bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      bx.strokeStyle=P.stolpe; bx.lineWidth=6; bx.lineCap='butt';
+      bx.beginPath();
+      bx.moveTo(-fot/2,0); bx.lineTo(-topp/2,-H);
+      bx.moveTo(fot/2,0);  bx.lineTo(topp/2,-H);
+      bx.stroke();
+      // Kryssbåndene i tre etasjer. Det er KRYSSENE som gjør benene til et
+      // fagverk — to skrå streker alene er bare et stativ.
+      bx.lineWidth=3;
+      bx.beginPath();
+      for(let k=0;k<3;k++){
+        const y0=-H*k/3, y1=-H*(k+1)/3;
+        const b0=fot/2+(topp/2-fot/2)*(k/3), b1=fot/2+(topp/2-fot/2)*((k+1)/3);
+        bx.moveTo(-b0,y0); bx.lineTo(b1,y1);
+        bx.moveTo(b0,y0);  bx.lineTo(-b1,y1);
+        bx.moveTo(-b1,y1); bx.lineTo(b1,y1);
+      }
+      bx.stroke();
+      const hb=L*0.46, hh=25;
+      bx.fillStyle=P.hytte; bx.fillRect(-hb/2,-H-hh,hb,hh);
+      bx.fillStyle=P.tak; bx.fillRect(-hb/2-5,-H-hh-8,hb+10,8);
+      bx.fillStyle=P.vindu; bx.fillRect(-7,-H-hh+7,14,10);
+      bx.restore();
+      s.lys(p.x,p.y,P.vindu,19);
+      s.sperr(p.x,p.y,L*0.7);
+    } },
   // Rødbrun jord i bakkene, og grønn/gul kerb. Grønnfargen er MÅLT mørk, ikke
   // valgt: den lyse grønnen (#16a34a) måler bare 2,15:1 mot gulet, og en kerb
   // er et vekselmønster — to toner som ligger så nær hverandre blir én
@@ -1632,7 +1963,77 @@ const THEMES={
   'DISCESA':{ ground:['#2e1d12','#3c2718','#4b3320'], speckle:'dry', asphalt:'#3d3533',
     runoff:{type:'grus',clr:'#7d6448'}, curb:['#166534','#facc15'], cluster:0.46, ads:true,
     treeTint:['#4a5c1f','#6b7a2a','#374512'], rockTint:'#8a5a42',
-    cityPal:['#b8674a','#c9825c','#a8573c','#d49a72'], roofPal:'#6b4030' },
+    cityPal:['#b8674a','#c9825c','#a8573c','#d49a72'], roofPal:'#6b4030',
+    landmarkT:0.46,
+    // Olivenlunden er MÅLT lys-sølvgrønn og ikke den olivengrønne tonen
+    // vegetasjonen ellers har her: `treeTint`-grønnen (#6b7a2a) måler bare
+    // 2,48:1 mot den lyseste jordtonen og stryker. At olivenblad faktisk er
+    // sølvgrå på undersiden er flaks — det var målingen som krevde lysere.
+    lagPal:{ oliven:'#a8b89a', olivenKant:'#c2cdb6', mur:'#cfc0a8', taarn:'#bfae95',
+      tak:'#8c4a32', vindu:'#facc15' },
+    // Tegltaket leses mot husveggen under. Samme unntak som ARDENNE og ALPEN.
+    lagMot:{ tak:'mur' },
+    groundLayer(s){
+      const P=s.TH.lagPal, bx=s.bx, R=Math.min(s.bw,s.bh)*0.013;
+      // Lunden tegnes som ENKELTKRONER i rader, ikke som én sammenhengende
+      // flate gjennom `flate`. En flate av overlappende sirkler ville lest som
+      // en innsjø i en ny farge — det er AVSTANDEN mellom kronene som sier at
+      // noen har plantet dem, og en plantet lund er hele forskjellen på en
+      // dyrket skråning og villmark.
+      //
+      // Kronene er 0,26 av sirkelradien fordi `belte` setter sentrene 0,55
+      // radier fra hverandre: to kroner på 0,26 så vidt ikke berører hverandre,
+      // mens 0,42 (første forsøk) lukket raden til en sammenhengende hekk.
+      const blobs=s.belte(0.52,0.78,s.utside(),s.TW+s.GRAVEL_SAFE+38,R,5,260);
+      bx.save();
+      blobs.forEach((b,i)=>{
+        const r=b.r*0.26;
+        // Hver tredje krone i den lyse tonen: en lund der hvert tre er helt
+        // likt leses som et mønster, ikke som trær.
+        bx.fillStyle=(i%3===0)?P.olivenKant:P.oliven;
+        bx.beginPath(); bx.arc(b.x,b.y,r,0,Math.PI*2); bx.fill();
+        s.sperr(b.x,b.y,r+4);
+      });
+      bx.restore();
+    },
+    // Olivengård: langt lavt steinhus med tegltak og et dueslag i enden.
+    // Dueslaget er det som skiller den fra kirka på ARDENNE — der er tårnet en
+    // spiss søyle, her er det en stubbe med et bredt utstikkende tak.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      // Dette er bygget som AVSLØRTE lerretstaket: 155 px ut + 84 px høyt
+      // (dueslag 74 + takutstikk 10) = 239 mot et lerret med 240 px, og
+      // dueslaget ble kuttet av en knivrett kant. Huset er lavt nok som det er,
+      // så her er det avstanden ut som gir etter — 155 til 123.
+      // Halvlengden er 85 og ikke 140: 280×52 er 5,4:1, og en så lang lav stripe
+      // med et tårn i den ene enden leser som tallet 1, ikke som en gård. Kortere
+      // hus gir samtidig tettere vinduer — fem vinduer spredt over 223 px så ut
+      // som tilfeldige prikker.
+      const p=s.plasser(s.TH.landmarkT,s.utside(),85,s.TW+s.GRAVEL_SAFE+50,67);
+      const L=p.halvLengde*2, hH=34, tb=34, tH=hH+24;
+      bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      bx.fillStyle=P.mur; bx.fillRect(-L/2,-hH,L,hH);
+      // Taket er TYKKERE enn veggen tåler i en ren oppriss-logikk, og det er med
+      // vilje: en 12 px stripe over en 40 px vegg forsvant, og da var bygget en
+      // lys planke. 18 mot 34 gir taket en tredel av silhuetten, som er omtrent
+      // det man ser av et tak på en lav gård.
+      bx.fillStyle=P.tak; bx.fillRect(-L/2-6,-hH-18,L+12,19);
+      // Dueslaget er gjort LAVERE og BREIERE: med 27 px bredde og 74 px høyde
+      // var det høyere enn huset selv, og et smalt høyt påbygg i enden av en
+      // lang lav stripe leser som tallet 1. Nå er det en stubbe på taket.
+      bx.fillStyle=P.taarn; bx.fillRect(L/2-tb,-tH,tb,tH);
+      bx.fillStyle=P.tak; bx.fillRect(L/2-tb-8,-tH-9,tb+14,10);
+      bx.fillStyle=P.vindu;
+      const n=5, steg=(L-tb-30)/n;
+      for(let k=0;k<n;k++) bx.fillRect(-L/2+16+k*steg,-hH+13,8,13);
+      bx.restore();
+      // Vendingen av den lokale x-aksen må tas med: vinduene står i den ENE
+      // enden, og uten faktoren havner gløden i motsatt ende av huset.
+      const vend=p.side>0?-1:1;
+      const tx=Math.cos(p.ang)*vend, ty=Math.sin(p.ang)*vend;
+      [-0.30,-0.05].forEach(f=>s.lys(p.x+tx*L*f,p.y+ty*L*f,P.vindu,18));
+      s.sperr(p.x,p.y,L*0.6);
+    } },
   // Snø og blågrønn furu — fargene fra runde 2 beholdes.
   'ALPEN':{ ground:['#0a1620','#14222e','#223445'], speckle:'snow', asphalt:'#353c41',
     runoff:{type:'grus',clr:'#6f767c'}, curb:CURB_RW, cluster:0.44, ads:true,
