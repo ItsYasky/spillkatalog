@@ -11,18 +11,18 @@ høyst én linje under som sier hvor i koden det gjelder.
 
 - [GRAND PRIX] Runde 4 steg C: bykvartaler og landemerker for LABIRINTO, SERPENTINA og VISTANOTTE – stor – 2026-10-30
   `dBuildingGrid` og city-grenen i `buildTrackBg`; de tre ble bevisst utsatt fordi landemerket og kvartalene må lages sammen.
-- [GRAND PRIX] Runde 4 steg D – ukjent – 2026-10-30
-  Innholdet er ikke skrevet ned noe sted; må planlegges før det kan estimeres.
-- [GRAND PRIX] Runde 4 steg E – ukjent – 2026-10-30
-  Samme som steg D: ikke nedskrevet ennå.
-- [GRAND PRIX] Vanskelighetsgrad-stigen henger ikke sammen – ukjent – 2026-10-30
-  Gjelder `DIFFICULTIES`; hva som konkret skal endres er ikke nedskrevet.
-- [GRAND PRIX] LEGENDE-nivå over ULTRA – ukjent – 2026-10-30
-  Nytt steg i `DIFFICULTIES`; avhenger av at stigen over er avklart først.
+- [GRAND PRIX] Runde 4 steg D: bevegelige detaljer, maks én per bane, bare når den er på skjermen, styrt av `raceTime` – middels – 2026-10-30
+  Samme steg: nattlys for byene, havna, pariserhjulet, lavaen, gården og hangarene; `addLight` lagrer VERDENSKOORDINATER.
+- [GRAND PRIX] Runde 4 steg E: kontaktark med alle 13 baner side om side, og sluttest på geometri, AI-sim, byggetid og bildefrekvens – liten – 2026-10-30
+  E1 (minikart i baneutvalget) er bevisst HOPPET OVER — den nye menyen bygger om baneutvalget uansett.
+- [GRAND PRIX] Vanskelighetsgrad-stigen: raskeste AI-bil mot Yasirs beste runde – middels – 2026-10-30
+  ENKEL 12–15 % tregere, MIDDELS 7–8 %, VANSKELIG 3–4 %, ULTRA 0,5–1,5 %; samme stige i CASUAL (REALISTISK ULTRA er ferdig). Mål bare MONTE SPIRA, ARDENNE og CAMPAGNA.
+- [GRAND PRIX] LEGENDE: femte nivå over ULTRA, like raskt som Yasirs beste runde ±0,5 %, ingen feil, hele feltet innenfor 1 % – stor – 2026-10-30
+  Kan kreve bedre AI-linjer i hårnålene; `buildRaceLine` er alt forsøkt strammet én gang og ble FORKASTET (se `CLAUDE.md` steg H).
 - [GRAND PRIX] Slå av banegrenser på ENKEL – liten – 2026-10-30
   `checkTrackLimits()`; en nybegynner skal ikke få slettet runder.
-- [GRAND PRIX] Ny meny – ukjent – 2026-10-30
-  Innholdet er ikke nedskrevet; dagens meny er bane-, runde- og vanskelighetsvalg.
+- [GRAND PRIX] Ny meny: hovedmeny, banevalg, innstillinger, pausemeny og resultatskjerm – middels – 2026-10-30
+  Innstillinger = modus, AI-nivå, distanse, tid på døgnet med AUTO, lag, skin, spøkelse. Ingen bokstavtaster, ESC går ett nivå tilbake, maks to trykk til løp.
 - [GRAND PRIX] ARDENNEs trær er praktisk talt usynlige, ~1,3:1 mot bakken – liten – 2026-10-30
   `treeTint:['#0e2e1c','#14472a','#071d12']` mot `ground:['#0b1710','#122017','#1b2c1e']`; et palettspørsmål fra runde 4 steg A.
 - [GRAND PRIX] ESSE/CASUAL/ULTRA har spredning 0,9857, så vidt under én runde – middels – 2026-10-30
@@ -38,10 +38,33 @@ høyst én linje under som sier hvor i koden det gjelder.
 
 ## Arkaden (felles)
 
-- [ARKADE] Del 1: felles `arkade.js` som spillene deler i stedet for at hver HTML-fil har sin egen kopi – stor – 2026-10-30
-  Gjelder alle spillene i rotmappa; innholdet er ikke nedskrevet ennå.
+- [ARKADE] Del 1: felles `arkade.js` med løkke, taster, pause, lagring og farger, tatt i bruk i de andre spillene – stor – 2026-10-30
+  Alle spillene i rotmappa har i dag hver sin kopi; `vintage_f1.html` og `asteroids.html` har de nyeste versjonene av løkka og tastehåndteringen.
+
+## Kritiske feil i de andre spillene
+
+Hører til ARKADE del 1, men står hver for seg så de kan tas enkeltvis.
+
+- [BLOKK] HOLD virker ikke – liten – 2026-10-30
+  `tetris.html`
+- [RACING] Gassen henger – liten – 2026-10-30
+  `racing.html`; samme familie som ASTEROIDER steg B, der `e.key` ble byttet til `e.code`.
+- [RACING] Falsk tidsstraff – liten – 2026-10-30
+  `racing.html`
+- [ROM-RYDDER] Ubalansert vanskelighetsgrad – liten – 2026-10-30
+  `space_shooter.html`
+- [KLODDE] Partiklene oppfører seg feil – liten – 2026-10-30
+  `mario.html`
+- [SLANGE] Svinger blir tapt – liten – 2026-10-30
+  `snake.html`; trolig samme sak som at taster leses i feil rekkefølge mot tidssteget.
 
 ## ASTEROIDER (`asteroids.html`)
 
-- [ASTEROIDER] Del 1 til 5 – ukjent – 2026-10-30
-  Steg A–D er ferdige (`743a0a8`, `5299f6d`, `f65fc68`, `2583e8a`); hva «del 1–5» skal inneholde er ikke nedskrevet.
+Steg A–D er ferdige (`743a0a8`, `5299f6d`, `f65fc68`, `2583e8a`). Resten tas én del om gangen.
+
+- [ASTEROIDER] Seedet tilfeldighet – liten – 2026-10-30
+  Gjøres før del 2; samme mønster som GRAND PRIX runde 4 steg A (`mulberry32` + `seedFromName`).
+- [ASTEROIDER] Del 2: lyd og juice – middels – 2026-10-30
+- [ASTEROIDER] Del 3: PULS-modus, der hjerteslaget er klokka – middels – 2026-10-30
+- [ASTEROIDER] Del 4: sektorer, steintyper og oppgraderinger – stor – 2026-10-30
+- [ASTEROIDER] Del 5: moduser og attract mode – middels – 2026-10-30
