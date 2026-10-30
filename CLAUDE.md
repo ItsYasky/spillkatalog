@@ -11,6 +11,20 @@ ekte navn i tekst spilleren kan se.
 Fargevalg avgjøres med **målt WCAG-kontrast**, ikke med øyemål. Kommentarer
 skrives på norsk og forklarer HVORFOR, ikke hva koden gjør.
 
+## Ventelista (`SENERE.md`)
+
+1. **Finner du noe utenfor det som er bestilt — en feil, et åpent punkt, en idé,
+   noe som kan forbedres — så FIKS DET IKKE.** Legg det nederst i `SENERE.md`
+   og nevn det med én linje i statusrapporten.
+2. Hvert punkt er én linje:
+   `[spill] kort beskrivelse – størrelse (liten / middels / stor) – dato`.
+   Trengs det, legg én linje under med hvor i koden det gjelder.
+3. Skriver Yasir **«rydd»**: les `SENERE.md`, slå sammen like punkter, fjern det
+   som allerede er gjort (sjekk koden og `git log`), og vis en nummerert liste
+   sortert etter hva som gir mest for minst arbeid. Maks 10 punkter, gruppert
+   per spill. **Ikke begynn på noe før han har valgt et nummer.**
+4. Er et punkt gjort, fjern det fra `SENERE.md` i SAMME commit.
+
 ## Kjøring av tester
 
 Det finnes **ingen `node`** på denne maskinen. Testene kjøres med
