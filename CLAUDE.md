@@ -492,6 +492,72 @@ ble bevisst ikke rørt her. Dessuten: `cfg.treeTint`/`rockTint`/`bushTint`/
 `groundBase`/`speckle` på cfg-nivå har INGEN lesere i det hele tatt etter at
 tonene flyttet inn i temaet — dødkode som bør ryddes for seg.
 
+### GRAND PRIX — nye menyer (`vintage_f1.html`)
+
+Målet: bytte ut dagens spredte bokstavtaster (←→ bane, ↑↓ AI-nivå, Q/E
+distanse, Z/X skin, C/V tid, L lag, P øving, TAB modus) med ÉN gjennomgående
+navigasjon i alle menyer — ↑↓ velger rad, ← → endrer verdi, ENTER velger,
+ESC går ett nivå tilbake (aldri rett ut) — og ingen bokstavtaster noe sted.
+Arbeidet er delt i fire steg (A–D); etter hvert steg testes, committes,
+loggføres her, og det stoppes for tilbakemelding før neste steg.
+
+| Steg | Status | Commit | Innhold | Test |
+|---|---|---|---|---|
+| A | ferdig | — | `SETTINGS`-objekt lagret i `localStorage` (`gp_innstillinger`), DITT LAG som ekte innstilling, TID PÅ DØGNET med AUTO (banens egen tid) og TILFELDIG, AI-NIVÅ lagret som NAVN (overlever modusbytte), og selve INNSTILLINGER-skjermen tegnet (med bilforhåndsvisning på SKIN-raden) | `test_innstillinger.js` (56/56) |
+| B | ikke begynt | — | Ny hovedmeny og banevalg, kobler INNSTILLINGER inn i navigasjonen, fjerner bokstavtastene | — |
+| C | ikke begynt | — | Pausemeny (fryser løpet helt) og ny resultatskjerm | — |
+| D | ikke begynt | — | Kontrast-/tekststørrelsessjekk av alle skjermer, oppdatert kontrollhjelp, sluttdokumentasjon | — |
+
+**Steg A i detalj:** `SETTINGS` samler modus, AI-nivå (som navn, ikke indeks —
+`DIFFICULTIES_CASUAL`/`DIFFICULTIES_REALISTIC` har samme navn på samme
+indeks, så navnet er det eneste som overlever et modusbytte), distanse, tid på
+døgnet, lag, skin og spøkelse-på/av. `lagreInnstillinger()`/
+`lastInnstillinger()` følger samme mønster som spøkelsets `skrivGhost()`/
+`lesGhost()`: try/catch rundt både lesing og skriving, og HVERT felt valideres
+for seg før det tas i bruk — ett ugyldig felt (f.eks. et lagnavn som ikke
+finnes mer) faller tilbake til standardverdien uten å dra resten av
+innstillingene med seg. `applySettingsToGame()` overfører `SETTINGS` til de
+kjøreklare variablene resten av spillet alt leser (REALISTIC, DIFFICULTIES,
+difficulty, lapsIdx/LAPS, skinSel, ghostOn), og kjøres ved oppstart og hver
+gang en rad endres i INNSTILLINGER.
+
+Banenes `naturligTid` (lagt til i `buildTrack`s returobjekt, fallback `'DAG'`):
+DESERTO og VISTANOTTE → NATT, SERPENTINA og VULCANO → SOLNEDGANG, resten DAG.
+AUTO i INNSTILLINGER viser «Banens egen tid · <BANE>: <TID>» under raden,
+uavhengig av om raden er markert — det er informasjon, ikke en forklaring
+knyttet til valget. AI-NIVÅ-forklaringen vises derimot KUN når raden er
+markert, slik oppgaven ba om. Teksten er resultatorientert, ikke teknisk
+(«Du vinner med små feil.», ikke noe om gummistrikk) — og ENKEL fikk bevisst
+IKKE «Banegrenser av.» i teksten, for den funksjonen finnes ikke ennå (se
+`SENERE.md`).
+
+**Avvik/presiseringer i steg A:**
+1. Selve INNSTILLINGER-skjermen (tegning + ↑↓←→/ESC-håndtering i
+   `state==='settings'`) er bygget nå, slik oppgaven ba om, men har IKKE fått
+   noen inngang fra hovedmenyen eller banevalget ennå — det hinten selv sa
+   skulle komme i steg B («↓ goes to INNSTILLINGER»). Testet manuelt i
+   nettleser ved å sette `state='settings'` direkte (se skjermbilder i
+   samtalen), siden det ikke finnes en vei dit i spillet før steg B kobler
+   den inn.
+2. DITT LAG-raden viser lagets KORTE navn (`t.name`, samme som
+   LAGOVERSIKT-rutene), ikke hele `teamFullName()` (sponsor + navn) — den
+   fulle teksten er for lang til å stå høyrejustert uten å kunne krasje inn i
+   radetiketten til venstre for lange lagnavn.
+3. Bakgrunnen på den nye skjermen er `#07090d` (fra skissen), ikke spillets
+   delte `#05070a` — alle farger på skjermen er derfor målt på nytt mot akkurat
+   DEN bakgrunnen (se `/tmp/contrast2.js`, ikke en prosjektfil) og ikke arvet
+   fra andre skjermers paletter. `#64748b`, som resten av spillet bruker til
+   dempet hjelpetekst, stryker på 4,19:1 mot denne bakgrunnen og er derfor
+   ERSTATTET med `#94a3b8` (7,77:1) på denne ene skjermen.
+4. De gamle bokstavtastene i banevalget (Q/E/Z/X/C/V/L/P) og TAB i hovedmenyen
+   er bevisst IKKE rørt eller fjernet i steg A — det er eksplisitt steg B sin
+   jobb, og å fjerne dem nå ville latt banevalget stå uten noen måte å endre
+   de samme valgene på før steg B er på plass.
+5. Et `.claude/launch.json` fantes allerede i hjemmekatalogen med en
+   `arkade`-server (`python3 -m http.server 3400 --directory ~/spillkatalog`)
+   — den ble brukt for den manuelle nettleserverifiseringen i stedet for å
+   lage en ny.
+
 ### ASTEROIDER (`asteroids.html`)
 
 | Steg | Status | Commit | Innhold |

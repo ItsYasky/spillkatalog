@@ -307,7 +307,8 @@ function buildTrack(cfg){
   }
   // bgScale<1 = banen er for stor for ett canvas, bakgrunnen tegnes nedskalert
   return {CP,PATH,PN,heading,smoothCurv,severity,raceLine,TW:cfg.TW,name:cfg.name,info:cfg.info,
-    straightZones,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,terrain:cfg.terrain||'forest',cfg,
+    straightZones,sfAng,sfx,sfy,walls:!!cfg.walls,wallOffsArr,terrain:cfg.terrain||'forest',
+    naturligTid:cfg.naturligTid||'DAG',cfg,
     // Temaet hører til geometri-halvdelen selv om det bare styrer pynt:
     // baneutvalget tegner minikart i banens egen bakketone, og det skjer før
     // bakgrunnen noensinne bygges.
@@ -2404,7 +2405,7 @@ const TRACKS=[
     straightCount:3
   }),
   buildTrack({name:'DESERTO', info:'Ørken · Høy fart, lange rettstrekk', ncp:40, R0:1872, cx:1720, cy:1720,
-    wobbleAmp:14, wobbleFreq:2, wobblePhase:0, TW:74, terrain:'arid',
+    wobbleAmp:14, wobbleFreq:2, wobblePhase:0, TW:74, terrain:'arid', naturligTid:'NATT',
     features:[
       {a0:.075*Math.PI*2,width:.016*Math.PI*2,depth:170},
       {a0:.105*Math.PI*2,width:.016*Math.PI*2,depth:-190},
@@ -2455,7 +2456,7 @@ const TRACKS=[
     straightCount:2
   }),
   buildTrack({name:'SERPENTINA', info:'Bygater · Høy fart i kveldslys', ncp:34, R0:1560, cx:1600, cy:1500,
-    wobbleAmp:10, wobbleFreq:2, wobblePhase:.5, TW:46, terrain:'city', cityPal:'#3a2d4a', graffiti:true,
+    wobbleAmp:10, wobbleFreq:2, wobblePhase:.5, TW:46, terrain:'city', cityPal:'#3a2d4a', graffiti:true, naturligTid:'SOLNEDGANG',
     features:[
       {a0:.06*Math.PI*2,width:.026*Math.PI*2,depth:220},
       {a0:.19*Math.PI*2,width:.014*Math.PI*2,depth:-440},
@@ -2466,7 +2467,7 @@ const TRACKS=[
     straightCount:2
   }),
   buildTrack({name:'VULCANO', info:'Smalest · Opp og ned fjellet', ncp:38, R0:1300, cx:1350, cy:1400,
-    wobbleAmp:10, wobbleFreq:2, wobblePhase:.7, TW:36, terrain:'volcanic',
+    wobbleAmp:10, wobbleFreq:2, wobblePhase:.7, TW:36, terrain:'volcanic', naturligTid:'SOLNEDGANG',
     features:[
       {a0:.04*Math.PI*2,width:.018*Math.PI*2,depth:-420},
       {a0:.12*Math.PI*2,width:.015*Math.PI*2,depth:250},
@@ -2622,7 +2623,7 @@ const TRACKS=[
   // via a 6-trial x 3600-tick AI-only sweep going from 155-456 wall-hit
   // events per run down to 0 across every trial.
   buildTrack({name:'VISTANOTTE', info:'Neonby · Lang rettstrekk, street circuit', ncp:58, R0:1950, cx:1850, cy:1850,
-    wobbleAmp:8, wobbleFreq:2, wobblePhase:.1, TW:56, terrain:'city', cityPal:'#120a24', walls:true,
+    wobbleAmp:8, wobbleFreq:2, wobblePhase:.1, TW:56, terrain:'city', cityPal:'#120a24', walls:true, naturligTid:'NATT',
     features:[
       {a0:.05*Math.PI*2,width:.014*Math.PI*2,depth:-440},
       {a0:.10*Math.PI*2,width:.012*Math.PI*2,depth:-200},
@@ -2913,8 +2914,11 @@ function skinAt(i){
 // bygget, slik at bilen du ser er bilen du får.
 let playerIdent=null;
 function rollPlayerIdent(){
+  // DITT LAG kan nå være et fast valg (settingsTeam()) i stedet for alltid
+  // tilfeldig — sjåførnummeret trekkes fortsatt, det har ingen innstilling.
+  const fast=settingsTeam();
   playerIdent={
-    team:TEAMS[Math.floor(Math.random()*TEAMS.length)],
+    team:fast||TEAMS[Math.floor(Math.random()*TEAMS.length)],
     num:1+Math.floor(Math.random()*DRIVERS_PER_TEAM)
   };
 }
@@ -3029,6 +3033,8 @@ let TR=TRACKS[0];
 let cars=[],player,state='menu',raceTime=0,keys={},particles=[],texts=[];
 let shake=0, confetti=[], winTimer=0, toasts=[], podiumCrowd=[];
 let trackSel=0, cntTimer=0;
+let settingsSel=0;          // hvilken rad som er markert i INNSTILLINGER
+let settingsReturnTo='menu'; // hvor ESC sender deg tilbake fra INNSTILLINGER
 let camX=0,camY=0,camAngle=0;
 const CHASE_Y = HY+(H-HY)*0.68; // chase-cam anchor: car sits lower on screen, more track visible ahead
 let bestSector=[Infinity,Infinity,Infinity];
@@ -3396,6 +3402,7 @@ function buildCars(){
 // loop() slik at spillet ikke byks framover etterpå.
 function startRace(){
   TR=TRACKS[trackSel];
+  todIdx=resolveTodIdx(TR);
   ensureTrackBg(TR);
   buildCars(); buildCarSprites();
   particles=[]; texts=[]; confetti=[]; toasts=[]; shake=0; winTimer=0; raceTime=0;
@@ -3405,6 +3412,7 @@ function startRace(){
 
 function startPractice(){
   TR=TRACKS[trackSel];
+  todIdx=resolveTodIdx(TR);
   ensureTrackBg(TR);
   // Samme lag som i løp, slik at STANDARD-lakkeringen ser lik ut i begge modi.
   if(!playerIdent) rollPlayerIdent();
@@ -3508,6 +3516,94 @@ let ghostSpr=null;       // den hvite sprite-en
 let ghostDist0=0;        // raceDist da inneværende runde begynte
 let ghostProgMax=0;      // største tilbakelagte del av runden, se ghostDelta()
 let ghostNextT=0;        // raceTime for neste punkt som skal tas opp
+
+// ── Innstillinger (lagres i localStorage) ────────────────────────────────────
+// Alt spilleren velger samles i ÉTT objekt og lagres under samme nøkkel, slik
+// at neste besøk starter nøyaktig der forrige sesjon slapp, i stedet for at
+// hvert valg (modus, AI-nivå, distanse, tid på døgnet, lag, skin, spøkelse)
+// har sin egen usynkroniserte kilde.
+const SETTINGS_KEY='gp_innstillinger';
+const SETTINGS_VER=1;
+const SETTINGS={
+  realistisk:false,   // false = CASUAL, true = REALISTISK
+  aiNavn:'MIDDELS',   // navn, ikke indeks — se settingsAiIndex()
+  lapsIdx:1,          // indeks i LAP_OPTIONS
+  tid:'AUTO',         // 'AUTO' | 'TILFELDIG' | et navn fra TOD
+  lag:'TILFELDIG',    // 'TILFELDIG' | et lagnavn fra TEAMS
+  skinIdx:0,          // indeks i SKINS
+  spokelse:true       // spøkelse på/av i øving
+};
+
+// Lagres på hvert enkelt valg, ikke bare ved avslutning — spilleren kan lukke
+// fanen når som helst, og et valg som bare lå i minnet til neste lagring ville
+// forsvunnet akkurat da.
+function lagreInnstillinger(){
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(Object.assign({v:SETTINGS_VER}, SETTINGS)));
+  } catch(e){ /* lagring blokkert eller kvoten full — spillet går videre med valget i minnet */ }
+}
+
+// Samme mønster som lesGhost(): tåler blokkert lagring, ødelagt JSON og en
+// ukjent versjon. Hvert felt sjekkes for seg, så ett ugyldig felt (f.eks. et
+// lagnavn som ikke finnes mer) ikke drar resten av SETTINGS-objektet med seg
+// tilbake til standardverdiene.
+function lastInnstillinger(){
+  let raa=null;
+  try { raa=localStorage.getItem(SETTINGS_KEY); }
+  catch(e){ return; }
+  if(!raa) return;
+  let d=null;
+  try { d=JSON.parse(raa); } catch(e){ return; }
+  if(!d || typeof d!=='object' || d.v!==SETTINGS_VER) return;
+  if(typeof d.realistisk==='boolean') SETTINGS.realistisk=d.realistisk;
+  if(typeof d.aiNavn==='string' && DIFFICULTIES_CASUAL.some(x=>x.name===d.aiNavn)) SETTINGS.aiNavn=d.aiNavn;
+  if(Number.isInteger(d.lapsIdx) && LAP_OPTIONS[d.lapsIdx]!==undefined) SETTINGS.lapsIdx=d.lapsIdx;
+  if(typeof d.tid==='string' && (d.tid==='AUTO'||d.tid==='TILFELDIG'||TOD.some(t=>t.name===d.tid))) SETTINGS.tid=d.tid;
+  if(typeof d.lag==='string' && (d.lag==='TILFELDIG'||TEAMS.some(t=>t.name===d.lag))) SETTINGS.lag=d.lag;
+  if(Number.isInteger(d.skinIdx) && SKINS[d.skinIdx]!==undefined) SETTINGS.skinIdx=d.skinIdx;
+  if(typeof d.spokelse==='boolean') SETTINGS.spokelse=d.spokelse;
+}
+
+// DIFFICULTIES_CASUAL og DIFFICULTIES_REALISTIC har samme navn i samme
+// rekkefølge (ENKEL/MIDDELS/VANSKELIG/ULTRA), så et navn er den eneste
+// lagringsformen som overlever et modusbytte — en indeks ville bare slumpe
+// til å peke på samme tier fordi listene har lik lengde.
+function settingsAiIndex(){
+  const i=DIFFICULTIES.findIndex(d=>d.name===SETTINGS.aiNavn);
+  return i>=0 ? i : 1;
+}
+
+// null = ikke et fast lag, altså fortsatt tilfeldig trekning i rollPlayerIdent().
+function settingsTeam(){
+  if(SETTINGS.lag==='TILFELDIG') return null;
+  return TEAMS.find(t=>t.name===SETTINGS.lag) || null;
+}
+
+// AUTO bruker banens egen naturlige tid (buildTrack setter naturligTid:'DAG'
+// som fallback for baner uten noe annet), TILFELDIG trekker én av de tre hver
+// gang banen startes, og alt annet er et fast valg.
+function resolveTodIdx(tr){
+  let navn=SETTINGS.tid;
+  if(navn==='TILFELDIG') navn=TOD[Math.floor(Math.random()*TOD.length)].name;
+  else if(navn==='AUTO') navn=tr.naturligTid||'DAG';
+  const i=TOD.findIndex(t=>t.name===navn);
+  return i>=0 ? i : 0;
+}
+
+// Overfører SETTINGS til de kjøreklare variablene resten av spillet alt leser
+// (REALISTIC, DIFFICULTIES, difficulty, lapsIdx/LAPS, skinSel, ghostOn).
+// Kjøres ved oppstart og hver gang et valg endres i innstillingsskjermen.
+function applySettingsToGame(){
+  REALISTIC=SETTINGS.realistisk;
+  DIFFICULTIES=REALISTIC?DIFFICULTIES_REALISTIC:DIFFICULTIES_CASUAL;
+  difficulty=settingsAiIndex();
+  lapsIdx=SETTINGS.lapsIdx; LAPS=LAP_OPTIONS[lapsIdx];
+  skinSel=SETTINGS.skinIdx;
+  ghostOn=SETTINGS.spokelse;
+}
+
+lastInnstillinger();
+applySettingsToGame();
 
 // Nøkkelen skiller på bane OG modus: realistisk og casual har ulik toppfart og
 // ulikt grep, så en tid satt i den ene er ikke en tid det er meningsfullt å
@@ -5174,6 +5270,117 @@ function draw(){
     ctx.restore(); return;
   }
 
+  // ── innstillinger ─────────────────────────────────────────────────────
+  // Egen, mørkere bakgrunn (#07090d mot resten av spillets #05070a) fordi
+  // denne skjermen ikke har noe racing-innhold bak seg å kontrastere mot —
+  // den må stå helt på egne ben. Alle farger under er målt mot DENNE
+  // bakgrunnen, ikke arvet fra de andre skjermenes paletter.
+  if(state==='settings'){
+    ctx.fillStyle='#07090d'; ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('INNSTILLINGER',W/2,40);
+    ctx.fillStyle='#94a3b8'; ctx.font='9px Courier New';
+    ctx.fillText('↑ ↓ velg rad   ← → endre',W/2,60);
+
+    // Faste y-posisjoner per rad (ikke stablet dynamisk), slik at en
+    // forklaringslinje som vises eller skjules aldri flytter radene under den.
+    const ROW_LABELS=['MODUS','AI-NIVÅ','DISTANSE','TID PÅ DØGNET','DITT LAG','SKIN','SPØKELSE (ØVING)'];
+    const ROW_Y=[112,172,238,296,360,416,486];
+    const SUB_DY=18;
+    const LX=60, RX=W-60;
+
+    function settingsRow(i,drawVal){
+      const sel=i===settingsSel, y=ROW_Y[i];
+      ctx.textAlign='left';
+      if(sel){
+        // Rød venstrekant + ▸, nøyaktig som skissen ba om — selve pilen og
+        // raden den markerer må uansett nå 4,5:1 selv, bare kanten lener seg
+        // på rødt (3:1 er nok for en ikke-tekstlig markør).
+        ctx.fillStyle='#e10600'; ctx.fillRect(40,y-9,4,18);
+        ctx.fillStyle='#f1f5f9'; ctx.font='bold 12px Courier New';
+        ctx.fillText('▸',50,y);
+        ctx.fillText(ROW_LABELS[i],LX+12,y);
+      } else {
+        ctx.fillStyle='#94a3b8'; ctx.font='12px Courier New';
+        ctx.fillText(ROW_LABELS[i],LX,y);
+      }
+      drawVal(sel,y);
+      ctx.textAlign='center';
+    }
+
+    settingsRow(0,(sel,y)=>{
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle=REALISTIC?'#f59e0b':'#38bdf8';
+      ctx.fillText(REALISTIC?'REALISTISK':'CASUAL',RX,y);
+    });
+
+    settingsRow(1,(sel,y)=>{
+      const D=DIFFICULTIES[difficulty];
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle=D.clr; ctx.fillText(D.name,RX,y);
+      if(sel){
+        // Teksten beskriver RESULTATET for spilleren, aldri mekanismen bak
+        // (ingen «gummistrikk», ingen interne tallnavn) — se CLAUDE.md.
+        const FORKLARING={ENKEL:'For å lære banene.',MIDDELS:'Du vinner med små feil.',VANSKELIG:'Du må kjøre bra for å vinne.',ULTRA:'AI-en kjører nesten perfekt.'};
+        ctx.textAlign='center'; ctx.fillStyle='#94a3b8'; ctx.font='9px Courier New';
+        ctx.fillText(FORKLARING[D.name]||'',W/2,y+SUB_DY);
+      }
+    });
+
+    settingsRow(2,(sel,y)=>{
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle='#facc15'; ctx.fillText(`${LAPS} RUNDER`,RX,y);
+    });
+
+    settingsRow(3,(sel,y)=>{
+      const tr0=TRACKS[trackSel], naturlig=tr0.naturligTid||'DAG';
+      let visning,farge;
+      if(SETTINGS.tid==='AUTO'){
+        const td=TOD.find(t=>t.name===naturlig)||TOD[0];
+        visning=`${td.name} (AUTO)`; farge=td.clr;
+      } else if(SETTINGS.tid==='TILFELDIG'){
+        visning='TILFELDIG'; farge='#94a3b8';
+      } else {
+        const td=TOD.find(t=>t.name===SETTINGS.tid)||TOD[0];
+        visning=td.name; farge=td.clr;
+      }
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle=farge; ctx.fillText(visning,RX,y);
+      if(SETTINGS.tid==='AUTO'){
+        ctx.textAlign='center'; ctx.fillStyle='#94a3b8'; ctx.font='9px Courier New';
+        ctx.fillText(`Banens egen tid · ${tr0.name}: ${naturlig}`,W/2,y+SUB_DY);
+      }
+    });
+
+    settingsRow(4,(sel,y)=>{
+      let navn,farge;
+      if(SETTINGS.lag==='TILFELDIG'){ navn='TILFELDIG'; farge='#94a3b8'; }
+      else {
+        const t=TEAMS.find(t=>t.name===SETTINGS.lag);
+        navn=t?t.name:'TILFELDIG'; farge=t?teamInk(t.color):'#94a3b8';
+      }
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle=farge; ctx.fillText(navn,RX,y);
+    });
+
+    settingsRow(5,(sel,y)=>{
+      const sk=skinAt(skinSel);
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle='#f1f5f9'; ctx.fillText(sk.name,W-140,y);
+      drawCarShape(ctx,previewLivery(sk),{x:W-78,y,scale:2.2,shadow:false});
+    });
+
+    settingsRow(6,(sel,y)=>{
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle=ghostOn?GHOST_COL:GHOST_TXT_DIM;
+      ctx.fillText(ghostOn?'PÅ':'AV',RX,y);
+    });
+
+    ctx.textAlign='center';
+    ctx.fillStyle='#94a3b8'; ctx.font='9px Courier New'; ctx.fillText('ESC tilbake',W/2,650);
+    ctx.restore(); return;
+  }
+
   // ── racing scene ──
   drawTrackScene();
 
@@ -5638,6 +5845,50 @@ document.addEventListener('keydown',e=>{
   if(state==='teams'){
     if(e.key==='Escape'||e.key==='l'||e.key==='L'){ state='trackselect'; return; }
     return; // ingen andre taster gjør noe mens oversikten er oppe
+  }
+  // INNSTILLINGER bruker samme ↑↓←→-mønster som resten av de nye menyene:
+  // ↑↓ flytter markøren mellom radene, ← → endrer verdien på raden som er
+  // markert, og ESC går ett nivå tilbake — til der skjermen ble åpnet fra,
+  // ikke rett ut til katalogen. Ingen bokstavtaster her.
+  if(state==='settings'){
+    if(e.key==='Escape'){ state=settingsReturnTo; return; }
+    if(e.key==='ArrowUp') settingsSel=(settingsSel+6)%7;
+    if(e.key==='ArrowDown') settingsSel=(settingsSel+1)%7;
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+      const dir=e.key==='ArrowRight'?1:-1;
+      if(settingsSel===0){
+        SETTINGS.realistisk=!SETTINGS.realistisk;
+        applySettingsToGame(); // henter difficulty på nytt fra aiNavn i rett tabell
+      } else if(settingsSel===1){
+        difficulty=(difficulty+dir+DIFFICULTIES.length)%DIFFICULTIES.length;
+        SETTINGS.aiNavn=DIFFICULTIES[difficulty].name;
+      } else if(settingsSel===2){
+        lapsIdx=(lapsIdx+dir+LAP_OPTIONS.length)%LAP_OPTIONS.length;
+        LAPS=LAP_OPTIONS[lapsIdx];
+        SETTINGS.lapsIdx=lapsIdx;
+      } else if(settingsSel===3){
+        const valg=['AUTO','TILFELDIG',...TOD.map(t=>t.name)];
+        const i=(valg.indexOf(SETTINGS.tid)+dir+valg.length)%valg.length;
+        SETTINGS.tid=valg[i];
+      } else if(settingsSel===4){
+        const valg=['TILFELDIG',...TEAMS.map(t=>t.name)];
+        const i=(valg.indexOf(SETTINGS.lag)+dir+valg.length)%valg.length;
+        SETTINGS.lag=valg[i];
+        // Oppdater laget med en gang, slik at forhåndsvisningen i baneutvalget
+        // stemmer selv om spilleren ikke går via ENTER på hovedmenyen igjen.
+        const fast=settingsTeam();
+        if(!playerIdent) rollPlayerIdent();
+        else playerIdent.team=fast||TEAMS[Math.floor(Math.random()*TEAMS.length)];
+      } else if(settingsSel===5){
+        skinSel=(skinSel+dir+SKINS.length)%SKINS.length;
+        SETTINGS.skinIdx=skinSel;
+      } else if(settingsSel===6){
+        ghostOn=!ghostOn;
+        SETTINGS.spokelse=ghostOn;
+      }
+      lagreInnstillinger();
+    }
+    return; // ingen andre taster gjør noe i innstillingene
   }
   if(e.key==='Escape'){window.location.href='index.html';return;}
   if(e.key==='Enter'){
