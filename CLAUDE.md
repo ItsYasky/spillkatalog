@@ -504,7 +504,7 @@ loggføres her, og det stoppes for tilbakemelding før neste steg.
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
 | A | ferdig | — | `SETTINGS`-objekt lagret i `localStorage` (`gp_innstillinger`), DITT LAG som ekte innstilling, TID PÅ DØGNET med AUTO (banens egen tid) og TILFELDIG, AI-NIVÅ lagret som NAVN (overlever modusbytte), og selve INNSTILLINGER-skjermen tegnet (med bilforhåndsvisning på SKIN-raden) | `test_innstillinger.js` (56/56) |
-| B | ikke begynt | — | Ny hovedmeny og banevalg, kobler INNSTILLINGER inn i navigasjonen, fjerner bokstavtastene | — |
+| B | ferdig | — | Ny hovedmeny (LØP/ØVING/INNSTILLINGER/LAG) og ombygd banevalg (karusell + samlet innstillingsboks + KJØR/ØVING-knapp), INNSTILLINGER koblet inn fra begge, LAGOVERSIKT nå nådd fra hovedmenyen (ikke `L`), alle bokstavtaster og TAB fjernet | `test_hovedmeny.js` (34/34), `test_innstillinger.js` (56/56, uendret) |
 | C | ikke begynt | — | Pausemeny (fryser løpet helt) og ny resultatskjerm | — |
 | D | ikke begynt | — | Kontrast-/tekststørrelsessjekk av alle skjermer, oppdatert kontrollhjelp, sluttdokumentasjon | — |
 
@@ -557,6 +557,37 @@ IKKE «Banegrenser av.» i teksten, for den funksjonen finnes ikke ennå (se
    `arkade`-server (`python3 -m http.server 3400 --directory ~/spillkatalog`)
    — den ble brukt for den manuelle nettleserverifiseringen i stedet for å
    lage en ny.
+
+**Steg B i detalj:** hovedmenyen har fire rader (LØP/ØVING/INNSTILLINGER/LAG)
+med samme ↑↓/ENTER-mønster som INNSTILLINGER. `menuTarget` ('race'/'practice')
+settes når LØP eller ØVING velges og leses av banevalgets egen ENTER-handler,
+siden banevalget selv ikke vet hvilken av de to du kom fra. Banevalget mistet
+Q/E/Z/X/C/V/L (rundelengde, skin, tid, lagoversikt) — alt det bor nå i
+INNSTILLINGER, nådd med ↓ (`settingsReturnTo='trackselect'`), eller i
+hovedmenyen for LAG (`teamsReturnTo='menu'`). ESC går ett nivå tilbake overalt
+unntatt i selve hovedmenyen, der det går ut til katalogen — nøyaktig
+oppskriften fra bestillingen.
+
+**Avvik/presiseringer i steg B:**
+1. Den første versjonen av kontrollhjelpen på hovedmenyen lovet «ESC Pause»
+   sammen med gass/brems/styr. Pausemenyen er steg C og finnes ikke ennå — i
+   dag gjør ESC under løpet akkurat det samme som alle andre steder (rett ut
+   til katalogen, se den generelle ESC-fallbacken i `keydown`). Linja er
+   rettet til å ikke love en funksjon spillet ikke har. Funnet ved å se på
+   skjermbildet av den nye hovedmenyen, ikke ved testing — testen dekker
+   tilstandsmaskinen, ikke tegnet tekst.
+2. `test_hovedmeny.js` kaller IKKE de ekte `startRace()`/`startPractice()` —
+   begge bygger banebakgrunn på et ekte canvas (`ensureTrackBg`), og JSC-stubben
+   har ingen `getImageData` som returnerer ekte piksler. Testen bytter dem ut
+   med flagg-stubber før den trykker ENTER i banevalget, og sjekker bare HVILKEN
+   av de to som ble kalt ut fra `menuTarget` — samme avveining som
+   `test_innstillinger.js` gjorde da den varslet at selve navigasjonen ville
+   bli testet i steg B.
+3. Funnet, men IKKE rettet (utenfor det som ble bestilt i steg B, se
+   `SENERE.md`): banevalg-karusellens dempede tekst (`#64748b` banenavn,
+   `#475569` baneinfo) stryker på 4,5:1-kravet mot bakgrunnen — begge er eldre
+   farger fra før meny-arbeidet, uberørt av denne endringen. Fanges uansett av
+   steg D, som eksplisitt skal kontrastsjekke alle skjermer.
 
 ### ASTEROIDER (`asteroids.html`)
 

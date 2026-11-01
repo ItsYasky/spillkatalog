@@ -3035,6 +3035,11 @@ let shake=0, confetti=[], winTimer=0, toasts=[], podiumCrowd=[];
 let trackSel=0, cntTimer=0;
 let settingsSel=0;          // hvilken rad som er markert i INNSTILLINGER
 let settingsReturnTo='menu'; // hvor ESC sender deg tilbake fra INNSTILLINGER
+let menuSel=0;               // hvilken rad som er markert i hovedmenyen
+// Satt av hovedmenyens LØP/ØVING-rad, lest når ENTER trykkes i baneutvalget —
+// banevalget vet selv ikke om du er på vei til et løp eller en øvingsøkt.
+let menuTarget='race';
+let teamsReturnTo='menu';   // hvor ESC sender deg tilbake fra LAGOVERSIKT
 let camX=0,camY=0,camAngle=0;
 const CHASE_Y = HY+(H-HY)*0.68; // chase-cam anchor: car sits lower on screen, more track visible ahead
 let bestSector=[Infinity,Infinity,Infinity];
@@ -3588,6 +3593,20 @@ function resolveTodIdx(tr){
   else if(navn==='AUTO') navn=tr.naturligTid||'DAG';
   const i=TOD.findIndex(t=>t.name===navn);
   return i>=0 ? i : 0;
+}
+
+// Visningstekst for SETTINGS.tid på en gitt bane — delt mellom INNSTILLINGER
+// (raden for TID PÅ DØGNET) og innstillingsboksen i baneutvalget, slik at de
+// to skjermene ikke kan vise ulik tekst for samme valg.
+function tidVisning(tr){
+  const naturlig=tr.naturligTid||'DAG';
+  if(SETTINGS.tid==='AUTO'){
+    const td=TOD.find(t=>t.name===naturlig)||TOD[0];
+    return {text:`${td.name} (AUTO)`, farge:td.clr, naturlig};
+  }
+  if(SETTINGS.tid==='TILFELDIG') return {text:'TILFELDIG', farge:'#94a3b8', naturlig};
+  const td=TOD.find(t=>t.name===SETTINGS.tid)||TOD[0];
+  return {text:td.name, farge:td.clr, naturlig};
 }
 
 // Overfører SETTINGS til de kjøreklare variablene resten av spillet alt leser
@@ -5081,33 +5100,42 @@ function draw(){
   if(state==='menu'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     const accent=REALISTIC?'#f59e0b':'#e10600';
-    ctx.fillStyle=accent; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,H/2-150);
-    ctx.fillStyle='#64748b'; ctx.font='10px Courier New';
-    ctx.fillText(REALISTIC
-      ? `mye høyere toppfart · ekte dekkgrep · ${TRACKS.length} baner · 20 sjåfører · 4 AI-nivåer`
-      : `ekte GP-stil · ${TRACKS.length} baner · 20 sjåfører · øvingsmodus · 4 AI-nivåer`, W/2,H/2-122);
-    // mode toggle — picked here on the main menu, before you ever touch
-    // track-select, exactly where "before you enter the game" belongs.
-    ctx.fillStyle='rgba(255,255,255,.04)'; ctx.fillRect(W/2-120,H/2-104,240,22);
-    ctx.strokeStyle=accent; ctx.lineWidth=1.4; ctx.strokeRect(W/2-120,H/2-104,240,22);
-    ctx.fillStyle=accent; ctx.font='bold 12px Courier New';
-    ctx.fillText(`MODUS: ${REALISTIC?'REALISTISK':'CASUAL'}`,W/2,H/2-93);
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('TAB — bytt modus',W/2,H/2-76);
-    ctx.fillStyle='#334155'; ctx.font='10px Courier New';
-    // Sju rader nå, ikke seks. Linjeavstanden er kuttet fra 17 til 15 px og
-    // starten flyttet 4 px opp, ellers hadde den siste raden landet oppå
-    // setningen om grep/fart lenger nede (den står fast på H/2+56).
-    [['↑ / W','Gass'],['↓ / S',REALISTIC?'Brems — kreves før svinger!':'Brems'],['← → / A D','Styr'],['SPACE','Rett-modus i lilla sone'],['SHIFT','Boost (batteri)'],['(auto)','Overtake: innenfor 1 s ved mål'],['(auto)','Slipstream tett bak andre']].forEach(([k,v],i)=>{
-      ctx.fillStyle=accent; ctx.textAlign='right'; ctx.fillText(k,W/2-6,H/2-54+i*15);
-      ctx.fillStyle='#64748b'; ctx.textAlign='left'; ctx.fillText(v,W/2+6,H/2-54+i*15);
+    ctx.fillStyle=accent; ctx.font='bold 42px Courier New'; ctx.fillText('GRAND PRIX',W/2,110);
+    // Oppsummeringslinje: PRINSIPP 5 — det du har valgt er alltid synlig,
+    // også her, uten å måtte åpne INNSTILLINGER for å sjekke. MODUS-boksen og
+    // TAB-bytteren som lå her før er borte: modus er nå ett av radene i
+    // INNSTILLINGER, i tråd med «ingen bokstavtaster i menyene».
+    ctx.fillStyle='#c3cad4'; ctx.font='bold 10px Courier New';
+    ctx.fillText(`${REALISTIC?'REALISTISK':'CASUAL'} · ${DIFFICULTIES[difficulty].name} · ${LAPS} RUNDER · ${tidVisning(TRACKS[trackSel]).text}`,W/2,144);
+    // ── hovedmeny: fire rader, samme navigasjon som INNSTILLINGER ──
+    // (↑↓ velg rad, ENTER bekreft) — ingen TAB, ingen bokstavtaster.
+    const MENU_LABELS=['LØP','ØVING','INNSTILLINGER','LAG'];
+    const MROW_Y0=240, MROW_DY=54;
+    MENU_LABELS.forEach((label,i)=>{
+      const y=MROW_Y0+i*MROW_DY, sel=i===menuSel;
+      ctx.textAlign='left';
+      if(sel){
+        // Samme oppskrift som den valgte raden i INNSTILLINGER: mørk bakgrunn
+        // + rød 4 px venstrekant + ▸, der det faktisk er pilen og den fete,
+        // lyse teksten som bærer kontrasten — kanten og bakgrunnsvasken er
+        // rene ikke-tekstlige markører (3:1 er nok, se INNSTILLINGER).
+        ctx.fillStyle='#161b24'; ctx.fillRect(W/2-150,y-17,300,34);
+        ctx.fillStyle='#e10600'; ctx.fillRect(W/2-150,y-17,4,34);
+        ctx.fillStyle='#f1f5f9'; ctx.font='bold 16px Courier New';
+        ctx.fillText('▸ '+label,W/2-130,y);
+      } else {
+        ctx.fillStyle='#9aa4b2'; ctx.font='16px Courier New';
+        ctx.fillText(label,W/2-130,y);
+      }
     });
-    ctx.fillStyle='#94a3b8'; ctx.font='11px Courier New'; ctx.textAlign='center';
-    ctx.fillText(REALISTIC
-      ? 'For mye fart inn i en sving = du mister grepet og kjører av.'
-      : 'Utenfor banen = du mister fart og tid.', W/2,H/2+56);
-    ctx.fillStyle=accent; ctx.font='bold 14px Courier New';
-    ctx.fillText('ENTER — velg bane',W/2,H/2+84);
-    ctx.fillStyle='#1e293b'; ctx.font='8px Courier New'; ctx.fillText('ESC Katalog',W/2,H-20);
+    ctx.textAlign='center';
+    // ── kontrollhjelp, flyttet til bunnen (var sju rader midt på skjermen) ──
+    ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+    // Ingen «ESC Pause» her: pausemenyen er steg C og finnes ikke ennå — ESC
+    // gjør i dag det samme under løpet som alle andre steder (ut til
+    // katalogen), og linja skal ikke love noe spillet ikke kan ennå.
+    ctx.fillText('↑ Gass · ↓ Brems · ← → Styr · SPACE Rett-modus · SHIFT Boost',W/2,H-36);
+    ctx.fillText('↑ ↓ velg · ENTER bekreft · ESC katalog',W/2,H-20);
     ctx.restore(); return;
   }
 
@@ -5122,8 +5150,11 @@ function draw(){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 18px Courier New';
     ctx.fillText('LAGOVERSIKT',W/2,36);
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New';
-    ctx.fillText('10 lag · 20 sjåfører · L eller ESC lukker',W/2,54);
+    // L-snarveien er fjernet sammen med de andre bokstavtastene (steg B) —
+    // bare ESC lukker nå. #334155 (gammel farge) målte 1,95:1 mot bakgrunnen
+    // og strøk; #9aa4b2 er en av de tre faste tekstfargene fra meny-skissen.
+    ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+    ctx.fillText('10 lag · 20 sjåfører · ESC lukker',W/2,54);
     const colW=248, rowH=112, y0=74;
     TEAMS.forEach((t,i)=>{
       const col=i%2, row=(i/2)|0;
@@ -5156,6 +5187,7 @@ function draw(){
 
   if(state==='trackselect'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
+    if(!playerIdent) rollPlayerIdent();
     // Skjermen er omorganisert fordi bil-forhåndsvisningen trenger ekte plass
     // (den er 74×46 px) og fordi lagvalget kommer til på toppen. Innstillingene
     // under karusellen står derfor i to kolonner i stedet for én lang stabel,
@@ -5164,24 +5196,12 @@ function draw(){
     // Ingen tekst under 9 px: de to 8 px-linjene (baneteller og ESC-hintet) er
     // hevet til 9, som er grensen der Courier New fortsatt er til å lese.
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('VELG BANE',W/2,62);
-    // mode reminder — chosen back on the main menu, just a small corner tag here
-    ctx.textAlign='right'; ctx.font='bold 9px Courier New';
-    ctx.fillStyle=REALISTIC?'#f59e0b':'#38bdf8';
-    ctx.fillText(REALISTIC?'MODUS: REALISTISK':'MODUS: CASUAL',W-12,22);
-    ctx.textAlign='center';
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New';
-    ctx.fillText('← → bytt bane   ENTER kjør løp   P øvingskjøring',W/2,82);
-    ctx.fillStyle='#1e293b'; ctx.font='9px Courier New';
-    ctx.fillText(`BANE ${trackSel+1} / ${TRACKS.length}  ·  20 sjåfører på startgrid`,W/2,96);
-    // Laget ditt er trukket allerede (rollPlayerIdent), så det kan vises her.
-    // Plassen mellom banetelleren og karusellen var ledig fra før.
-    {
-      if(!playerIdent) rollPlayerIdent();
-      ctx.font='bold 11px Courier New'; ctx.fillStyle=teamInk(playerIdent.team.color);
-      ctx.fillText(`DITT LAG: ${teamFullName(playerIdent.team)}`,W/2,116);
-      ctx.font='9px Courier New'; ctx.fillStyle='#334155';
-      ctx.fillText('L — lagoversikt',W/2,130);
-    }
+    // MODUS-hjørnet, DITT LAG-linjen og AI-nivå/distanse/tid/skin-radene som
+    // før lå spredt rundt skjermen bak sine egne bokstavtaster (Q/E/Z/X/C/V/L)
+    // er nå samlet i ÉN innstillingsboks under karusellen. Banevalget har
+    // bare ← → for bane, ENTER for å kjøre og ↓ til INNSTILLINGER.
+    ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+    ctx.fillText(`BANE ${trackSel+1} / ${TRACKS.length}  ·  20 sjåfører på startgrid`,W/2,82);
     // carousel: only render prev/current/next out of all TRACKS, so the
     // 6-track (and growing) roster still fits the 520px-wide canvas.
     const N=TRACKS.length;
@@ -5189,7 +5209,7 @@ function draw(){
       const ti=((trackSel+d)%N+N)%N;
       const t=TRACKS[ti];
       const sel=d===0;
-      const bx0=60+(d+1)*150, by0=142, bw0=130, bh0=290;
+      const bx0=60+(d+1)*150, by0=108, bw0=130, bh0=290;
       ctx.fillStyle=sel?'rgba(225,6,0,.12)':'rgba(255,255,255,.03)';
       ctx.fillRect(bx0,by0,bw0,bh0);
       ctx.strokeStyle=sel?'#e10600':'#1e293b'; ctx.lineWidth=sel?2.5:1;
@@ -5231,42 +5251,31 @@ function draw(){
       // samme skjedde med «DRS-soner» her tidligere.
       ctx.fillText(`Bredde ${t.TW*2}  ·  RETT ${t.straightZones.length}`,ccx,by0+ph+60+lines.length*11);
     });
-    // ── AI difficulty ──
+    // ── samlet innstillingsboks ──────────────────────────────────────────
+    // Erstatter AI-nivå/distanse/tid/skin-radene og DITT LAG-linjen som før
+    // lå spredt rundt skjermen, hver bak sin egen bokstavtast (Q/E/Z/X/C/V).
+    // Rammefargen #232a36 er hentet rett fra skissens UTSEENDE-avsnitt — den
+    // er bevisst lav kontrast (dekorativ ramme, ikke bærer av informasjon;
+    // selve innholdet i boksen leses fra tekst som MÅLES til 4,5:1 under).
     {
-      const D=DIFFICULTIES[difficulty];
-      ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('↑ ↓ AI-nivå',W/2,448);
-      ctx.fillStyle=D.clr; ctx.font='bold 12px Courier New'; ctx.fillText(`AI: ${D.name}`,W/2,462);
+      const D=DIFFICULTIES[difficulty], sk=skinAt(skinSel);
+      const bx=60, by=410, bw=400, bh=76;
+      ctx.strokeStyle='#232a36'; ctx.lineWidth=1; ctx.strokeRect(bx,by,bw,bh);
+      ctx.fillStyle='#c3cad4'; ctx.font='bold 11px Courier New';
+      ctx.fillText(`${REALISTIC?'REALISTISK':'CASUAL'} · ${D.name} · ${LAPS} RUNDER · ${tidVisning(TRACKS[trackSel]).text}`,W/2,by+22);
+      ctx.fillText(`DITT LAG: ${teamFullName(playerIdent.team)} · SKIN ${sk.name}`,W/2,by+42);
+      ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+      ctx.fillText('↓ endre innstillinger',W/2,by+60);
     }
-    // ── two columns: distance on the left, time of day on the right ──
-    // De sto før i én stabel nedover, men stabelen endte på y=662 og lot ikke
-    // bil-forhåndsvisningen få plass noe sted. To kolonner frigjør ~56 px.
-    const COL_L=140, COL_R=380;
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New';
-    ctx.fillText('Q E rundelengde',COL_L,486);
-    ctx.fillText('C V tid på døgnet',COL_R,486);
-    ctx.fillStyle='#facc15'; ctx.font='bold 12px Courier New';
-    ctx.fillText(`DISTANSE: ${LAPS} RUNDER`,COL_L,500);
+    // ── KJØR-knapp ── stor, rød, nederst — matcher teksten i footeren under.
     {
-      const td=TOD[todIdx];
-      ctx.fillStyle=td.clr; ctx.font='bold 12px Courier New';
-      ctx.fillText(`TID: ${td.name}`,COL_R,500);
+      const bw=170, bh=44, bx=W/2-bw/2, by=500;
+      ctx.fillStyle='#e10600'; ctx.fillRect(bx,by,bw,bh);
+      ctx.fillStyle='#f1f5f9'; ctx.font='bold 16px Courier New';
+      ctx.fillText(menuTarget==='practice'?'ØVING':'KJØR',W/2,by+bh/2);
     }
-    // ── skin selector ──
-    ctx.fillStyle='#334155'; ctx.font='9px Courier New'; ctx.fillText('Z X bil-skin',W/2,518);
-    {
-      // Den gamle 16×10-fargeprøven sa ingenting om hvordan bilen faktisk ville
-      // se ut — den viste to farger uten å vise hvor de havnet. Nå tegnes hele
-      // bilen i valgt lakkering med den samme funksjonen som brukes på banen,
-      // så det du ser her er nøyaktig det du får i løpet. Den koster 74×46 px,
-      // og det er grunnen til at hele skjermen er omorganisert: navnet står til
-      // venstre for bilen i stedet for over den, slik at linjeavstanden holder.
-      const sk=skinAt(skinSel);
-      ctx.fillStyle='#f1f5f9'; ctx.font='bold 12px Courier New'; ctx.textAlign='right';
-      ctx.fillText(`SKIN: ${sk.name}`,250,556);
-      drawCarShape(ctx,previewLivery(sk),{x:310,y:556,scale:2.5,shadow:false});
-      ctx.textAlign='center';
-    }
-    ctx.fillStyle='#1e293b'; ctx.font='9px Courier New'; ctx.fillText('ESC Katalog',W/2,660);
+    ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+    ctx.fillText(`← → bane  ·  ENTER ${menuTarget==='practice'?'øving':'kjør'}  ·  ↓ innstillinger  ·  ESC tilbake`,W/2,644);
     ctx.restore(); return;
   }
 
@@ -5333,17 +5342,8 @@ function draw(){
     });
 
     settingsRow(3,(sel,y)=>{
-      const tr0=TRACKS[trackSel], naturlig=tr0.naturligTid||'DAG';
-      let visning,farge;
-      if(SETTINGS.tid==='AUTO'){
-        const td=TOD.find(t=>t.name===naturlig)||TOD[0];
-        visning=`${td.name} (AUTO)`; farge=td.clr;
-      } else if(SETTINGS.tid==='TILFELDIG'){
-        visning='TILFELDIG'; farge='#94a3b8';
-      } else {
-        const td=TOD.find(t=>t.name===SETTINGS.tid)||TOD[0];
-        visning=td.name; farge=td.clr;
-      }
+      const tr0=TRACKS[trackSel];
+      const {text:visning,farge,naturlig}=tidVisning(tr0);
       ctx.textAlign='right'; ctx.font='bold 12px Courier New';
       ctx.fillStyle=farge; ctx.fillText(visning,RX,y);
       if(SETTINGS.tid==='AUTO'){
@@ -5843,7 +5843,10 @@ document.addEventListener('keydown',e=>{
   // ESC skal lukke den og gå tilbake dit — ikke helt ut til katalogen. Denne
   // sjekken må derfor stå før den globale ESC-håndteringen under.
   if(state==='teams'){
-    if(e.key==='Escape'||e.key==='l'||e.key==='L'){ state='trackselect'; return; }
+    // L-snarveien som lukket oversikten er fjernet — ingen bokstavtaster i de
+    // nye menyene. teamsReturnTo settes der LAGOVERSIKT åpnes (nå hovedmenyen),
+    // slik at ESC går ett nivå tilbake, ikke til et fast sted.
+    if(e.key==='Escape'){ state=teamsReturnTo; return; }
     return; // ingen andre taster gjør noe mens oversikten er oppe
   }
   // INNSTILLINGER bruker samme ↑↓←→-mønster som resten av de nye menyene:
@@ -5890,32 +5893,41 @@ document.addEventListener('keydown',e=>{
     }
     return; // ingen andre taster gjør noe i innstillingene
   }
-  if(e.key==='Escape'){window.location.href='index.html';return;}
-  if(e.key==='Enter'){
-    // Nytt lag trekkes når du går inn i baneutvalget, ikke når løpet starter,
-    // slik at bil-forhåndsvisningen viser det laget du faktisk skal kjøre for.
-    if(state==='menu'){ rollPlayerIdent(); state='trackselect'; }
-    else if(state==='trackselect') startRace();
-    else if(state==='win') startRace();
+  // Hovedmenyen: ↑↓ velger rad, ENTER bekrefter, ESC går til katalogen — det
+  // er det ENESTE stedet ESC gjør det, resten av menyene går ett nivå opp.
+  // Ingen TAB her lenger: modus er flyttet inn som en rad i INNSTILLINGER.
+  if(state==='menu'){
+    if(e.key==='Escape'){ window.location.href='index.html'; return; }
+    if(e.key==='ArrowUp') menuSel=(menuSel+3)%4;
+    if(e.key==='ArrowDown') menuSel=(menuSel+1)%4;
+    if(e.key==='Enter'){
+      // Nytt lag trekkes når du går inn i baneutvalget, ikke når løpet
+      // starter, slik at bil-forhåndsvisningen viser laget du faktisk kjører
+      // for. menuTarget forteller baneutvalget om ENTER der skal gi løp eller
+      // øving — selve banevalget vet ikke hvilken av de to du kom fra.
+      if(menuSel===0){ menuTarget='race'; rollPlayerIdent(); state='trackselect'; }
+      else if(menuSel===1){ menuTarget='practice'; rollPlayerIdent(); state='trackselect'; }
+      else if(menuSel===2){ settingsReturnTo='menu'; state='settings'; }
+      else if(menuSel===3){ teamsReturnTo='menu'; state='teams'; }
+    }
+    return;
   }
-  if(state==='menu' && e.key==='Tab'){
-    e.preventDefault(); // Tab normally shifts page focus — this is a game control
-    REALISTIC=!REALISTIC;
-    DIFFICULTIES=REALISTIC?DIFFICULTIES_REALISTIC:DIFFICULTIES_CASUAL;
-  }
+  // Baneutvalget: bare ← → for bane og ENTER for å kjøre/øve. ↓ går til
+  // INNSTILLINGER (settingsReturnTo peker tilbake hit), ESC går til
+  // hovedmenyen — ikke rett ut til katalogen. De gamle bokstavtastene
+  // (Q/E rundelengde, Z/X skin, C/V tid, L lagoversikt, P øving) er borte;
+  // alle de valgene bor nå i INNSTILLINGER eller i hovedmenyen.
   if(state==='trackselect'){
+    if(e.key==='Escape'){ state='menu'; return; }
     if(e.key==='ArrowLeft') trackSel=(trackSel+TRACKS.length-1)%TRACKS.length;
     if(e.key==='ArrowRight') trackSel=(trackSel+1)%TRACKS.length;
-    if(e.key==='ArrowUp') difficulty=(difficulty+DIFFICULTIES.length-1)%DIFFICULTIES.length;
-    if(e.key==='ArrowDown') difficulty=(difficulty+1)%DIFFICULTIES.length;
-    if(e.key==='p'||e.key==='P') startPractice();
-    if(e.key==='q'||e.key==='Q'){ lapsIdx=(lapsIdx+LAP_OPTIONS.length-1)%LAP_OPTIONS.length; LAPS=LAP_OPTIONS[lapsIdx]; }
-    if(e.key==='e'||e.key==='E'){ lapsIdx=(lapsIdx+1)%LAP_OPTIONS.length; LAPS=LAP_OPTIONS[lapsIdx]; }
-    if(e.key==='z'||e.key==='Z') skinSel=(skinSel+SKINS.length-1)%SKINS.length;
-    if(e.key==='x'||e.key==='X') skinSel=(skinSel+1)%SKINS.length;
-    if(e.key==='l'||e.key==='L') state='teams';
-    if(e.key==='c'||e.key==='C') todIdx=(todIdx+TOD.length-1)%TOD.length;
-    if(e.key==='v'||e.key==='V') todIdx=(todIdx+1)%TOD.length;
+    if(e.key==='ArrowDown'){ settingsReturnTo='trackselect'; state='settings'; return; }
+    if(e.key==='Enter'){ menuTarget==='practice' ? startPractice() : startRace(); return; }
+    return;
+  }
+  if(e.key==='Escape'){window.location.href='index.html';return;}
+  if(e.key==='Enter'){
+    if(state==='win') startRace();
   }
   if(state==='win' && (e.key==='t'||e.key==='T')) state='trackselect';
   if(state==='practice'){
