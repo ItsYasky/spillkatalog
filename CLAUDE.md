@@ -504,7 +504,7 @@ loggføres her, og det stoppes for tilbakemelding før neste steg.
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
 | A | ferdig | — | `SETTINGS`-objekt lagret i `localStorage` (`gp_innstillinger`), DITT LAG som ekte innstilling, TID PÅ DØGNET med AUTO (banens egen tid) og TILFELDIG, AI-NIVÅ lagret som NAVN (overlever modusbytte), og selve INNSTILLINGER-skjermen tegnet (med bilforhåndsvisning på SKIN-raden) | `test_innstillinger.js` (56/56) |
-| B | ferdig | — | Ny hovedmeny (LØP/ØVING/INNSTILLINGER/LAG) og ombygd banevalg (karusell + samlet innstillingsboks + KJØR/ØVING-knapp), INNSTILLINGER koblet inn fra begge, LAGOVERSIKT nå nådd fra hovedmenyen (ikke `L`), alle bokstavtaster og TAB fjernet | `test_hovedmeny.js` (34/34), `test_innstillinger.js` (56/56, uendret) |
+| B | ferdig | `ff3c151` | Ny hovedmeny (LØP/ØVING/INNSTILLINGER/LAG) og ombygd banevalg (karusell + samlet innstillingsboks + KJØR/ØVING-knapp), INNSTILLINGER koblet inn fra begge, LAGOVERSIKT nå nådd fra hovedmenyen (ikke `L`), alle bokstavtaster og TAB fjernet | `test_hovedmeny.js` (34/34), `test_innstillinger.js` (56/56, uendret) |
 | C | ikke begynt | — | Pausemeny (fryser løpet helt) og ny resultatskjerm | — |
 | D | ikke begynt | — | Kontrast-/tekststørrelsessjekk av alle skjermer, oppdatert kontrollhjelp, sluttdokumentasjon | — |
 
