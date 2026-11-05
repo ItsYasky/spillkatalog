@@ -506,7 +506,7 @@ loggføres her, og det stoppes for tilbakemelding før neste steg.
 | A | ferdig | — | `SETTINGS`-objekt lagret i `localStorage` (`gp_innstillinger`), DITT LAG som ekte innstilling, TID PÅ DØGNET med AUTO (banens egen tid) og TILFELDIG, AI-NIVÅ lagret som NAVN (overlever modusbytte), og selve INNSTILLINGER-skjermen tegnet (med bilforhåndsvisning på SKIN-raden) | `test_innstillinger.js` (56/56) |
 | B | ferdig | `ff3c151` | Ny hovedmeny (LØP/ØVING/INNSTILLINGER/LAG) og ombygd banevalg (karusell + samlet innstillingsboks + KJØR/ØVING-knapp), INNSTILLINGER koblet inn fra begge, LAGOVERSIKT nå nådd fra hovedmenyen (ikke `L`), alle bokstavtaster og TAB fjernet | `test_hovedmeny.js` (34/34), `test_innstillinger.js` (56/56, uendret) |
 | C | ferdig | `874598e` | Pausemeny (fryser løpet helt) og ny resultatskjerm | `test_pause.js` (33/33) |
-| D | ikke begynt | — | Kontrast-/tekststørrelsessjekk av alle skjermer, oppdatert kontrollhjelp, sluttdokumentasjon | — |
+| D | ferdig | `TBD` | Kontrast-/tekststørrelsessjekk av alle skjermer, oppdatert kontrollhjelp, sluttdokumentasjon | `test_meny_kontrast.js` (117/117) |
 
 **Steg A i detalj:** `SETTINGS` samler modus, AI-nivå (som navn, ikke indeks —
 `DIFFICULTIES_CASUAL`/`DIFFICULTIES_REALISTIC` har samme navn på samme
@@ -634,6 +634,48 @@ mellom dem mens spillet sto i pause.
    `player.x/y/angle` ubetinget helt på slutten (kamerafølging), uavhengig av
    om `cars` er tom, så et kall uten en spillerstubb kastet en feil
    (`player.x` på `undefined`) før funnet.
+
+**Steg D i detalj:** `test_meny_kontrast.js` måler spillets EGEN
+`contrastRatio()` (ikke en kopi, ellers kunne testen hatt samme feil som
+koden) mot den FAKTISKE bakgrunnen hver tekst males over på alle fem
+skjermene — korttintene på LAGOVERSIKT/BANEVALG (alfa-komponert mot
+`#05070a`) og verste-fall-overlegget på PAUSEMENY/RESULTATSKJERM
+(`rgba(5,7,10,.88)` komponert mot HVIT, siden selve løpsscenen bak alltid er
+mørkere enn hvitt og derfor aldri gir lavere kontrast enn verste-fall). Første
+kjøring: 88/119 bestått, 31 feil.
+
+**Avvik/presiseringer i steg D:**
+1. `teamInk(hex)` garanterer bare ≥4,5:1 mot `UI_BG` (`#0b0b0e`). Resultat-/
+   pauseoverleggets verste-fall-bakgrunn (`#232527`) er LYSERE enn `UI_BG`, så
+   7 av 10 lagfarger falt til 3,60–3,78:1 der. `teamInk`/`podiumInk` deler nå
+   samme `inkFor(hex,bg,cache)`-kjerne (lysner i HSL til 4,5:1 eller L=0,92),
+   men med to ulike bakgrunner og to ulike cacher — `podiumInk` brukes KUN på
+   resultatskjermens tekst, ikke på det dekorative flaggtrekantfyllet, som
+   ikke bærer informasjon alene og derfor ikke er med i testen.
+2. Fire hardkodede farger strøk mot sin faktiske bakgrunn og ikke mot der de
+   opprinnelig ble målt: `#64748b` (3,23–4,09:1), `#475569` (2,54–2,56:1),
+   `#334155` (1,49:1, beste runde-linja) og `#ef4444` (4,09:1, straffetid).
+   Alle er erstattet med farger som alt var bevist et annet sted i spillet —
+   `#9aa4b2` (6,10–8,00:1 mot alle berørte bakgrunner) og `#f87171` (samme
+   rødtone som `#ef4444`, lysere, 5,56:1). Den dekorative `'···'`-skillelinja
+   i resultatlista er bevisst IKKE rørt (fortsatt `#334155`) — den bærer ingen
+   informasjon alene og er unntatt av samme grunn som flaggtrekanten.
+3. Kontrollhjelpen på hovedmenyen lovet fortsatt ikke «ESC Pause», en rest fra
+   steg B der pausemenyen (steg C) ikke fantes ennå. Lagt til nå
+   (`... · ESC Pause`, 72 tegn ≈ 389 px på et 520 px lerret). De andre fire
+   skjermenes kontrollhjelp (BANEVALG, INNSTILLINGER, RESULTATSKJERM,
+   PAUSEMENY) var alt korrekte og trengte ingen endring.
+4. Bokføringsfunn, rettet i egen commit (`bba0633`) før dette steget: steg
+   G/H i del 3-tabellen stod som «pågår» uten hash enda arbeidet var committet
+   i `10f2261`.
+
+Alle 117 sjekker er bestått (sjekktallet falt fra 119 til 117 da LAGOVERSIKTs
+fire separate sponsorlinje-sjekker ble slått sammen til to, siden etikett og
+sponsorlinjer deler samme tekstfarge). Hele «nye menyer»-arbeidet
+(A–D) er med dette ferdig: ÉN gjennomgående ↑↓/←→/ENTER/ESC-navigasjon i alle
+fem skjermer, ingen bokstavtaster eller TAB noe sted, og alt av tekst på alle
+skjermer er MÅLT til å holde WCAG 2.1 (4,5:1 vanlig tekst, 3:1 stor tekst) mot
+den bakgrunnen den faktisk males over — ikke mot en antatt eller arvet bakgrunn.
 
 ### ASTEROIDER (`asteroids.html`)
 

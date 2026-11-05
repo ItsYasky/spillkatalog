@@ -2783,18 +2783,28 @@ function hslToHex(h,s,l){
   else           [r,g,b]=[c,0,x];
   return '#'+[r,g,b].map(v=>Math.round((v+m)*255).toString(16).padStart(2,'0')).join('');
 }
-function teamInk(hex){
-  if(inkCache[hex]) return inkCache[hex];
+function inkFor(hex,bg,cache){
+  if(cache[hex]) return cache[hex];
   const [h,s,l0]=rgbToHsl(...hex.replace('#','').match(/../g).map(v=>parseInt(v,16)));
   let l=l0, out=hex;
   // 2 % lysere om gangen. Taket på L=0,92 hindrer at en farge som aldri når
   // kravet (finnes ikke blant dagens lag, men kan legges til) løper til hvitt.
-  while(contrastRatio(out,UI_BG)<4.5 && l<0.92){
+  while(contrastRatio(out,bg)<4.5 && l<0.92){
     l=Math.min(0.92,l+0.02);
     out=hslToHex(h,s,l);
   }
-  return inkCache[hex]=out;
+  return cache[hex]=out;
 }
+function teamInk(hex){ return inkFor(hex,UI_BG,inkCache); }
+// Resultatskjermen og pausemenyen ligger på et halvtransparent overlegg
+// (rgba(5,7,10,.88)) over selve løpsscenen, ikke på UI_BG. Komponert mot
+// hvitt — den lyseste bakgrunnen som faktisk kan ligge bak teksten der,
+// f.eks. et lysmalt skinn eller en kerb — blir overlegget #232527, LYSERE
+// enn UI_BG. teamInk sin garanti holder derfor ikke her (se
+// test_meny_kontrast.js, steg D): et eget merke mot denne bakgrunnen.
+const RESULT_BG_WORST='#232527';
+const podiumInkCache={};
+function podiumInk(hex){ return inkFor(hex,RESULT_BG_WORST,podiumInkCache); }
 const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 
 // AI difficulty tiers — rebuilt so the tiers are differentiated by TECHNIQUE,
@@ -5143,10 +5153,10 @@ function draw(){
     ctx.textAlign='center';
     // ── kontrollhjelp, flyttet til bunnen (var sju rader midt på skjermen) ──
     ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
-    // Ingen «ESC Pause» her: pausemenyen er steg C og finnes ikke ennå — ESC
-    // gjør i dag det samme under løpet som alle andre steder (ut til
-    // katalogen), og linja skal ikke love noe spillet ikke kan ennå.
-    ctx.fillText('↑ Gass · ↓ Brems · ← → Styr · SPACE Rett-modus · SHIFT Boost',W/2,H-36);
+    // «ESC Pause» lagt til i steg D: pausemenyen (steg C) fantes ikke da linja
+    // først ble skrevet, så ESC under løpet gjorde da det samme som overalt
+    // ellers (rett ut til katalogen). Nå åpner den pausemenyen i stedet.
+    ctx.fillText('↑ Gass · ↓ Brems · ← → Styr · SPACE Rett-modus · SHIFT Boost · ESC Pause',W/2,H-36);
     ctx.fillText('↑ ↓ velg · ENTER bekreft · ESC katalog',W/2,H-20);
     ctx.restore(); return;
   }
@@ -5185,9 +5195,11 @@ function draw(){
       ctx.fillText(`${t.name} (${t.short})`,tx,cy0+20);
       ctx.font='9px Courier New'; ctx.fillStyle='#cbd5e1';
       ctx.fillText(t.sponsor,tx,cy0+36);
-      ctx.fillStyle='#475569';
+      // #475569/#64748b strøk mot kortets lysnede bakgrunn (1,95:1 og 4,08:1
+      // mot de to korttonene, se test_meny_kontrast.js) — samme dempede grå
+      // som undertekstlinja over («10 lag · ...») i stedet.
+      ctx.fillStyle='#9aa4b2';
       ctx.fillText('Sponsorer:',tx,cy0+56);
-      ctx.fillStyle='#64748b';
       ctx.fillText(t.sponsors[0],tx,cy0+70);
       ctx.fillText(t.sponsors[1],tx,cy0+84);
       ctx.textAlign='center';
@@ -5241,13 +5253,16 @@ function draw(){
       ctx.closePath(); ctx.stroke();
       ctx.strokeStyle=sel?'#38bdf8':'#334155'; ctx.lineWidth=2; ctx.stroke();
       ctx.restore();
-      ctx.fillStyle=sel?'#f1f5f9':'#64748b'; ctx.font='bold 13px Courier New';
+      // Uvalgt banenavn var '#64748b' (4,06:1, under 4,5:1-kravet mot
+      // korttonen) — se test_meny_kontrast.js, steg D.
+      ctx.fillStyle=sel?'#f1f5f9':'#9aa4b2'; ctx.font='bold 13px Courier New';
       ctx.fillText(t.name,ccx,by0+ph+40);
       // t.info er en hel setning og var aldri smal nok til å få plass i en boks
       // på 130 px: den rant ut til begge sider og la seg oppå nabobanenes
       // tekst. Den brytes derfor på ordgrenser til bredden inne i boksen, så
       // hver bane holder seg på sin egen flate uansett hvor lang infoen er.
-      ctx.fillStyle='#475569'; ctx.font='9px Courier New';
+      // '#475569' strøk her (2,54:1) — samme dempede grå som banenavnet over.
+      ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
       const maxW=bw0-14, words=t.info.split(' '), lines=[];
       let cur='';
       words.forEach(w=>{
@@ -5778,7 +5793,7 @@ function draw(){
       // lagt seg oppå hverandre. Mindre skrift er ikke et alternativ (9 px er
       // gulvet). Det fulle navnet vises i stedet på egen linje under podiet,
       // der det er 520 px å ta av.
-      ctx.fillStyle=teamInk(car.team.color); ctx.font='bold 9px Courier New';
+      ctx.fillStyle=podiumInk(car.team.color); ctx.font='bold 9px Courier New';
       ctx.fillText((car.isPlayer?'DU':car.team.name+' '+car.num)+penaltyLabel(car),slot.cx,BASE+15);
     });
 
@@ -5786,21 +5801,25 @@ function draw(){
     // bredden, siden det ikke fikk plass under blokka.
     if(podium[0]){
       const w0=podium[0];
-      ctx.font='bold 11px Courier New'; ctx.fillStyle=teamInk(w0.team.color);
+      ctx.font='bold 11px Courier New'; ctx.fillStyle=podiumInk(w0.team.color);
       ctx.fillText(`${teamFullName(w0.team)} ${w0.num}`,W/2,BASE+38);
     }
-    ctx.fillStyle='#64748b'; ctx.font='12px Courier New';
+    // #64748b/#334155 strøk mot overleggets verste-fall-bakgrunn (se
+    // RESULT_BG_WORST, test_meny_kontrast.js) — brukt samme dempede grå som
+    // resten av skjermen (#9aa4b2) i stedet.
+    ctx.fillStyle='#9aa4b2'; ctx.font='12px Courier New';
     // Totaltiden er løpstid PLUSS straffetid, altså det samme tallet lista
     // rangeres på. Hadde den stått uten straffen, ville spilleren sett en
     // plassering som ikke stemte med tiden rett ved siden av.
     ctx.fillText(`${player.finalPlace}. plass · Totaltid: ${finalTimeSec(player).toFixed(1)}s`,W/2,BASE+58);
     if(player.penaltySec>0){
-      ctx.fillStyle='#ef4444'; ctx.font='10px Courier New';
+      // #ef4444 strøk også (4,09:1) — #f87171 er samme rødtone, lysere.
+      ctx.fillStyle='#f87171'; ctx.font='10px Courier New';
       ctx.fillText(`Inkludert +${player.penaltySec}s straff · ${player.limitViolations} banegrensebrudd`,W/2,BASE+74);
     }
     if(player.lapTimes.length){
       const best=Math.min(...player.lapTimes.map(Number)).toFixed(2);
-      ctx.fillStyle='#334155'; ctx.font='10px Courier New';
+      ctx.fillStyle='#9aa4b2'; ctx.font='10px Courier New';
       ctx.fillText(`Beste runde: ${best}s`,W/2,BASE+(player.penaltySec>0?90:76));
     }
 
@@ -5816,7 +5835,7 @@ function draw(){
         const ry=listY0+i*15;
         if(row.gap){ ctx.fillStyle='#334155'; ctx.fillText('···',W/2,ry); return; }
         const c=row.c;
-        ctx.fillStyle=teamInk(c.team.color);
+        ctx.fillStyle=podiumInk(c.team.color);
         // Fullt navn her — lista er sentrert over hele bredden, så det er god
         // plass til «Fjellbor Industri GRANITT 2» (162 px på 9 px Courier).
         ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':teamFullName(c.team)+' '+c.num}${penaltyLabel(c)}`,W/2,ry);

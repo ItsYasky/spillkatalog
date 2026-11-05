@@ -33,8 +33,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   Felt på cfg-nivå i `TRACKS`; sjekk at det faktisk er cfg-nivået som er dødt før noe slettes.
 - [GRAND PRIX] Halv oppløsning på bakkeflis-fyllet hvis bildetiden blir trang – middels – 2026-10-30
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
-- [GRAND PRIX] Banevalg-karusellens dempede tekst stryker på kontrast – liten – 2026-11-01
-  `#64748b` (uvalgt banenavn, 13px fet) måler 4,19:1 mot `#05070a`, under 4,5:1-kravet for ikke-stor tekst. `#475569` (baneinfo under navnet, 9px) måler 2,63:1, langt under. Begge er eldre farger fra før meny-arbeidet og ikke rørt av steg B; fanges uansett av steg D («kontrast-/tekststørrelsessjekk av alle skjermer»), men står her i tilfelle D glemmer akkurat denne boksen.
 
 ## Arkaden (felles)
 
