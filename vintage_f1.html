@@ -3040,6 +3040,14 @@ let menuSel=0;               // hvilken rad som er markert i hovedmenyen
 // banevalget vet selv ikke om du er på vei til et løp eller en øvingsøkt.
 let menuTarget='race';
 let teamsReturnTo='menu';   // hvor ESC sender deg tilbake fra LAGOVERSIKT
+// Steg C: pausemenyen fryser løpet HELT — state endres med vilje ikke til
+// noe eget ('playing'/'practice' står urørt), så hele HUD-/banetegningen
+// fortsetter å tegnes som før. `paused` er den ENE nye bryteren update()
+// trenger for å stanse all fysikk/AI/klokke, se vaktlinjen først i update().
+let paused=false, pauseSel=0;
+const PAUSE_LABELS=['FORTSETT','START PÅ NYTT','VELG BANE','AVSLUTT TIL KATALOG'];
+let winSel=0;   // hvilken rad som er markert i resultatskjermens nye ↑↓-meny
+const WIN_LABELS=['KJØR IGJEN','VELG BANE'];
 let camX=0,camY=0,camAngle=0;
 const CHASE_Y = HY+(H-HY)*0.68; // chase-cam anchor: car sits lower on screen, more track visible ahead
 let bestSector=[Infinity,Infinity,Infinity];
@@ -3771,6 +3779,10 @@ function canCharge(c){ return c.lapCharge<LAP_CHARGE_CAP && c.battery<100; }
 // UPDATE
 // ══════════════════════════════════════════════════════════════════
 function update(){
+  // Pausemenyen skal fryse løpet HELT, altså før selv partikkeldøden under —
+  // en tire-smoke-sky som tynner ut mens spillet står i pausemenyen ville
+  // vært en liten, men ekte, klokke som går videre bak kulissene.
+  if(paused) return;
   // decay / animate regardless of state
   particles=particles.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vx*=.93;p.vy*=.93;p.life-=p.d;return p.life>0;});
   texts=texts.filter(t=>{t.y+=t.vy;t.life-=.018;return t.life>0;});
@@ -4395,7 +4407,7 @@ function update(){
         // deretter hoppet til 0,40 — et synlig blaff i det bilen krysser
         // streken. Testen «gjennomsiktigheten starter på COOL_ALPHA» fanget det.
         c.coolAlpha=COOL_ALPHA;
-        if(c.isPlayer){ finalizeResults(); state='win'; winTimer=0; buildPodiumCrowd(); if(player.finalPlace===1) spawnConfetti(); }
+        if(c.isPlayer){ finalizeResults(); state='win'; winTimer=0; winSel=0; buildPodiumCrowd(); if(player.finalPlace===1) spawnConfetti(); }
       }
     }
     // Opptaket står ETTER målpasseringen i denne løkka med vilje: krysses
@@ -5811,11 +5823,25 @@ function draw(){
       });
       const listRows=rows.length;
       const promptY=listY0+listRows*15+20;
-      ctx.fillStyle='#e10600'; ctx.font='bold 12px Courier New';
-      ctx.fillText('ENTER — kjør igjen',W/2,promptY);
-      ctx.fillStyle='#38bdf8'; ctx.font='bold 11px Courier New';
-      ctx.fillText('T — velg bane',W/2,promptY+20);
-      ctx.fillStyle='#1e293b'; ctx.font='9px Courier New'; ctx.fillText('ESC Katalog',W/2,promptY+40);
+      // Steg C: samme ↑↓/ENTER-rad-oppskrift som hovedmenyen, i stedet for de
+      // gamle ENTER/T/ESC-bokstavhintene. Radene er smalere (240 mot 300 px)
+      // fordi KJØR IGJEN/VELG BANE er kortere ord enn hovedmenyens rader.
+      WIN_LABELS.forEach((label,i)=>{
+        const y=promptY+i*26, sel=i===winSel;
+        ctx.textAlign='left';
+        if(sel){
+          ctx.fillStyle='#161b24'; ctx.fillRect(W/2-120,y-13,240,26);
+          ctx.fillStyle='#e10600'; ctx.fillRect(W/2-120,y-13,4,26);
+          ctx.fillStyle='#f1f5f9'; ctx.font='bold 13px Courier New';
+          ctx.fillText('▸ '+label,W/2-104,y);
+        } else {
+          ctx.fillStyle='#9aa4b2'; ctx.font='13px Courier New';
+          ctx.fillText(label,W/2-104,y);
+        }
+      });
+      ctx.textAlign='center';
+      ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+      ctx.fillText('↑ ↓ velg · ENTER bekreft · ESC velg bane',W/2,promptY+WIN_LABELS.length*26+14);
     }
 
     confetti.forEach(f=>{
@@ -5824,6 +5850,36 @@ function draw(){
       ctx.restore();
     });
     ctx.globalAlpha=1;
+  }
+
+  // ── pausemeny ────────────────────────────────────────────────────────
+  // Tegnes OVERPÅ scenen i stedet for i en egen `state`, nettopp fordi
+  // `state` fortsatt er 'playing'/'practice' mens pauset — all HUD-/
+  // banetegning over er allerede kjørt denne runden og krever ingen egne
+  // pause-grener. Overlayet er en mørk duk, samme oppskrift som win-skjermens
+  // `rgba(5,7,10,.88)`, med fire rader i samme ↑↓/ENTER-stil som hovedmenyen.
+  if(paused){
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(5,7,10,.88)'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#f1f5f9'; ctx.font='bold 22px Courier New';
+    ctx.fillText('PAUSE',W/2,H/2-150);
+    const PROW_Y0=H/2-54, PROW_DY=48;
+    PAUSE_LABELS.forEach((label,i)=>{
+      const y=PROW_Y0+i*PROW_DY, sel=i===pauseSel;
+      ctx.textAlign='left';
+      if(sel){
+        ctx.fillStyle='#161b24'; ctx.fillRect(W/2-140,y-16,280,32);
+        ctx.fillStyle='#e10600'; ctx.fillRect(W/2-140,y-16,4,32);
+        ctx.fillStyle='#f1f5f9'; ctx.font='bold 15px Courier New';
+        ctx.fillText('▸ '+label,W/2-120,y);
+      } else {
+        ctx.fillStyle='#9aa4b2'; ctx.font='15px Courier New';
+        ctx.fillText(label,W/2-120,y);
+      }
+    });
+    ctx.textAlign='center';
+    ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+    ctx.fillText('↑ ↓ velg · ENTER bekreft · ESC fortsett',W/2,PROW_Y0+PAUSE_LABELS.length*PROW_DY+14);
   }
 
   ctx.textBaseline='alphabetic';
@@ -5839,6 +5895,29 @@ function draw(){
 function normKey(k){ return k.length===1 ? k.toLowerCase() : k; }
 document.addEventListener('keydown',e=>{
   keys[normKey(e.key)]=true;
+  // Pausemenyen håndteres FØRST, før alt annet: den kan være oppe uansett
+  // hvilken av 'playing'/'practice' du var i, og mens den er oppe skal ingen
+  // andre taster (heller ikke øvingens T/R/G) gjøre noe. ESC inn i pausen
+  // settes separat under, der state sjekkes — denne blokken er bare
+  // navigasjonen INNE i menyen.
+  if(paused){
+    if(e.key==='Escape'){ paused=false; return; }
+    if(e.key==='ArrowUp') pauseSel=(pauseSel+PAUSE_LABELS.length-1)%PAUSE_LABELS.length;
+    if(e.key==='ArrowDown') pauseSel=(pauseSel+1)%PAUSE_LABELS.length;
+    if(e.key==='Enter'){
+      if(pauseSel===0){ paused=false; }
+      else if(pauseSel===1){ paused=false; menuTarget==='practice'?startPractice():startRace(); }
+      else if(pauseSel===2){ paused=false; state='trackselect'; }
+      else if(pauseSel===3){ window.location.href='index.html'; }
+    }
+    return; // ingen andre taster gjør noe mens pausemenyen er oppe
+  }
+  // ESC under selve løpet/øvinga åpner pausemenyen i stedet for å gå rett ut
+  // til katalogen — det ER steg C sin jobb, se SENERE-oppføringen som er
+  // fjernet fra hovedmenyens kontrollhint i steg B.
+  if((state==='playing'||state==='practice') && e.key==='Escape'){
+    paused=true; pauseSel=0; return;
+  }
   // Lagoversikten er et lag OVER baneutvalget, ikke en egen del av spillet, så
   // ESC skal lukke den og gå tilbake dit — ikke helt ut til katalogen. Denne
   // sjekken må derfor stå før den globale ESC-håndteringen under.
@@ -5925,11 +6004,21 @@ document.addEventListener('keydown',e=>{
     if(e.key==='Enter'){ menuTarget==='practice' ? startPractice() : startRace(); return; }
     return;
   }
-  if(e.key==='Escape'){window.location.href='index.html';return;}
-  if(e.key==='Enter'){
-    if(state==='win') startRace();
+  // Resultatskjermen: samme ↑↓/ENTER/ESC-mønster som resten av de nye
+  // menyene, i stedet for de gamle ENTER=kjør-igjen/T=velg-bane-bokstavene.
+  // ESC går ett nivå tilbake (til baneutvalget), akkurat som overalt ellers
+  // unntatt i selve hovedmenyen.
+  if(state==='win'){
+    if(e.key==='Escape'){ state='trackselect'; return; }
+    if(e.key==='ArrowUp') winSel=(winSel+WIN_LABELS.length-1)%WIN_LABELS.length;
+    if(e.key==='ArrowDown') winSel=(winSel+1)%WIN_LABELS.length;
+    if(e.key==='Enter'){
+      if(winSel===0) startRace();
+      else state='trackselect';
+    }
+    return;
   }
-  if(state==='win' && (e.key==='t'||e.key==='T')) state='trackselect';
+  if(e.key==='Escape'){window.location.href='index.html';return;}
   if(state==='practice'){
     if(e.key==='t'||e.key==='T') state='trackselect';
     if(e.key==='r'||e.key==='R') startPractice();
