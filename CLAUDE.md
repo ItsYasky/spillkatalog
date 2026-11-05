@@ -61,8 +61,8 @@ Sammenlign dem med:
 | D | ferdig | `709d20a` | 2026-reglene — rett-modus, boost og overtake | `test_boost.js` |
 | E | ferdig | `3e2b859` | Avkjølingsrunde: biler i mål kjører videre på 55 % fart, uten kollisjon, 60 % gjennomsiktige, toner ut etter en halv runde | `test_cooldown.js` (24/24) |
 | F | ferdig | `d2419f9` | Spøkelsesbil i øving: beste gyldige runde i `localStorage` (`gp_ghost_<BANE>_<MODUS>`), spilles av i hvitt med 36 % synlighet, Δ-tid i HUD-en, slås av/på med `G` | `test_ghost.js` (76/76) |
-| G | pågår | — | Sluttest og rapport: AI-sim mot «før»-tallene fra A1, tidssteg på 60/120/144 Hz, skjermbilder og rapport per steg | — |
-| H | pågår | — | Spillerens svingfysikk i REALISTISK: `PHYS_SCRUB` mot `cornerCap`, `severity` i stedet for `smoothCurv`, ULTRA `baseMax` 7,55→8,30 | `test_spiller_sving.js` |
+| G | ferdig | `10f2261` | Sluttest og rapport: AI-sim mot «før»-tallene fra A1, tidssteg på 60/120/144 Hz, skjermbilder og rapport per steg | — |
+| H | ferdig | `10f2261` | Spillerens svingfysikk i REALISTISK: fartstak flyttet fra `physSafe` til `cornerCap` bygget på `straightPace`, så boost/rett-modus ikke straffes for en sving de ikke er i | `test_spiller_sving.js` |
 
 Tidligere deler: `5a4f417` fast tidssteg (akkumulator) i spill-loopen,
 `ce0e0b9` lazy banebakgrunn + nedskalering over 16M px.

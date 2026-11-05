@@ -31,8 +31,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   Gammel kjent sak, ikke forårsaket av steg H; alle andre ligger på ≤0,8.
 - [GRAND PRIX] Død kode: `cfg.treeTint`/`rockTint`/`bushTint`/`groundBase`/`speckle` har ingen lesere etter at tonene flyttet inn i temaet – liten – 2026-10-30
   Felt på cfg-nivå i `TRACKS`; sjekk at det faktisk er cfg-nivået som er dødt før noe slettes.
-- [GRAND PRIX] Del 3 steg G og H står som «pågår» uten hash enda arbeidet er committet i `10f2261` – liten – 2026-10-30
-  Bokføring i fremdriftstabellen i `CLAUDE.md`.
 - [GRAND PRIX] Halv oppløsning på bakkeflis-fyllet hvis bildetiden blir trang – middels – 2026-10-30
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
 - [GRAND PRIX] Banevalg-karusellens dempede tekst stryker på kontrast – liten – 2026-11-01
