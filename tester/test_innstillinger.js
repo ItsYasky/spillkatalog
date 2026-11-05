@@ -5,8 +5,8 @@
 // Kjøres med JavaScriptCore, samme opplegg som test_ghost.js — det finnes
 // ingen `node` i dette miljøet:
 //
-//   osascript -l JavaScript test_innstillinger.js
-//   osascript -l JavaScript test_innstillinger.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_innstillinger.js
+//   osascript -l JavaScript tester/test_innstillinger.js --html /tmp/annen.html
 //
 // Dekker BARE lagringslaget (SETTINGS, lagreInnstillinger/lastInnstillinger,
 // applySettingsToGame, settingsAiIndex, settingsTeam, resolveTodIdx) og

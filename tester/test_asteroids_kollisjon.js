@@ -2,7 +2,7 @@
 // Headless test for STEG C: rettferdig kollisjon mot steinenes faktiske form.
 //
 // Kjør fra spillkatalog-mappen:
-//   osascript -l JavaScript test_asteroids_kollisjon.js
+//   osascript -l JavaScript tester/test_asteroids_kollisjon.js
 //
 // Laster hele spill-scriptet fra asteroids.html i et stub-miljø og tester den
 // ekte hitsRock() — ikke en kopi. Math.random() byttes ut med en liten

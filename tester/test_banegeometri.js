@@ -1,9 +1,9 @@
 // ============================================================================
 // Geometrilås for RUNDE 4 i vintage_f1.html.
 //
-//   osascript -l JavaScript test_banegeometri.js --out geo_foer.json
-//   osascript -l JavaScript test_banegeometri.js --mot geo_foer.json
-//   osascript -l JavaScript test_banegeometri.js --html /tmp/annen.html --mot geo_foer.json
+//   osascript -l JavaScript tester/test_banegeometri.js --out geo_foer.json
+//   osascript -l JavaScript tester/test_banegeometri.js --mot geo_foer.json
+//   osascript -l JavaScript tester/test_banegeometri.js --html /tmp/annen.html --mot geo_foer.json
 //
 // HVORFOR DENNE FINNES
 // Runde 4 er en ren PYNTERUNDE: hver bane skal bli gjenkjennelig på et

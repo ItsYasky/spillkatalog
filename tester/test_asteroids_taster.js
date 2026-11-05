@@ -2,7 +2,7 @@
 // Headless test for STEG B: taster som ikke henger, i asteroids.html.
 //
 // Kjør fra spillkatalog-mappen:
-//   osascript -l JavaScript test_asteroids_taster.js
+//   osascript -l JavaScript tester/test_asteroids_taster.js
 //
 // Denne testen laster HELE spill-scriptet fra asteroids.html inn i et
 // minimalt stub-miljø (falsk canvas/document/window), slik at den tester den

@@ -8,7 +8,7 @@
 // bedre eller verre?» — uten at man må lese 52 linjer tall to ganger.
 //
 // Bruk:
-//   osascript -l JavaScript test_ai_compare.js ai_baseline_before.json ai_baseline_after_A.json
+//   osascript -l JavaScript tester/test_ai_compare.js maalinger/ai_baseline_before.json maalinger/ai_baseline_after_A.json
 //   ... --only MIDDELS      bare én vanskelighetsgrad
 //   ... --worse             bare radene der noe ble verre
 

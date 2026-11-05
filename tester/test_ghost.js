@@ -4,8 +4,8 @@
 // Kjøres med JavaScriptCore, samme opplegg som test_cooldown.js og
 // test_boost.js — det finnes ingen `node` i dette miljøet:
 //
-//   osascript -l JavaScript test_ghost.js
-//   osascript -l JavaScript test_ghost.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_ghost.js
+//   osascript -l JavaScript tester/test_ghost.js --html /tmp/annen.html
 //
 // Hele <script>-blokken fra spillet kjøres som den er, med stubbet
 // document/canvas/window/localStorage, så testen måler den EKTE spillkoden.

@@ -3,8 +3,8 @@
 // menyer, steg D): hovedmeny, lagoversikt, banevalg, innstillinger, pausemeny
 // og resultatskjerm.
 //
-//   osascript -l JavaScript test_meny_kontrast.js
-//   osascript -l JavaScript test_meny_kontrast.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_meny_kontrast.js
+//   osascript -l JavaScript tester/test_meny_kontrast.js --html /tmp/annen.html
 //
 // Målet er å gjøre det samme som contrastReport() allerede gjør for
 // billakkeringer, men for menytekst: bruke spillets EGEN contrastRatio()

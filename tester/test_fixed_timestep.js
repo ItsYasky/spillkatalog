@@ -8,7 +8,7 @@
 // en node-test ville gjort. Kjør testen (fra spillkatalog-mappen, der
 // vintage_f1.html ligger) med:
 //
-//   osascript -l JavaScript test_fixed_timestep.js
+//   osascript -l JavaScript tester/test_fixed_timestep.js
 //
 // Testen henter den EKTE akkumulator-steppingen rett ut av vintage_f1.html
 // (alt mellom "const STEP_MS" og den siste "requestAnimationFrame(loop);"),

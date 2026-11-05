@@ -5,9 +5,9 @@
 // test_lazy_track_bg.js og test_ai_sim.js — det finnes ingen `node` i dette
 // miljøet:
 //
-//   osascript -l JavaScript test_track_limits.js
-//   osascript -l JavaScript test_track_limits.js --html /tmp/annen.html
-//   osascript -l JavaScript test_track_limits.js --ai          (AI-brudd per bane)
+//   osascript -l JavaScript tester/test_track_limits.js
+//   osascript -l JavaScript tester/test_track_limits.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_track_limits.js --ai          (AI-brudd per bane)
 //
 // Hele <script>-blokken fra spillet kjøres som den er, med stubbet
 // document/canvas/window/localStorage. Testen måler altså den EKTE spillkoden,

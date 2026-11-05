@@ -2,7 +2,7 @@
 // Headless test for STEG D: kontrast (D1) og topp 10 med initialer (D2).
 //
 // Kjør fra spillkatalog-mappen:
-//   osascript -l JavaScript test_asteroids_topp10.js
+//   osascript -l JavaScript tester/test_asteroids_topp10.js
 //
 // Spill-scriptet lastes flere ganger, med ulike localStorage-stubber, for å
 // treffe hver feilsituasjon lagringen må tåle. Det er trygt fordi

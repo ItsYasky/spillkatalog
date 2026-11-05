@@ -1,9 +1,9 @@
 // ============================================================================
 // Banetema-test for RUNDE 4 i vintage_f1.html.
 //
-//   osascript -l JavaScript test_banetema.js
-//   osascript -l JavaScript test_banetema.js --html /tmp/annen.html
-//   osascript -l JavaScript test_banetema.js --ut rapport.txt
+//   osascript -l JavaScript tester/test_banetema.js
+//   osascript -l JavaScript tester/test_banetema.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_banetema.js --ut rapport.txt
 //
 // HVORFOR DENNE FINNES
 // Kommentaren over THEMES lover at asfalttonene er MÅLT og ikke valgt med

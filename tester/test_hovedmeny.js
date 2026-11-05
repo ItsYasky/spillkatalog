@@ -5,8 +5,8 @@
 // Kjøres med JavaScriptCore, samme opplegg som test_innstillinger.js — det
 // finnes ingen `node` i dette miljøet:
 //
-//   osascript -l JavaScript test_hovedmeny.js
-//   osascript -l JavaScript test_hovedmeny.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_hovedmeny.js
+//   osascript -l JavaScript tester/test_hovedmeny.js --html /tmp/annen.html
 //
 // Dekker TILSTANDSMASKINEN (↑↓←→/ENTER/ESC i state 'menu'/'trackselect', og
 // at ESC i 'teams'/'settings' går til riktig returadresse), IKKE selve

@@ -2,8 +2,8 @@
 // Headless test av 2026-REGLENE (steg D) i vintage_f1.html: rett-modus, boost
 // og overtake mode.
 //
-//   osascript -l JavaScript test_boost.js
-//   osascript -l JavaScript test_boost.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_boost.js
+//   osascript -l JavaScript tester/test_boost.js --html /tmp/annen.html
 //
 // HVORFOR TASTENE SIMULERES OG IKKE TILSTANDEN SETTES DIREKTE
 // Det hadde vært enklere å sette c.boostActive=true rett før hvert steg, men

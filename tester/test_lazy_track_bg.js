@@ -6,8 +6,8 @@
 // binær i dette miljøet. Samme type JS-motor som nettleseren spillet kjører
 // i, ingen avhengigheter:
 //
-//   osascript -l JavaScript test_lazy_track_bg.js
-//   osascript -l JavaScript test_lazy_track_bg.js /tmp/vintage_f1_before.html
+//   osascript -l JavaScript tester/test_lazy_track_bg.js
+//   osascript -l JavaScript tester/test_lazy_track_bg.js /tmp/vintage_f1_before.html
 //
 // Med et valgfritt filargument lastes ALLE 13 banene fra BÅDE referansefilen
 // (f.eks. `git show HEAD:vintage_f1.html`) og dagens vintage_f1.html i samme

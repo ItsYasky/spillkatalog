@@ -30,7 +30,9 @@
 import os, re, subprocess, sys, tempfile, json
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-HER = os.path.dirname(os.path.abspath(__file__))
+# Scriptet selv ligger i tester/, men spillene ligger i spillkatalog-roten —
+# default-stien til vintage_f1.html må derfor peke én mappe opp.
+HER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def les(path):

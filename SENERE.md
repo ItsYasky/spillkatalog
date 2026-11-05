@@ -21,8 +21,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   Kan kreve bedre AI-linjer i hårnålene; `buildRaceLine` er alt forsøkt strammet én gang og ble FORKASTET (se `CLAUDE.md` steg H).
 - [GRAND PRIX] Slå av banegrenser på ENKEL – liten – 2026-10-30
   `checkTrackLimits()`; en nybegynner skal ikke få slettet runder.
-- [GRAND PRIX] Ny meny: hovedmeny, banevalg, innstillinger, pausemeny og resultatskjerm – middels – 2026-10-30
-  Innstillinger = modus, AI-nivå, distanse, tid på døgnet med AUTO, lag, skin, spøkelse. Ingen bokstavtaster, ESC går ett nivå tilbake, maks to trykk til løp.
 - [GRAND PRIX] ARDENNEs trær er praktisk talt usynlige, ~1,3:1 mot bakken – liten – 2026-10-30
   `treeTint:['#0e2e1c','#14472a','#071d12']` mot `ground:['#0b1710','#122017','#1b2c1e']`; et palettspørsmål fra runde 4 steg A.
 - [GRAND PRIX] ESSE/CASUAL/ULTRA har spredning 0,9857, så vidt under én runde – middels – 2026-10-30

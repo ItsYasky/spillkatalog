@@ -1,9 +1,9 @@
 // ============================================================================
 // Måler om SPILLEREN kan ta svingene uten å bremse i REALISTISK-modus.
 //
-//   osascript -l JavaScript test_spiller_sving.js
-//   osascript -l JavaScript test_spiller_sving.js --html /tmp/annen.html
-//   osascript -l JavaScript test_spiller_sving.js --tracks 0
+//   osascript -l JavaScript tester/test_spiller_sving.js
+//   osascript -l JavaScript tester/test_spiller_sving.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_spiller_sving.js --tracks 0
 //
 // HVORFOR denne testen finnes: en runde på MONTE SPIRA ble kjørt i 20,52 s,
 // mens full toppfart hele runden uten boost regnes til 21,4 s. Et snitt OVER

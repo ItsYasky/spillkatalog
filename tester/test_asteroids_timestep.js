@@ -6,7 +6,7 @@
 // type JS-motor som kjører spillet i en nettleser, ingen avhengigheter, og
 // kjøres headless fra terminalen. Kjør testen fra spillkatalog-mappen:
 //
-//   osascript -l JavaScript test_asteroids_timestep.js
+//   osascript -l JavaScript tester/test_asteroids_timestep.js
 //
 // Testen henter den EKTE akkumulator-steppingen rett ut av asteroids.html
 // (alt mellom "const STEP_MS" og den siste "requestAnimationFrame(loop);"),

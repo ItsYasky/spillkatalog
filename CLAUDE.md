@@ -27,27 +27,30 @@ skrives på norsk og forklarer HVORFOR, ikke hva koden gjør.
 
 ## Kjøring av tester
 
-Det finnes **ingen `node`** på denne maskinen. Testene kjøres med
-JavaScriptCore via macOS-verktøyet `osascript`:
+Det finnes **ingen `node`** på denne maskinen. Testene ligger i `tester/` og
+kjøres med JavaScriptCore via macOS-verktøyet `osascript`, fra
+spillkatalog-roten (testene leser spillfilen med en relativ sti, så `cd` må
+skje FØR `osascript`):
 
     cd ~/spillkatalog
-    osascript -l JavaScript test_boost.js
+    osascript -l JavaScript tester/test_boost.js
 
 De fleste testene tar `--html /tmp/annen.html` for å måle en annen fil enn
 dagens, og `test_ai_sim.js` tar `--out fasit.json`. Skriv resultater til fil
-og rapporter bare sammendrag og tall videre.
+og rapporter bare sammendrag og tall videre. `chrome_harness.py` (samme mappe)
+kjøres på samme vis: `python3 tester/chrome_harness.py maal`.
 
 ## «Før»-tallene for AI-simuleringen
 
 Målingen er dyr (~12 min per kjøring) og er allerede gjort. **Ikke mål på
-nytt** — bruk filene:
+nytt** — bruk filene i `maalinger/`:
 
-- `ai_baseline_before.json` — før GRAND PRIX del 3 steg A
-- `ai_baseline_after_A.json` — etter steg A
+- `maalinger/ai_baseline_before.json` — før GRAND PRIX del 3 steg A
+- `maalinger/ai_baseline_after_A.json` — etter steg A
 
 Sammenlign dem med:
 
-    osascript -l JavaScript test_ai_compare.js ai_baseline_before.json ai_baseline_after_A.json
+    osascript -l JavaScript tester/test_ai_compare.js maalinger/ai_baseline_before.json maalinger/ai_baseline_after_A.json
 
 ## Fremdrift
 
@@ -154,7 +157,7 @@ håndheves av `test_banegeometri.js`, som låser de syv tallsettene fysikken og
 AI-en leser (PATH, heading, smoothCurv, severity, raceLine, wallOffsArr,
 straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 
-    osascript -l JavaScript test_banegeometri.js --mot geo_laas.json
+    osascript -l JavaScript tester/test_banegeometri.js --mot maalinger/geo_laas.json
 
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|

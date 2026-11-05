@@ -5,10 +5,10 @@
 // fordi det ikke finnes noen `node`-binær i dette miljøet — samme opplegg som
 // test_fixed_timestep.js og test_lazy_track_bg.js fra runde 1 og 2:
 //
-//   osascript -l JavaScript test_ai_sim.js                  (dagens fil)
-//   osascript -l JavaScript test_ai_sim.js --out fasit.json
-//   osascript -l JavaScript test_ai_sim.js --html /tmp/for.html --out for.json
-//   osascript -l JavaScript test_ai_sim.js --trials 6 --laps 8
+//   osascript -l JavaScript tester/test_ai_sim.js                  (dagens fil)
+//   osascript -l JavaScript tester/test_ai_sim.js --out fasit.json
+//   osascript -l JavaScript tester/test_ai_sim.js --html /tmp/for.html --out for.json
+//   osascript -l JavaScript tester/test_ai_sim.js --trials 6 --laps 8
 //
 // Hele <script>-blokken kjøres som den er, pakket i en funksjon som får
 // stubbet document/canvas/window inn som parametere. Da måles den EKTE

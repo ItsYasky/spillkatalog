@@ -5,8 +5,8 @@
 // Kjøres med JavaScriptCore, samme opplegg som test_hovedmeny.js — det finnes
 // ingen `node` i dette miljøet:
 //
-//   osascript -l JavaScript test_pause.js
-//   osascript -l JavaScript test_pause.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_pause.js
+//   osascript -l JavaScript tester/test_pause.js --html /tmp/annen.html
 //
 // Dekker TILSTANDSMASKINEN (ESC åpner/lukker pausemenyen fra 'playing' og
 // 'practice', ↑↓/ENTER i pausemenyen, at update() fryser helt mens paused=true,

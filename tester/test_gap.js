@@ -1,8 +1,8 @@
 // ============================================================================
 // Headless test av TIDSGAP (steg C) i vintage_f1.html.
 //
-//   osascript -l JavaScript test_gap.js
-//   osascript -l JavaScript test_gap.js --html /tmp/annen.html
+//   osascript -l JavaScript tester/test_gap.js
+//   osascript -l JavaScript tester/test_gap.js --html /tmp/annen.html
 //
 // HVORFOR TO BILER MED PÅTVUNGET FART
 // Gapet skal være en TID, ikke en omregnet avstand. Den eneste måten å vite om
