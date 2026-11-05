@@ -319,7 +319,52 @@ function testPenaltyOrdersResults(game){
     'plass ' + utenStraff + ' -> ' + medStraff);
 }
 
-// ── TEST 6: AI-brudd per bane ───────────────────────────────────────────────
+// ── TEST 6: ENKEL fritar spilleren, men ikke AI-en ──────────────────────────
+// SENERE.md: en nybegynner skal ikke få slettet runder eller straffetid for
+// å kjøre vidt. Fritaket gjelder bare SPILLEREN — AI-ens egne brudd må
+// fortsatt telles uansett nivå, for de tallene er det AI-simuleringen måler
+// AI-en selv med (test_ai_sim.js --ai), ikke noe spilleren dømmes etter.
+function testEnkelExemption(html){
+  const game = loadGame(html);
+  game.trackSel = 0; game.setRealistic(false); game.difficulty = 0; game.LAPS = 8;
+  game.startRace(); game.state = 'playing';
+  const p = game.player;
+  const PN = game.TR.PATH.length, idx = Math.floor(PN*0.5);
+  const off = game.TR.TW + game.LIMIT_MARGIN + 4;
+
+  // spilleren kjører fem utflukter på ENKEL — ingen av dem skal telle
+  game.toasts.length = 0;
+  for(let u=0;u<5;u++) excursion(game, p, idx, off, 10, 4);
+  check('ENKEL: spillerens utflukter gir ingen brudd', p.limitViolations===0,
+    'brudd=' + p.limitViolations);
+  check('ENKEL: ingen straffetid for spilleren', p.penaltySec===0,
+    'straff=' + p.penaltySec);
+  check('ENKEL: ingen banegrense-toast for spilleren',
+    !game.toasts.some(function(t){ return t.t.indexOf('BANEGRENSER')>=0 || t.t.indexOf('STRAFF')>=0; }),
+    JSON.stringify(game.toasts.map(function(t){ return t.t; })));
+
+  // en AI-bil på samme ENKEL-løp skal fortsatt telles
+  const ai = game.cars.filter(function(c){ return c !== p; })[0];
+  const foerAi = ai.limitViolations;
+  excursion(game, ai, idx, off, 10, 4);
+  check('ENKEL: AI-ens egne brudd telles likevel', ai.limitViolations===foerAi+1,
+    'brudd ' + foerAi + ' -> ' + ai.limitViolations);
+
+  // samme sjekk i øving: en skitten runde skal IKKE slettes på ENKEL
+  const game2 = loadGame(html);
+  game2.trackSel = 0; game2.setRealistic(false); game2.difficulty = 0;
+  game2.startPractice();
+  const p2 = game2.player;
+  game2.toasts.length = 0;
+  lapAround(game2, p2, { offAt: 2 });
+  check('ENKEL: skitten runde i øving lagres likevel', p2.lapTimes.length===1,
+    'lapTimes=' + JSON.stringify(p2.lapTimes));
+  check('ENKEL: ingen SLETTET-melding i øving',
+    !game2.toasts.some(function(t){ return t.t.indexOf('SLETTET')>=0; }),
+    JSON.stringify(game2.toasts.map(function(t){ return t.t; })));
+}
+
+// ── TEST 7: AI-brudd per bane ───────────────────────────────────────────────
 // Kjøres bare med --ai, fordi den tar vesentlig lengre tid enn resten.
 function testAIViolations(game, laps){
   const rader = [];
@@ -364,6 +409,7 @@ function main(argv){
   testContactGrace(loadGame(html));
   testPracticeLapDeleted(loadGame(html));
   testPenaltyOrdersResults(loadGame(html));
+  testEnkelExemption(html);
 
   console.log('');
   console.log('── Fem bevisste utflukter ─────────────────────────────');

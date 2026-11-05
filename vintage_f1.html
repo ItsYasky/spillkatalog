@@ -4082,7 +4082,14 @@ function update(){
     // etter — uten denne sperra kunne en bil som alt var i mål bli straffet
     // for å kjøre vidt på utrullingen og dermed falle på resultatlista
     // etterpå, for noe som ikke var en del av løpet.
-    if((state==='playing'||state==='practice') && !c.finished) checkTrackLimits(c,dist);
+    //
+    // Spilleren er unntatt på ENKEL (DIFFICULTIES[0] i begge modus-tabellene):
+    // en nybegynner som nettopp lærer banen skal ikke få rundetiden sin
+    // slettet i øving eller straffetid i løp for å skjære en sving. AI-ens
+    // egne brudd telles fortsatt uansett nivå — de tallene brukes til å måle
+    // AI-en selv (se test_track_limits.js --ai), ikke til å dømme spilleren.
+    const enkelFritak = c.isPlayer && DIFFICULTIES[difficulty].name==='ENKEL';
+    if((state==='playing'||state==='practice') && !c.finished && !enkelFritak) checkTrackLimits(c,dist);
 
     // stuck-in-gravel recovery (AI only) — if an AI car makes essentially no
     // lap progress for 3s straight (overshot a corner, wedged on the outer
@@ -5357,7 +5364,7 @@ function draw(){
       if(sel){
         // Teksten beskriver RESULTATET for spilleren, aldri mekanismen bak
         // (ingen «gummistrikk», ingen interne tallnavn) — se CLAUDE.md.
-        const FORKLARING={ENKEL:'For å lære banene.',MIDDELS:'Du vinner med små feil.',VANSKELIG:'Du må kjøre bra for å vinne.',ULTRA:'AI-en kjører nesten perfekt.'};
+        const FORKLARING={ENKEL:'For å lære banene. Banegrenser av.',MIDDELS:'Du vinner med små feil.',VANSKELIG:'Du må kjøre bra for å vinne.',ULTRA:'AI-en kjører nesten perfekt.'};
         ctx.textAlign='center'; ctx.fillStyle='#94a3b8'; ctx.font='9px Courier New';
         ctx.fillText(FORKLARING[D.name]||'',W/2,y+SUB_DY);
       }

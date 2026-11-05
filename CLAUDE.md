@@ -680,6 +680,29 @@ fem skjermer, ingen bokstavtaster eller TAB noe sted, og alt av tekst på alle
 skjermer er MÅLT til å holde WCAG 2.1 (4,5:1 vanlig tekst, 3:1 stor tekst) mot
 den bakgrunnen den faktisk males over — ikke mot en antatt eller arvet bakgrunn.
 
+### GRAND PRIX — ventelista-rettelser (`vintage_f1.html`)
+
+Enkeltpunkter plukket fra `SENERE.md` etter en rydd-runde, ett om gangen.
+Hvert punkt er lite nok til å ikke få sin egen steg-tabell.
+
+| Punkt | Status | Commit | Innhold | Test |
+|---|---|---|---|---|
+| Banegrenser av på ENKEL | ferdig | — | Spilleren er unntatt `checkTrackLimits()` på ENKEL: ingen slettet runde i øving, ingen straffetid eller `BANEGRENSER x/3`/flagg-toast i løp. AI-ens egne brudd telles fortsatt uansett nivå (de tallene brukes av AI-simuleringen, ikke til å dømme spilleren). INNSTILLINGER-forklaringen for ENKEL er utvidet til «For å lære banene. Banegrenser av.» | `test_track_limits.js` (30/30, ny test 6) |
+
+**Detaljer:** ENKEL er indeks 0 i BÅDE `DIFFICULTIES_CASUAL` og
+`DIFFICULTIES_REALISTIC`, så fritaket er skrevet som
+`DIFFICULTIES[difficulty].name==='ENKEL'` og gjelder uavhengig av modus.
+Fritaket sitter i selve kallstedet i `update()`
+(`!(c.isPlayer && ...)` før `checkTrackLimits(c,dist)` kalles), ikke inni
+`checkTrackLimits()` selv — funksjonen kalles rett og slett ikke for
+spilleren på ENKEL, så `limitArmed`/`limitOffT`/`contactT` for spillerbilen
+fryser i den tilstanden de hadde når ENKEL ble valgt. Det er ikke et problem:
+de leses aldri når funksjonen ikke kalles, og settes uansett på nytt av
+`Car`-konstruktøren når bilene bygges på nytt ved neste løp. Verifisert med
+`test_banegeometri.js` at
+endringen (ren spillogikk, ingen banegeometri) ikke har rørt et eneste tall
+i `geo_laas.json`.
+
 ### ASTEROIDER (`asteroids.html`)
 
 | Steg | Status | Commit | Innhold |

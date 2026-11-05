@@ -19,8 +19,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   ENKEL 12–15 % tregere, MIDDELS 7–8 %, VANSKELIG 3–4 %, ULTRA 0,5–1,5 %; samme stige i CASUAL (REALISTISK ULTRA er ferdig). Mål bare MONTE SPIRA, ARDENNE og CAMPAGNA.
 - [GRAND PRIX] LEGENDE: femte nivå over ULTRA, like raskt som Yasirs beste runde ±0,5 %, ingen feil, hele feltet innenfor 1 % – stor – 2026-10-30
   Kan kreve bedre AI-linjer i hårnålene; `buildRaceLine` er alt forsøkt strammet én gang og ble FORKASTET (se `CLAUDE.md` steg H).
-- [GRAND PRIX] Slå av banegrenser på ENKEL – liten – 2026-10-30
-  `checkTrackLimits()`; en nybegynner skal ikke få slettet runder.
 - [GRAND PRIX] ARDENNEs trær er praktisk talt usynlige, ~1,3:1 mot bakken – liten – 2026-10-30
   `treeTint:['#0e2e1c','#14472a','#071d12']` mot `ground:['#0b1710','#122017','#1b2c1e']`; et palettspørsmål fra runde 4 steg A.
 - [GRAND PRIX] ESSE/CASUAL/ULTRA har spredning 0,9857, så vidt under én runde – middels – 2026-10-30
