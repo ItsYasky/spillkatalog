@@ -310,6 +310,28 @@ function kjør(game){
       'landmarkT=' + T + ' er ikke et tall i [0,1)');
   });
 
+  // 16. ARDENNEs trær var praktisk talt usynlige (SENERE.md): verste
+  //     kombinasjon av gammel treeTint mot bakken målte 1,00:1. Sjekken er
+  //     bevisst avgrenset til ARDENNE og ikke en generell regel for alle
+  //     tretten banene — de andre har samme svake palettmønster (målt til
+  //     1,0–1,3:1 hver), men det er et eget, ikke bestilt punkt (se
+  //     SENERE.md) og skal ikke stoppe denne testen. Denne ene sjekken låser
+  //     bare ARDENNEs fiks, så tonene ikke kan glide tilbake under 3:1 uten
+  //     at testen merker det.
+  (function(){
+    const t = TRACKS.filter(function(tr){ return tr.name === 'ARDENNE'; })[0];
+    if(!t){ sjekk('ARDENNE treeTint mot bakken', false, 'fant ikke banen ARDENNE'); return; }
+    const tree = t.theme.treeTint, ground = (t.theme.ground || []).filter(erHex);
+    if(!(Array.isArray(tree) && tree.every(erHex) && ground.length)){
+      sjekk('ARDENNE treeTint mot bakken', false, 'treeTint eller ground mangler/ugyldig');
+      return;
+    }
+    let verst = Infinity;
+    tree.forEach(function(tt){ ground.forEach(function(gg){ verst = Math.min(verst, game.contrastRatio(tt, gg)); }); });
+    sjekk('ARDENNE treeTint mot bakken', verst >= 3,
+      'verste kombinasjon måler ' + verst.toFixed(2) + ':1, under 3:1-kravet');
+  })();
+
   return { res: res, verste: verste, versteLag: versteLag, refL: refL, lakkAntall: lakk.length };
 }
 

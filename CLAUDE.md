@@ -687,7 +687,8 @@ Hvert punkt er lite nok til å ikke få sin egen steg-tabell.
 
 | Punkt | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
-| Banegrenser av på ENKEL | ferdig | — | Spilleren er unntatt `checkTrackLimits()` på ENKEL: ingen slettet runde i øving, ingen straffetid eller `BANEGRENSER x/3`/flagg-toast i løp. AI-ens egne brudd telles fortsatt uansett nivå (de tallene brukes av AI-simuleringen, ikke til å dømme spilleren). INNSTILLINGER-forklaringen for ENKEL er utvidet til «For å lære banene. Banegrenser av.» | `test_track_limits.js` (30/30, ny test 6) |
+| Banegrenser av på ENKEL | ferdig | `6bef39c` | Spilleren er unntatt `checkTrackLimits()` på ENKEL: ingen slettet runde i øving, ingen straffetid eller `BANEGRENSER x/3`/flagg-toast i løp. AI-ens egne brudd telles fortsatt uansett nivå (de tallene brukes av AI-simuleringen, ikke til å dømme spilleren). INNSTILLINGER-forklaringen for ENKEL er utvidet til «For å lære banene. Banegrenser av.» | `test_track_limits.js` (30/30, ny test 6) |
+| ARDENNEs trær usynlige | ferdig | — | `treeTint` lysnet fra `['#0e2e1c','#14472a','#071d12']` til `['#2d8151','#33905c','#3a9660']` — alle tre toner måler nå ≥3:1 mot alle tre bakketoner (verst 3,07:1, mot 1,00:1 før). | `test_banetema.js` (168/168, ny sjekk 16) |
 
 **Detaljer:** ENKEL er indeks 0 i BÅDE `DIFFICULTIES_CASUAL` og
 `DIFFICULTIES_REALISTIC`, så fritaket er skrevet som
@@ -702,6 +703,22 @@ de leses aldri når funksjonen ikke kalles, og settes uansett på nytt av
 `test_banegeometri.js` at
 endringen (ren spillogikk, ingen banegeometri) ikke har rørt et eneste tall
 i `geo_laas.json`.
+
+**Detaljer, ARDENNEs trær:** `dTree()` tegner tre overlappende sirkler per
+tre, én per tone i `treeTint`, og alle tre var mørkere enn bakken de står på
+— verste kombinasjon (`#0e2e1c` mot `#1b2c1e`) målte 1,00:1 med spillets egen
+`contrastRatio()`, langt under 3:1-kravet som landemerker måles mot i
+`test_banetema.js`. Samme utregning viste at de ANDRE tolv banenes `treeTint`
+har nøyaktig samme svakhet (1,0–1,3:1 hver) — det er lagt i `SENERE.md` som
+et eget punkt, ikke rettet her, siden bestillingen var ARDENNE alene. Den nye
+paletten er lysnet langs samme grønntone til alle tre klarer ≥3:1 mot alle
+tre bakketoner (3,07 / 3,71 / 4,01:1). Ny sjekk 16 i `test_banetema.js` låser
+akkurat denne banens tall, avgrenset med vilje til ARDENNE — en generell
+sjekk for alle tretten ville strøket på de tolv som ikke er rettet.
+Bakgrunnsbygget for alle 13 baner er verifisert på nytt med
+`chrome_harness.py maal` (ARDENNE 16,8 ms, godt under 100 ms-budsjettet), og
+`test_banegeometri.js` bekrefter at en rein palettendring ikke har rørt
+banegeometrien.
 
 ### ASTEROIDER (`asteroids.html`)
 
