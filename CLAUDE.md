@@ -505,7 +505,7 @@ loggføres her, og det stoppes for tilbakemelding før neste steg.
 |---|---|---|---|---|
 | A | ferdig | — | `SETTINGS`-objekt lagret i `localStorage` (`gp_innstillinger`), DITT LAG som ekte innstilling, TID PÅ DØGNET med AUTO (banens egen tid) og TILFELDIG, AI-NIVÅ lagret som NAVN (overlever modusbytte), og selve INNSTILLINGER-skjermen tegnet (med bilforhåndsvisning på SKIN-raden) | `test_innstillinger.js` (56/56) |
 | B | ferdig | `ff3c151` | Ny hovedmeny (LØP/ØVING/INNSTILLINGER/LAG) og ombygd banevalg (karusell + samlet innstillingsboks + KJØR/ØVING-knapp), INNSTILLINGER koblet inn fra begge, LAGOVERSIKT nå nådd fra hovedmenyen (ikke `L`), alle bokstavtaster og TAB fjernet | `test_hovedmeny.js` (34/34), `test_innstillinger.js` (56/56, uendret) |
-| C | ikke begynt | — | Pausemeny (fryser løpet helt) og ny resultatskjerm | — |
+| C | ferdig | `874598e` | Pausemeny (fryser løpet helt) og ny resultatskjerm | `test_pause.js` (33/33) |
 | D | ikke begynt | — | Kontrast-/tekststørrelsessjekk av alle skjermer, oppdatert kontrollhjelp, sluttdokumentasjon | — |
 
 **Steg A i detalj:** `SETTINGS` samler modus, AI-nivå (som navn, ikke indeks —
@@ -588,6 +588,52 @@ oppskriften fra bestillingen.
    `#475569` baneinfo) stryker på 4,5:1-kravet mot bakgrunnen — begge er eldre
    farger fra før meny-arbeidet, uberørt av denne endringen. Fanges uansett av
    steg D, som eksplisitt skal kontrastsjekke alle skjermer.
+
+**Steg C i detalj:** pausemenyen fryser løpet helt UTEN å legge til noen ny
+`state`-verdi — `state` står fortsatt i `'playing'`/`'practice'` gjennom hele
+pausen, og den ene nye bryteren `paused` er den aller første linja i
+`update()` (`if(paused) return;`). Det betyr at hele den eksisterende
+HUD-/banetegningen i `draw()` fortsetter å tegnes helt urørt; pausemenyen er
+bare et nytt overlay tegnet oppå, med fire rader (FORTSETT/START PÅ
+NYTT/VELG BANE/AVSLUTT TIL KATALOG) i samme ↑↓/ENTER/ESC-mønster som resten
+av de nye menyene, og samme fargeoppskrift (`#161b24`-bakgrunn + `#e10600`
+venstrekant + `▸`-prefiks) som hovedmenyen — gjenbrukt uten ny
+kontrastmåling, siden fargene og forholdet til bakgrunnen alt er målt der.
+ESC under løp/øving åpner pausemenyen; ESC inni pausemenyen lukker den igjen
+(ett nivå tilbake, ikke rett ut til katalogen, siden det ville druknet et
+helt løp i ett tastetrykk). Resultatskjermen fikk samme behandling: de gamle
+ad hoc-tastene (`ENTER` kjør igjen, `T` velg bane, `ESC` katalog) er
+erstattet med en ↑↓-meny (KJØR IGJEN/VELG BANE) i samme oppskrift, og `ESC`
+på resultatskjermen går nå ett nivå tilbake til banevalg i stedet for rett ut
+til katalogen.
+
+Frysingen er verifisert på tre nivåer: kodelesing (at `if(paused) return;`
+faktisk er første linje i `update()`), den automatiske testen
+`test_pause.js` (som også har en kontrollmåling — kaller den ekte `update()`
+med `paused=false` og en minimal spillerstubb, og viser at `raceTime` DA
+faktisk går videre, slik at frys-testen ikke er tom), og en visuell sjekk i
+nettleser med to identiske skjermbilder av banen tatt uten noe tastetrykk
+mellom dem mens spillet sto i pause.
+
+**Avvik/presiseringer i steg C:**
+1. Øvingsmodusens egne bokstavtaster (`t`/`r`/`g`, se `state==='practice'`-
+   blokken i `keydown`) er bevisst IKKE rørt. Lista med bokstavtaster
+   bestillingen ba om å fjerne (←→ bane, ↑↓ AI-nivå, Q/E distanse, Z/X skin,
+   C/V tid, L lag, P øving, TAB modus) er alle MENYVALG — ting du gjør før
+   eller mellom løp. `t`/`r`/`g` er sanntids-verktøy mens man faktisk kjører i
+   øving (f.eks. vise idéallinje/nullstille posisjon), ikke navigasjon i en
+   meny, og sto aldri på den opprinnelige lista. Derfor er det ikke et avvik
+   fra steg C, og ikke loggført i `SENERE.md`.
+2. Resultatskjermens `ESC` endret mening: gikk før rett til katalogen (samme
+   generelle ESC-fallback som alle andre skjermer før meny-arbeidet), går nå
+   ett nivå tilbake til banevalg — i tråd med den gjennomgående regelen
+   («ESC går ett nivå tilbake, aldri rett ut») som resten av meny-arbeidet
+   allerede følger overalt unntatt i selve hovedmenyen.
+3. Testen trengte en `player`-stubb (`{x:0,y:0,angle:0,raceDist:0}`) for å
+   kunne kalle den ekte `update()` i kontrollmålingen — `update()` leser
+   `player.x/y/angle` ubetinget helt på slutten (kamerafølging), uavhengig av
+   om `cars` er tom, så et kall uten en spillerstubb kastet en feil
+   (`player.x` på `undefined`) før funnet.
 
 ### ASTEROIDER (`asteroids.html`)
 
