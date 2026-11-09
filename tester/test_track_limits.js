@@ -344,7 +344,15 @@ function testEnkelExemption(html){
     JSON.stringify(game.toasts.map(function(t){ return t.t; })));
 
   // en AI-bil på samme ENKEL-løp skal fortsatt telles
+  //
+  // AI-bilene har racet fritt i de fem spiller-utfluktene over, og en av dem
+  // kan derfor ha `contactT>0` fra en ekte kollisjon med en annen bil — det
+  // er en bevisst regel fra del 3 (checkTrackLimits: «dyttet ut av en annen
+  // bil er ikke et brudd»), ikke en feil. Uten å nulle den ville testen målt
+  // den regelen i stedet for ENKEL-fritaket, og feile tilfeldig avhengig av
+  // om feltet akkurat hadde kontakt da utflukten startet.
   const ai = game.cars.filter(function(c){ return c !== p; })[0];
+  ai.contactT = 0;
   const foerAi = ai.limitViolations;
   excursion(game, ai, idx, off, 10, 4);
   check('ENKEL: AI-ens egne brudd telles likevel', ai.limitViolations===foerAi+1,

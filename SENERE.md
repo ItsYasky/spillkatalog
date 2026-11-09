@@ -21,8 +21,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   Kan kreve bedre AI-linjer i hårnålene; `buildRaceLine` er alt forsøkt strammet én gang og ble FORKASTET (se `CLAUDE.md` steg H).
 - [GRAND PRIX] De andre tolv banenes trær har samme svake kontrast som ARDENNE hadde, målt 1,0–1,3:1 mot bakken – middels – 2026-11-05
   Funnet mens ARDENNE ble rettet; `treeTint` i hvert tema i `THEMES`-objektet, se mønsteret i `test_banetema.js` sjekk 16 (bare ARDENNE er låst der i dag).
-- [GRAND PRIX] `test_track_limits.js` test 6 («AI-ens egne brudd telles likevel») er flaky, reproduserbart FEIL på gjeldende `main` (`6bef39c`), uberørt av dagens endring – liten – 2026-11-05
-  Mistanke: AI-bilen testen plukker (`cars.filter(c=>c!==p)[0]`) kan ha `contactT>0` fra en ekte kollisjon under de foregående utfluktene, som sperrer bruddet i `checkTrackLimits()` (linje med `if(c.contactT>0) return;`). Testen bør nulle `contactT` eller vente den ut før den måler.
 - [GRAND PRIX] ESSE/CASUAL/ULTRA har spredning 0,9857, så vidt under én runde – middels – 2026-10-30
   Banen var ikke med i de fem som ble målt da `posFactor` ble strammet; mål med `test_ai_sim.js`.
 - [GRAND PRIX] SERPENTINA/REALISTISK/ULTRA har 6,65 banegrensebrudd per bil – middels – 2026-10-30

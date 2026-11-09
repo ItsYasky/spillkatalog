@@ -688,7 +688,8 @@ Hvert punkt er lite nok til å ikke få sin egen steg-tabell.
 | Punkt | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
 | Banegrenser av på ENKEL | ferdig | `6bef39c` | Spilleren er unntatt `checkTrackLimits()` på ENKEL: ingen slettet runde i øving, ingen straffetid eller `BANEGRENSER x/3`/flagg-toast i løp. AI-ens egne brudd telles fortsatt uansett nivå (de tallene brukes av AI-simuleringen, ikke til å dømme spilleren). INNSTILLINGER-forklaringen for ENKEL er utvidet til «For å lære banene. Banegrenser av.» | `test_track_limits.js` (30/30, ny test 6) |
-| ARDENNEs trær usynlige | ferdig | — | `treeTint` lysnet fra `['#0e2e1c','#14472a','#071d12']` til `['#2d8151','#33905c','#3a9660']` — alle tre toner måler nå ≥3:1 mot alle tre bakketoner (verst 3,07:1, mot 1,00:1 før). | `test_banetema.js` (168/168, ny sjekk 16) |
+| ARDENNEs trær usynlige | ferdig | `bf3b901` | `treeTint` lysnet fra `['#0e2e1c','#14472a','#071d12']` til `['#2d8151','#33905c','#3a9660']` — alle tre toner måler nå ≥3:1 mot alle tre bakketoner (verst 3,07:1, mot 1,00:1 før). | `test_banetema.js` (168/168, ny sjekk 16) |
+| Flaky AI-test i `test_track_limits.js` | ferdig | — | `contactT` på testens AI-bil nulles rett før utflukten. Spillet var riktig — regelen «dyttet ut er ikke et brudd» er bevisst fra del 3 — testen manglet bare å isolere seg fra feltets ekte kollisjoner i de foregående utfluktene. | `test_track_limits.js` (30/30, fire ganger på rad) |
 
 **Detaljer:** ENKEL er indeks 0 i BÅDE `DIFFICULTIES_CASUAL` og
 `DIFFICULTIES_REALISTIC`, så fritaket er skrevet som
@@ -719,6 +720,23 @@ Bakgrunnsbygget for alle 13 baner er verifisert på nytt med
 `chrome_harness.py maal` (ARDENNE 16,8 ms, godt under 100 ms-budsjettet), og
 `test_banegeometri.js` bekrefter at en rein palettendring ikke har rørt
 banegeometrien.
+
+**Detaljer, flaky AI-test:** feilsøkt med et eget instrumenteringsskript
+(`/tmp/debug_ai.js`, ikke en prosjektfil) som logget `contactT`/`limitOffT`/
+`limitArmed` steg for steg. Funnet: AI-bilen testen plukker
+(`cars.filter(c=>c!==p)[0]`) hadde `contactT=22` FØR utflukten startet — fra
+en ekte kollisjon med en annen AI-bil et sted i de fem foregående
+spiller-utfluktene, der resten av feltet raser fritt i mange `update()`-kall.
+`checkTrackLimits()` dekrementerer `contactT` ett steg per kall, så på det
+8. steget (der bruddet ellers ville telt) stod det fortsatt på 14 — over 0,
+og regelen i del 3 («dyttet ut av en annen bil er ikke et brudd») sperret
+derfor bruddet. Testen hadde dermed ingen fast rekkefølge å feile i — den
+feiler avhengig av AI-ens FRIE kjøring, som er akkurat flaky nok til å gi
+samme utfall gjentatte ganger på denne maskinen, men ikke noe testen kan
+stole på. Fikset ved å sette `ai.contactT = 0` rett før utflukten, samme
+mønster som `parkAt()` alt bruker (sette tilstand direkte for et
+deterministisk utgangspunkt) — ikke en endring i spillet, siden
+kollisjonsregelen selv aldri var i tvil.
 
 ### ASTEROIDER (`asteroids.html`)
 
