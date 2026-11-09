@@ -1104,12 +1104,31 @@ function buildTrackBg(TR){
       draw(x,y);
     }
   }
-  function dTree(x,y,s,tint){
+  function dTree(x,y,s,tint,hiTint){
     bx.save(); bx.translate(x,y);
     const shades=tint||['#14532d','#1b6b3a','#0f3d22'];
+    // `hiTint` finnes bare på banene der treeTint-paletten ikke klarer ~2,5:1
+    // mot bakken alene (SENERE.md-punktet om svak trekontrast). Resten av
+    // trekronen er URØRT — vi legger bare på en skygge og en lys topp, samme
+    // «enten base eller acc må nå kravet»-mønster som bil-lakkeringene bruker,
+    // i stedet for å farge om hele paletten som ARDENNE fikk.
+    if(hiTint){
+      // Skygge under krona: samme faste, lave opasitet som CAR_SHADOW_COL —
+      // ikke en målt tone, den bærer ingen informasjon alene og skal bare gi
+      // krona et fotfeste mot bakken.
+      bx.fillStyle='rgba(0,0,0,.3)';
+      bx.beginPath(); bx.ellipse(0,3.2*s,6*s,2.4*s,0,0,Math.PI*2); bx.fill();
+    }
     for(let k=0;k<3;k++){
       bx.fillStyle=shades[k%shades.length];
       bx.beginPath(); bx.arc((rnd()-.5)*6*s,(rnd()-.5)*6*s-4*s,7*s+rnd()*3*s,0,Math.PI*2); bx.fill();
+    }
+    if(hiTint){
+      // Lyssatt topp: den ENE flekken som er MÅLT til ≥2,5:1 mot banens
+      // verste bakketone (se tester/test_banetema.js) — resten av krona kan
+      // fortsatt være mørkere enn bakken uten at treet blir usynlig.
+      bx.fillStyle=hiTint;
+      bx.beginPath(); bx.arc(-1.3*s,-6.5*s,3*s+rnd()*1.2*s,0,Math.PI*2); bx.fill();
     }
     bx.fillStyle='#4a3420'; bx.fillRect(-1.5*s,2*s,3*s,6*s);
     bx.restore();
@@ -1398,13 +1417,13 @@ function buildTrackBg(TR){
   const CL=TH.cluster;
   if(terrain==='mountain'){
     scatterTerrain(110,22,(x,y)=>dRock(x,y,0.9+rnd()*0.6,TH.rockTint),CL-0.08);
-    scatterTerrain(70,26,(x,y)=>dTree(x,y,0.65+rnd()*0.35,TH.treeTint),CL+0.05);
+    scatterTerrain(70,26,(x,y)=>dTree(x,y,0.65+rnd()*0.35,TH.treeTint,TH.treeHi),CL+0.05);
     placeCliffs(5);
   } else if(terrain==='forest'){
-    scatterTerrain(190,20,(x,y)=>dTree(x,y,0.8+rnd()*0.5,TH.treeTint),CL);
+    scatterTerrain(190,20,(x,y)=>dTree(x,y,0.8+rnd()*0.5,TH.treeTint,TH.treeHi),CL);
     scatterTerrain(34,24,(x,y)=>dRock(x,y,0.8+rnd()*0.4,TH.rockTint),CL-0.10);
   } else if(terrain==='parkland'){
-    scatterTerrain(120,24,(x,y)=>dTree(x,y,0.7+rnd()*0.4,TH.treeTint),CL);
+    scatterTerrain(120,24,(x,y)=>dTree(x,y,0.7+rnd()*0.4,TH.treeTint,TH.treeHi),CL);
   } else if(terrain==='hedge'){
     scatterTerrain(140,22,(x,y)=>dHedge(x,y,0.9+rnd()*0.3),CL);
   } else if(terrain==='arid'){
@@ -1624,6 +1643,11 @@ const THEMES={
   'MONTE SPIRA':{ ground:['#232a2b','#2f3a36','#3c4441'], speckle:'grass', asphalt:'#32363b',
     runoff:{type:'grus',clr:'#6e7076'}, curb:CURB_RW, cluster:0.50, ads:true,
     treeTint:['#1d3b2e','#27503c','#152b22'], rockTint:'#7e858c',
+    // treeTint alene målte bare 1,03:1 mot bakken i verste fall (SENERE.md).
+    // treeHi er samme grønntone lysnet til 2,57:1 mot banens lyseste
+    // bakketone (#3c4441) — dTree() tegner den som en liten topp, resten av
+    // krona er urørt.
+    treeHi:'#458f6b',
     landmarkT:0.30,
     // Breelva er smeltevann og dermed LYSERE enn fjellet rundt, ikke mørk som
     // en skogstjern. Det er ikke pynt at den gikk den veien: granitten her er
@@ -1928,6 +1952,9 @@ const THEMES={
   'TEMPIO':{ ground:['#1b3a1c','#235027','#2d6330'], speckle:'grass', asphalt:'#373c39',
     runoff:{type:'grus',clr:'#8c7f63'}, curb:CURB_RW, cluster:0.42, ads:true,
     mow:{ang:0.35,width:120}, treeTint:['#1d5a2a','#2a7236','#14421e'],
+    // Samme svake trekontrast som MONTE SPIRA (1,10:1 i verste fall) — treeHi
+    // er den lyseste tonen lysnet til 2,57:1 mot bakketonen #2d6330.
+    treeHi:'#41b053',
     landmarkT:0.38,
     // Samme målte felle som DESERTO og DUNA, bare med grønt i stedet for sand:
     // parkgresset ligger midt i lysintervallet, og et vanlig blått dammvann
@@ -2125,6 +2152,12 @@ const THEMES={
   'DISCESA':{ ground:['#2e1d12','#3c2718','#4b3320'], speckle:'dry', asphalt:'#3d3533',
     runoff:{type:'grus',clr:'#7d6448'}, curb:['#166534','#facc15'], cluster:0.46, ads:true,
     treeTint:['#4a5c1f','#6b7a2a','#374512'], rockTint:'#8a5a42',
+    // 1,13:1 i verste fall (SENERE.md) — treeHi er oliventonen lysnet til
+    // 2,58:1 mot bakketonen #4b3320. NB: oliventrærne i landemerket
+    // (`lagPal.oliven`) er en helt annen, allerede lysgrå tone — se
+    // kommentaren over `lagPal` lenger ned; dette er kun den vanlige
+    // vegetasjonens `dTree()`-trær.
+    treeHi:'#6d7d2b',
     cityPal:['#b8674a','#c9825c','#a8573c','#d49a72'], roofPal:'#6b4030',
     landmarkT:0.46,
     // Olivenlunden er MÅLT lys-sølvgrønn og ikke den olivengrønne tonen
@@ -2200,6 +2233,9 @@ const THEMES={
   'ALPEN':{ ground:['#0a1620','#14222e','#223445'], speckle:'snow', asphalt:'#353c41',
     runoff:{type:'grus',clr:'#6f767c'}, curb:CURB_RW, cluster:0.44, ads:true,
     treeTint:['#0f3d3a','#1a5c4f','#0a2e28'], rockTint:'#7d8a94',
+    // 1,06:1 i verste fall (SENERE.md) — treeHi er den lyseste barfargen
+    // lysnet til 2,56:1 mot bakketonen #223445.
+    treeHi:'#237d6b',
     landmarkT:0.45,
     lagPal:{ is:'#cfe3ec', isKant:'#9fc2d4', hytte:'#c9b79f', tak:'#3a4048', vindu:'#fbbf24' },
     // Som kirketaket i ARDENNE: taket leses mot hytteveggen, ikke mot snøen.
@@ -2344,6 +2380,10 @@ function makeTheme(navn){
     ads: t.ads!==false,
     mow: t.mow || null,
     treeTint: t.treeTint || null,
+    // Den lyse toppen dTree() legger på når treeTint alene ikke når ~2,5:1
+    // mot bakken (SENERE.md). `null` på en bane betyr «treeTint er nok alene»
+    // — IKKE «ingen trær», se check 17 i test_banetema.js.
+    treeHi: t.treeHi || null,
     rockTint: t.rockTint || null,
     bushTint: t.bushTint || null,
     cityPal: t.cityPal || null,

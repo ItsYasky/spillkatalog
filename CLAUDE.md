@@ -689,7 +689,8 @@ Hvert punkt er lite nok til å ikke få sin egen steg-tabell.
 |---|---|---|---|---|
 | Banegrenser av på ENKEL | ferdig | `6bef39c` | Spilleren er unntatt `checkTrackLimits()` på ENKEL: ingen slettet runde i øving, ingen straffetid eller `BANEGRENSER x/3`/flagg-toast i løp. AI-ens egne brudd telles fortsatt uansett nivå (de tallene brukes av AI-simuleringen, ikke til å dømme spilleren). INNSTILLINGER-forklaringen for ENKEL er utvidet til «For å lære banene. Banegrenser av.» | `test_track_limits.js` (30/30, ny test 6) |
 | ARDENNEs trær usynlige | ferdig | `bf3b901` | `treeTint` lysnet fra `['#0e2e1c','#14472a','#071d12']` til `['#2d8151','#33905c','#3a9660']` — alle tre toner måler nå ≥3:1 mot alle tre bakketoner (verst 3,07:1, mot 1,00:1 før). | `test_banetema.js` (168/168, ny sjekk 16) |
-| Flaky AI-test i `test_track_limits.js` | ferdig | — | `contactT` på testens AI-bil nulles rett før utflukten. Spillet var riktig — regelen «dyttet ut er ikke et brudd» er bevisst fra del 3 — testen manglet bare å isolere seg fra feltets ekte kollisjoner i de foregående utfluktene. | `test_track_limits.js` (30/30, fire ganger på rad) |
+| Flaky AI-test i `test_track_limits.js` | ferdig | `a4e4a3b` | `contactT` på testens AI-bil nulles rett før utflukten. Spillet var riktig — regelen «dyttet ut er ikke et brudd» er bevisst fra del 3 — testen manglet bare å isolere seg fra feltets ekte kollisjoner i de foregående utfluktene. | `test_track_limits.js` (30/30, fire ganger på rad) |
+| Svak trekontrast på de andre tre-banene | ferdig | — | `dTree()` fikk en valgfri `hiTint`: fast, lav-opasitets skygge under krona + en lysnet topp-flekk, tegnet KUN når temaet har `treeHi` — resten av krona er urørt. MONTE SPIRA, TEMPIO, DISCESA og ALPEN fikk hver sin `treeHi` (den lyseste treeTint-tonen lysnet til ≥2,5:1 mot banens verste bakketone). ARDENNE og ESSE trengte ingen endring — begge når alt ≥2,5:1 (faktisk ≥3,5:1) med treeTint alene. | `test_banetema.js` (174/174, ny sjekk 17) |
 
 **Detaljer:** ENKEL er indeks 0 i BÅDE `DIFFICULTIES_CASUAL` og
 `DIFFICULTIES_REALISTIC`, så fritaket er skrevet som
@@ -737,6 +738,87 @@ stole på. Fikset ved å sette `ai.contactT = 0` rett før utflukten, samme
 mønster som `parkAt()` alt bruker (sette tilstand direkte for et
 deterministisk utgangspunkt) — ikke en endring i spillet, siden
 kollisjonsregelen selv aldri var i tvil.
+
+**Detaljer, trekontrast:** bestillingen sa «alle 13 baner», men bare SEKS
+tegner trær i det hele tatt — `dTree()` kalles kun for `terrain`
+mountain/forest/parkland (MONTE SPIRA, ARDENNE, TEMPIO, ESSE, DISCESA,
+ALPEN). LABIRINTO og SERPENTINA har en `treeTint` i temaet, men den er
+DØDKODE — city-terrenget tegner `dBuildingGrid`, aldri `dTree()`. DESERTO,
+VULCANO, CAMPAGNA, DUNA og VISTANOTTE har ingen `treeTint` i det hele tatt
+(arid/volcanic/hedge bruker `dBush`/`dLavaRock`/`dHedge`). Rettelsen omfatter
+derfor de seks som faktisk tegner trær, ikke alle tretten — presisert her og i
+`SENERE.md`.
+
+Målt (spillets egen `contrastRatio()`, verste kombinasjon av alle treeTint-
+toner mot alle bakketoner, FØR denne rettelsen):
+
+| bane | før | lyseste tone mot verste bakketone |
+|---|---|---|
+| MONTE SPIRA | 1,03:1 | `#27503c` mot `#3c4441` → 1,10:1 |
+| ARDENNE | 3,07:1 (alt fikset, `bf3b901`) | — |
+| TEMPIO | 1,10:1 | `#2a7236` mot `#2d6330` → 1,21:1 |
+| ESSE | 1,26:1 | `#b8722a` mot `#3a2b16` → **3,56:1** |
+| DISCESA | 1,13:1 | `#6b7a2a` mot `#4b3320` → 2,48:1 |
+| ALPEN | 1,06:1 | `#1a5c4f` mot `#223445` → 1,63:1 |
+
+ESSE skiller seg ut: selv om bunntonen (`#5c3315`) stryker grovt (helt ned i
+1,26:1), når den LYSESTE tonen alt 3,56:1 — godt over 2,5:1-kravet. Samme
+mønster som bil-lakkeringenes «enten base eller acc må nå 3:1»-regel: det er
+nok at ÉN tone bærer kontrasten, resten av krona kan være mørkere enn bakken
+uten at treet blir usynlig. ARDENNE er i samme båt etter sin egen rettelse
+(`bf3b901`, 3,07:1). Disse to trengte derfor INGEN endring her.
+
+For de fire som faktisk strøk (MONTE SPIRA, TEMPIO, DISCESA, ALPEN) ble
+ARDENNE-oppskriften (farge om hele paletten) bevisst IKKE gjenbrukt — den
+bestillingen ba spesifikt om en annen teknikk: «lysere topp på kronen, mørkere
+skygge under, eller begge», uten å røre bakken. `dTree(x,y,s,tint,hiTint)`
+fikk et femte, valgfritt argument: når `hiTint` finnes, tegnes en fast
+lav-opasitets skyggeellipse under krona (samme oppskrift som `CAR_SHADOW_COL`
+— ikke en målt tone, den bærer ingen informasjon alene) FØR de tre vanlige
+sirklene, og en liten lysnet topp-flekk i `hiTint` ETTER dem. Uten `hiTint`
+(ARDENNE, ESSE, og alle andre temaer) er `dTree()` bit-for-bit den samme
+funksjonen som før — ingen risiko for de banene som alt var i orden.
+
+`treeHi` er den lyseste treeTint-tonen lysnet i HSL (samme hue/metning, bare
+lyshet opp — altså en gradvis lysning, ikke en fargeomlegging) til den når
+~2,5:1 mot banens VERSTE bakketone, regnet med spillets egen
+`relLuminance`/`contrastRatio` (binærsøk, ikke øyemål):
+
+| bane | treeHi | mot verste bakketone | mot ALLE bakketoner (min) |
+|---|---|---|---|
+| MONTE SPIRA | `#458f6b` | 2,57:1 | 2,57:1 |
+| TEMPIO | `#41b053` | 2,57:1 | 2,57:1 |
+| DISCESA | `#6d7d2b` | 2,58:1 | 2,58:1 |
+| ALPEN | `#237d6b` | 2,56:1 | 2,56:1 |
+
+**Ekte feil funnet underveis, ikke bare et testproblem:** `makeTheme()`
+hvitlister hvilke felt som overlever fra `THEMES[navn]` til temaet
+`buildTrackBg` faktisk leser (`treeTint`, `rockTint`, … hvert felt nevnt for
+seg). Det nye `treeHi`-feltet sto IKKE på den lista, så `TH.treeHi` var
+`undefined` for alle fire baner — ikke bare i testen, men i selve spillet.
+Testen (`test_banetema.js` sjekk 17) fanget det med én gang («treeHi
+(ingen)»), men feilen ville rammet ekte spilling også om den ikke var fanget.
+Rettet ved å legge `treeHi: t.treeHi || null` inn i `makeTheme()`s
+returobjekt, samme mønster som de andre feltene.
+
+Ny sjekk 17 i `test_banetema.js` måler ALLE seks trebaner (ikke bare de fire
+som ble endret): for hver bane kreves at enten beste treeTint-tone ELLER
+treeHi når ≥2,5:1 mot banens verste bakketone — generell, ikke hardkodet til
+bestemte hex-verdier, så den fanger en fremtidig regresjon på ARDENNE/ESSE
+også, ikke bare på de fire nye. Sjekk 16 (ARDENNEs eget ≥3:1-krav, strengere
+og uendret) står fortsatt ved siden av.
+
+Verifisert: `test_banetema.js` 174/174, `test_banegeometri.js --mot
+geo_laas.json` uendret på alle 13 baner (ren palett-/tegneendring, ingen
+geometri rørt), `chrome_harness.py maal` bygger alle 13 baner uten feil
+(verste TEMPIO 42,5 ms — samme GC-støy-mønster som tidligere målt der, godt
+under 100 ms-budsjettet), og hele den øvrige testsuiten (banegrenser, boost,
+avkjøling, spøkelse, menyer, pause, spillerens sving) uendret grønn. 1:1-
+skjermbilder (ekte spillcanvas, ingen nedskalering, `TOD[0]`=DAG) av ARDENNE,
+ALPEN og ESSE bekrefter visuelt at trærne skiller seg fra bakken — et
+FØR/ETTER-par for ALPEN (samme kamerapunkt, treeHi fjernet i en midlertidig
+kopi for FØR-bildet) viser krona gå fra nesten usynlig mot den mørke
+fjellbakken til tydelig synlig med lys topp og skygge.
 
 ### ASTEROIDER (`asteroids.html`)
 

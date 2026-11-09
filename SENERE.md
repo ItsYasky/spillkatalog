@@ -19,8 +19,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   ENKEL 12–15 % tregere, MIDDELS 7–8 %, VANSKELIG 3–4 %, ULTRA 0,5–1,5 %; samme stige i CASUAL (REALISTISK ULTRA er ferdig). Mål bare MONTE SPIRA, ARDENNE og CAMPAGNA.
 - [GRAND PRIX] LEGENDE: femte nivå over ULTRA, like raskt som Yasirs beste runde ±0,5 %, ingen feil, hele feltet innenfor 1 % – stor – 2026-10-30
   Kan kreve bedre AI-linjer i hårnålene; `buildRaceLine` er alt forsøkt strammet én gang og ble FORKASTET (se `CLAUDE.md` steg H).
-- [GRAND PRIX] De andre tolv banenes trær har samme svake kontrast som ARDENNE hadde, målt 1,0–1,3:1 mot bakken – middels – 2026-11-05
-  Funnet mens ARDENNE ble rettet; `treeTint` i hvert tema i `THEMES`-objektet, se mønsteret i `test_banetema.js` sjekk 16 (bare ARDENNE er låst der i dag).
 - [GRAND PRIX] ESSE/CASUAL/ULTRA har spredning 0,9857, så vidt under én runde – middels – 2026-10-30
   Banen var ikke med i de fem som ble målt da `posFactor` ble strammet; mål med `test_ai_sim.js`.
 - [GRAND PRIX] SERPENTINA/REALISTISK/ULTRA har 6,65 banegrensebrudd per bil – middels – 2026-10-30

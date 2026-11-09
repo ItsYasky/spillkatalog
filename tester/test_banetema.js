@@ -332,6 +332,52 @@ function kjør(game){
       'verste kombinasjon måler ' + verst.toFixed(2) + ':1, under 3:1-kravet');
   })();
 
+  // 17. Trekontrast for ALLE baner som faktisk tegner trær (SENERE.md,
+  //     rettet etter ARDENNE). Bare mountain/forest/parkland-terreng kaller
+  //     dTree() — city/arid/volcanic/hedge bruker andre tegnefunksjoner
+  //     (dBush/dBuilding/dLavaRock/dHedge) som ikke leser treeTint i det
+  //     hele tatt, så en bane utenfor disse tre terrengtypene er ikke med.
+  //     Kravet speiler bil-lakkeringenes «enten base eller acc»-regel: enten
+  //     en treeTint-tone ELLER treeHi (den lyse toppen dTree() legger på når
+  //     den finnes) må nå ~2,5:1 mot banens VERSTE bakketone. ARDENNE og
+  //     ESSE klarer dette med treeTint alene (sjekk 16 og måling i
+  //     CLAUDE.md); de fire andre trenger treeHi.
+  const TREE_TERRAIN = ['mountain','forest','parkland'];
+  const TREE_MIN = 2.5;
+  TRACKS.forEach(function(t){
+    if(TREE_TERRAIN.indexOf(t.terrain) < 0) return;
+    const tree = (t.theme.treeTint || []).filter(erHex);
+    const ground = (t.theme.ground || []).filter(erHex);
+    if(!tree.length || !ground.length){
+      sjekk('trekontrast: ' + t.name, false,
+        'treeTint eller ground mangler/ugyldig på en bane med terrain=' + t.terrain);
+      return;
+    }
+    // Beste treeTint-tone: for hver tone, dens VERSTE kontrast mot de ulike
+    // bakketonene — deretter den beste av disse (den ene tonen som best kan
+    // bære kravet alene, akkurat som «acc» kan bære det en «base» ikke gjør).
+    let besteTree = -Infinity;
+    tree.forEach(function(tt){
+      let verstMotGround = Infinity;
+      ground.forEach(function(gg){ verstMotGround = Math.min(verstMotGround, game.contrastRatio(tt, gg)); });
+      besteTree = Math.max(besteTree, verstMotGround);
+    });
+    let besteHi = -Infinity;
+    if(t.theme.treeHi != null){
+      if(!erHex(t.theme.treeHi)){
+        sjekk('trekontrast: ' + t.name, false, 'treeHi er ikke gyldig hex (' + t.theme.treeHi + ')');
+        return;
+      }
+      // treeHi sin VERSTE kontrast mot de ulike bakketonene.
+      besteHi = Infinity;
+      ground.forEach(function(gg){ besteHi = Math.min(besteHi, game.contrastRatio(t.theme.treeHi, gg)); });
+    }
+    const best = Math.max(besteTree, besteHi);
+    sjekk('trekontrast: ' + t.name, best >= TREE_MIN,
+      'beste av treeTint (' + besteTree.toFixed(2) + ':1) og treeHi (' +
+      (besteHi === -Infinity ? 'ingen' : besteHi.toFixed(2) + ':1') + ') når ikke ' + TREE_MIN + ':1');
+  });
+
   return { res: res, verste: verste, versteLag: versteLag, refL: refL, lakkAntall: lakk.length };
 }
 
