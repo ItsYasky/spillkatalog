@@ -167,7 +167,7 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | B3 | ferdig | `fde0f71` | Vend-feilen i nattgløden på de fem første landemerkene (slo bare ut på DUNA) | `test_banetema.js` (167/167), `test_banegeometri.js` (13/13), `chrome_harness.py maal` |
 | B4 | ferdig | `e94db19` | `scene.lokal()`: gløden på selve lyskilden (ALPEN, ARDENNE, DUNA), og radier målt opp igjen | samme tre porter |
 | B5 | ferdig | `0bc25c6` | Bakkeflis som gjentakende mønster under hele skjermen + uttonet ytterkant på bakgrunnsbildet, så lerretskanten ikke lenger synes | samme tre porter + skjøtemåling |
-| C | ikke begynt | — | Bykvartaler (`dBuildingGrid`) for LABIRINTO, SERPENTINA, VISTANOTTE — se kommentaren i city-grenen i `buildTrackBg` | — |
+| C | ferdig | `PLACEHOLDER_C` | Bykvartaler (`scene.rutenett` + `dBuildingGrid`) og landemerker for LABIRINTO (katedral), SERPENTINA (havn med moloen) og VISTANOTTE (pariserhjul) | `test_banetema.js` (183/183), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + skjermbilder |
 
 **De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
 VISTANOTTE). De trenger både landemerke og bykvartaler, og å skrive landemerket
@@ -479,6 +479,81 @@ alle andre — samme GC-støy som VISTANOTTE i steg A, bekreftet nok en gang.
 **CAMPAGNAs møllehatt er mørk med vilje** (`lagMot:{tak:'mur'}`), og det betyr
 at den nesten forsvinner mot den mørkegrønne enga. Det er et bevisst bytte:
 hatten måles mot møllekroppen den sitter på, slik kirketaket på ARDENNE gjør.
+
+**Avvik verdt å vite i steg C (bykvartalene):**
+
+Steg C er den første som tegner noe som IKKE er sirkler. `scene.rutenett(t0,t1,
+side,avstand,blokk,rader,hoyde)` er søsteren til `belte()` — samme gang langs
+PATH, men den leverer rette ruter, fordi et kvartal har gatehjørner. Tegningen
+ligger i `dBuildingGrid(ruter,pal)`, skilt fra plasseringen av samme grunn som
+`belte`/`dFlate`: plassering er geometri som kan måles, tegning er maling.
+
+1. **Klaringen må måles LANGS kvartalets egen utstrekning.** Første versjon
+   skrev `distToPath(x,y) < CLEAR + blokk*0.5`, altså «senteret må stå en halv
+   blokklengde lenger ut». Det er en helt annen og altfor streng test — med
+   `avstand = CLEAR + 8` strøk hvert eneste kvartal på alle tre banene.
+   Løsningen er den `clearFootprint` alt bruker: prøv ni punkter langs blokkens
+   egen tangent og krev `minD >= CLEAR`.
+2. **Lerretstaket gjelder bare rader som går UTOVER.** `pad - hoyde - 14` ble
+   først brukt på alle rader, og det droppet stille rader innover som hadde god
+   plass — indre felt ligger godt innenfor lerretet. Derfor `tak = (side ===
+   utside()) ? pad-hoyde-14 : Infinity`, og derfor er det ingen feil at et tema
+   ber om én rad ut og tre inn: det er LERRETET som er asymmetrisk, ikke byen.
+3. **`TR.kvartalN` finnes fordi et tomt rutenett ellers er usynlig.** Byggetiden
+   steg ikke målbart da hundrevis av hus kom til, og det så mistenkelig ut.
+   I stedet for å anta, teller banen nå kvartalene sine: LABIRINTO 159,
+   SERPENTINA 199, VISTANOTTE 334, og 0 på de ti andre. Et rutenett som
+   kollapser til ingenting blir da et TALL som endrer seg, ikke «alt ser grønt
+   ut».
+4. **Avstanden mellom kvartalene måles langs RADENS kurve, ikke langs PATH.** En
+   rad som ligger `ut` px innenfor en sving er kortere enn banen i samme sving,
+   og lenger utenfor. Med PATH-lengden som mål la kvartalene seg oppå hverandre
+   i de indre radene og for spredt i de ytre — synlig i skjermbildet som en
+   haug av overlappende hus i hver sving.
+5. **Måleren nullstilles først når et kvartal faktisk PLASSERES.** Sto
+   `akk = 0` før klaringssjekken, brukte et sløyfet kvartal opp sin egen lengde
+   av gata likevel, og hullet der banen kommer nær ble dobbelt så langt som det
+   trengte. Husrekka sto i små klynger med store tomrom imellom.
+
+**Tre størrelses-/proporsjonsfeil, alle funnet på skjermbilde og alle rettet
+ved å KRYMPE eller endre FORM — ingen av dem ved å bytte farge.** Det er samme
+lærdom som steg B2 punkt 5, og den gjentok seg i tre nye varianter:
+
+| det som var galt | hvordan det leste | rettelsen |
+|---|---|---|
+| Katedralen 208 × 50 px skip (4,2:1) med et 86 px tårn i enden | tallet «1» — nøyaktig olivengård-fella fra B2 | skipet til 116 × 46 (2,5:1), tårnet til 70, pluss en APSIS (halvrunding) i enden motsatt tårnet |
+| Kvartalet delt i 2–3 like hus på 58–64 px | liggende spillkort, ikke bygninger | husbredden styrer antallet (`Math.max(2, Math.round(w/15))`), ikke omvendt — samme 11–18 px som `dBuilding` alt bruker |
+| Vinduer skalert med husbredden (`bredde*0.16`) | terninger med øyne | fast 2,4 × 3,2 px i et 5 × 7 px rutenett, som `dBuilding` — et vindu er like stort i en smal bygård som i en bred |
+
+Og én til, som ikke handler om størrelse: **et blankt skip har ingen skala.**
+Katedralen var etter krympingen fortsatt en tom krem flate med én prikk på.
+Fem høye, smale åpninger langs fasaden gjorde den til en bygning — øyet leser
+høyden på et hus av hvor mange etasjer det ser, og en flate uten åpninger har
+ingen høyde i det hele tatt.
+
+**LABIRINTOs vinduer er MØRKE, de to andre byenes er lyse — og det er en måling,
+ikke en smakssak.** Alle tre fikk først den samme gule `#facc15`. På en
+middelhavsby ved DAG er det feil: der er det skodder og skygge i åpningene, og
+den gule leste som terningøyne. Tonen er nå `#4a3b2c`, målt mot FASADEN og ikke
+mot bakken (`lagMot: {vindu:'husA'}`), 4,67:1 — en vindusåpning sitter i en
+vegg, akkurat som et tak ligger på en vegg. SERPENTINA (kveld) og VISTANOTTE
+(natt) beholder den lyse, for der er lyset tent. Nattgløden i klokketårnet har
+fått sin EGEN tone (`glod`), fordi en flate og en glød er to ulike ting — det
+var nettopp det å bruke én tone til begge som gjorde dagsbildet feil.
+
+**Den motsatte kontrastretningen, verdt å merke seg:** teglrødt `#8c3a2a` (den
+tonen `roofPal` alt hadde) holder 3,31:1 mot den mørkeste fasaden, mens en
+LYSERE tegl `#a34733` STRYKER på 2,60:1. Taket måles mot en lys vegg, og da er
+det den MØRKE tonen som bærer kontrasten — motsatt av alle de andre
+målingene i runde 4, der veien alltid gikk lysere fordi referansen var mørk
+bakke. De gamle `cityPal`-tonene kunne av samme grunn ikke brukes til
+kvartalene: den lyseste måler 2,42:1 og den mørkeste 1,16:1 mot bakken (lagt i
+`SENERE.md` for de spredte `dBuilding`-husene som fortsatt bruker dem).
+
+**Kostnad, målt i steg C:** byggetid sum 172,2 ms (steg B5: 180,3), verste bane
+VISTANOTTE 19,4 ms mot budsjettet på 100 — altså FLAT, selv med 692 nye
+kvartaler fordelt på tre baner. Nattlys: LABIRINTO 1 (klokketårnet),
+SERPENTINA 1 (havnelyset), VISTANOTTE 5 (navet + fire kabiner).
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til

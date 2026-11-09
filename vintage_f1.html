@@ -613,6 +613,7 @@ function buildTrackBg(TR){
   // vedlikeholdes ved siden av tegnekoden, og det er nøyaktig slik en busk
   // havner i vannet to steg senere.
   const sperrer=[];
+  let kvartalN=0;                 // tegnede kvartaler, se TR.kvartalN nederst
   function iSperre(x,y){
     for(let i=0;i<sperrer.length;i++){
       const s=sperrer[i], dx=x-s.x, dy=y-s.y;
@@ -753,6 +754,87 @@ function buildTrackBg(TR){
       }
       return blobs;
     },
+    // Kvartalsrutenettet: blokker som følger banen fra t0 til t1, `rader` rekker
+    // utover på siden `side`. Søsteren til belte() — samme gang langs PATH, men
+    // den leverer RETTE ruter i stedet for sirkler, fordi et kvartal har
+    // gatehjørner og en elv ikke har det.
+    //
+    // To ting som er MÅLT og ikke valgt:
+    //
+    // 1. En rad som ikke får plass SLØYFES, den klemmes ikke inn. Lerretet har
+    //    bare `pad` (= TW*4+40) px utenfor banens omriss, og et hus `ut` px ute
+    //    med høyde `hoyde` krever ut+hoyde — samme tak som plasser() bruker for
+    //    landemerkene (se DISCESA-fella i CLAUDE.md steg B2). Klemte man radene
+    //    inn under taket i stedet, ville to rader havnet oppå hverandre i samme
+    //    gate, og rutenettet blitt én tykk mur.
+    // 2. Ytterste rad FØRST. Husene tegnes stående (lokal −y bort fra banen), så
+    //    rekkefølgen er malerens algoritme: tegnes den nærmeste raden først,
+    //    legger den fjerneste seg oppå og rutenettet vender innsiden ut.
+    //
+    // MERK at det er vesentlig mer plass INNOVER (indre felt ligger godt
+    // innenfor lerretet) enn utover. Derfor er det ingen feil at et tema ber om
+    // én rad ut og tre inn — det er lerretet som er asymmetrisk, ikke byen.
+    rutenett(t0,t1,side,avstand,blokk,rader,hoyde){
+      const n=rader||1, ruter=[];
+      const i0=Math.round(t0*PN), i1raw=Math.round(t1*PN);
+      const i1=i1raw<=i0?i1raw+PN:i1raw;
+      const gate=blokk*0.26;                      // gatebredden mellom to kvartaler
+      // Lerretstaket gjelder BARE rader som går utover. Innover ligger indre
+      // felt godt innenfor lerretet, og å bruke samme tak der ville stilletiet
+      // droppet rader som har god plass.
+      const tak=(side===this.utside()) ? pad-hoyde-14 : Infinity;
+      const tx0=blokk*0.5;
+      for(let rad=n-1;rad>=0;rad--){
+        const ut=avstand+rad*(blokk+gate);
+        if(ut>tak) continue;
+        // Avstanden måles langs RADENS egen kurve, ikke langs PATH. En rad som
+        // ligger `ut` px innenfor en sving er KORTERE enn banen i samme sving
+        // (og lenger utenfor), så med PATH-lengden som mål havnet kvartalene
+        // oppå hverandre i de indre radene og for spredt i de ytre —
+        // skjermbildeverifisert som en haug med overlappende hus i hver sving.
+        // Her er det punkt-til-punkt på selve raden, og da er gata like bred
+        // overalt uansett hvor banen svinger.
+        let akk=1e9, px=null, py=null;            // 1e9: slipp første kvartal med en gang
+        for(let i=i0;i<i1;i++){
+          const a=PATH[i%PN];
+          const h=heading[i%PN], nx=-Math.sin(h)*side, ny=Math.cos(h)*side;
+          const x=a[0]+nx*ut, y=a[1]+ny*ut;
+          if(px!==null) akk+=Math.hypot(x-px,y-py);
+          px=x; py=y;
+          if(akk<blokk+gate) continue;
+          // Samme sløyfe-regel som belte(): kommer kvartalet for nær asfalten
+          // (banen svinger tilbake mot seg selv), hoppes det over i stedet for
+          // å skyves utover. Et hull i husrekken der banen kommer nær er
+          // dessuten riktig — det er der gata krysser.
+          //
+          // Klaringen måles LANGS kvartalets egen utstrekning, ikke bare på
+          // midtpunktet — samme grep som clearFootprint. Et kvartal er en lang
+          // rute, og i en sving kan enden ligge inne på asfalten selv om
+          // midten måler klart. Å i stedet legge halve blokklengden til som
+          // sideveis margin (første forsøk) er en helt annen og altfor streng
+          // test: den krever at SENTERET står blokklengden ut, og med
+          // avstand=CLEAR+8 strøk da hvert eneste kvartal på alle tre banene.
+          const tgx=Math.cos(h), tgy=Math.sin(h);
+          let minD=1e9;
+          for(let k=-1;k<=1;k+=0.25){
+            const d=distToPath(x+tgx*tx0*k, y+tgy*tx0*k);
+            if(d<minD) minD=d;
+          }
+          if(minD<CLEAR) continue;
+          // Måleren nullstilles FØRST her, ikke før klaringssjekken. Gjør man
+          // det før, bruker et SLØYFET kvartal opp sin egen lengde av gata
+          // likevel, og hullet der banen kommer nær blir dobbelt så langt som
+          // det trenger å være. Skjermbildeverifisert: husrekka sto i små
+          // klynger med store tomrom imellom i stedet for langs gata.
+          akk=0;
+          ruter.push({x:x+ox,y:y+oy,ang:h,w:blokk,h:hoyde,side});
+        }
+      }
+      return ruter;
+    },
+    // Tegner rutene fra rutenett(). Skilt fra plasseringen av samme grunn som
+    // belte()/vann(): plasseringen er geometri som kan måles, tegningen er maling.
+    kvartal: dBuildingGrid,
     // Plasserer et landemerke ved rundeposisjon t: tangent-justert, på én side
     // av banen, og garantert klar av asfalten.
     //
@@ -1296,6 +1378,73 @@ function buildTrackBg(TR){
     if(rnd()<.5){ bx.fillStyle='#1b1f29'; bx.fillRect(-w*.18,-h-6*s,w*.36,6*s); }
     bx.restore();
   }
+  // Bykvartaler: husrekker i et RUTENETT som følger banen, i stedet for de
+  // spredte enkeltbyggene scatterTerrain strør utover.
+  //
+  // HVORFOR rutenett og ikke bare flere spredte hus: en bybane kjennes igjen på
+  // at husene står i kvartaler med gater mellom, langs veien du kjører. Spredte
+  // bygg med tilfeldig avstand leser som en forstad uansett hvor mange de er,
+  // og det var nettopp det de tre bybanene hadde før dette steget.
+  //
+  // Tonene kommer inn som DATA (pal.husA/husB/husC/tak/vindu), ikke som
+  // literaler i tegnekoden, av samme grunn som resten av lagPal: sjekk 13 i
+  // test_banetema.js måler dem mot bakken, og en farge som bor inne i en
+  // tegnefunksjon kan bare måles ved å kjøre tegningen og lese piksler.
+  function dBuildingGrid(ruter,pal){
+    const fasader=[pal.husA,pal.husB,pal.husC];
+    kvartalN+=ruter.length;
+    ruter.forEach(r=>{
+      // Sperresonen settes av TEGNEREN og ikke av plasseringen, samme sted som
+      // dFlate gjør det: uten den strør scatterTerrain trær og enkeltbygg midt
+      // oppi husrekka. Sirkelen flyttes halve husrekkens høyde UTOVER, fordi
+      // husene tegnes stående bort fra banen — sentrert på grunnlinja ville
+      // sperra dekket gata foran kvartalet og ikke selve kvartalet.
+      const nx=-Math.sin(r.ang)*r.side, ny=Math.cos(r.ang)*r.side;
+      sperrer.push({x:r.x+nx*r.h*0.5, y:r.y+ny*r.h*0.5, r:Math.max(r.w,r.h)*0.5+8});
+      bx.save(); bx.translate(r.x,r.y);
+      // Samme vending som landemerkene: lokal −y peker BORT fra banen, så
+      // kvartalet vokser utover og ikke inn over asfalten.
+      bx.rotate(r.ang+(r.side>0?Math.PI:0));
+      // HUSBREDDEN styrer antallet, ikke omvendt. Første utgave delte kvartalet
+      // i 2–3 like deler, og på et kvartal på 58–64 px ga det hus som var
+      // BREDERE enn de var høye. Skjermbildeverifisert: de leste som liggende
+      // spillkort, ikke som bygninger. De spredte dBuilding-husene som alt står
+      // rundt alle tretten banene er 11–18 px brede og 20–50 px høye, og DEN
+      // proporsjonen er den som faktisk leser som hus ovenfra — husrekka følger
+      // den nå, med 15 px som mål per hus.
+      const n=Math.max(2,Math.round(r.w/15));
+      const w=r.w/n;
+      for(let k=0;k<n;k++){
+        // Husene i ETT kvartal har ulik høyde, men står i samme husrekke med
+        // felles vegger. Det er takhøydene som gir en bygate silhuett; gjør man
+        // dem like, leser raden som en mur.
+        const h=r.h*(0.46+rnd()*0.54);
+        const x0=-r.w/2+k*w, bredde=w*0.88;       // 12 % luft = smug mellom husene
+        bx.fillStyle=fasader[Math.floor(rnd()*3)];
+        bx.fillRect(x0,-h,bredde,h);
+        // Lyssiden: samme faste, lave opasitet som dBuilding bruker. Ikke en
+        // målt tone — den ligger oppå fasaden og bærer ingen informasjon alene.
+        bx.fillStyle='rgba(255,255,255,.07)'; bx.fillRect(x0,-h,bredde*0.3,h);
+        // Takbåndet er teglfargen, og den måles mot FASADEN og ikke mot bakken
+        // (lagMot): et tak ligger på en vegg. Se den målte fella i CLAUDE.md —
+        // en LYSERE tegl stryker, fordi referansen er en lys vegg.
+        bx.fillStyle=pal.tak; bx.fillRect(x0-1,-h-3,bredde+2,4);
+        // Vinduene har FAST størrelse og fast avstand (2,4 × 3,2 px i et 5 × 7
+        // px rutenett), nøyaktig som dBuilding — ikke en andel av husbredden.
+        // Første utgave skalerte dem med huset (`bredde*0.16`), og på et bredt
+        // hus ble hvert vindu 4–5 px bredt med bare to kolonner: husene leste
+        // som terninger med øyne, ikke som fasader. Et vindu er like stort i
+        // en smal bygård som i en bred, og det er TETTHETEN som sier «by».
+        bx.fillStyle=pal.vindu;
+        const rader=Math.floor(h/7), kol=Math.max(1,Math.floor(bredde/5));
+        for(let rr=0;rr<rader;rr++) for(let c=0;c<kol;c++){
+          if(rnd()<0.4) continue;
+          bx.fillRect(x0+2.2+c*5, -h+4+rr*7, 2.4, 3.2);
+        }
+      }
+      bx.restore();
+    });
+  }
   // street lamp — warm glow pool + pole + head, lines the street-circuit
   // shoulders so the city tracks read as lit-up streets, not just a backdrop
   // of boxes. Especially fitting for SERPENTINA's evening setting.
@@ -1518,6 +1667,13 @@ function buildTrackBg(TR){
   TR.standRects=standRects; TR.flagPoles=flagPoles;
   TR.marshalPosts=marshalPosts; TR.floodlights=floodlights;
   TR.nightLights=nightLights;
+  // Antall tegnede kvartaler, av samme grunn som nightLights ligger på banen:
+  // det er et MÅLBART tall utenfra. Rutenettet sløyfer hver rute som kommer
+  // for nær asfalten eller utenfor lerretet, og en parameterendring kan derfor
+  // tømme hele rutenettet UTEN at noe kaster og uten at byggetiden stiger
+  // nevneverdig — det ville sett ut som «alt grønt» i alle portene. Nå kan det
+  // telles. 0 på en bybane betyr at kvartalene forsvant.
+  TR.kvartalN=kvartalN;
 }
 
 // Bare én bakgrunn skal ligge i minnet om gangen: de største er over 20M
@@ -1724,13 +1880,150 @@ const THEMES={
   'LABIRINTO':{ ground:['#43392c','#524636','#605343'], speckle:'dry', asphalt:'#3d3a37',
     runoff:{type:'grus',clr:'#7a6c54'}, curb:CURB_RW, cluster:0.52, ads:true,
     cityPal:['#b08d5a','#c9a37a','#d8b48c','#9c7f5e'], roofPal:'#8c3a2a',
-    treeTint:['#2e4a28','#3d5c32','#1f3319'] },
+    treeTint:['#2e4a28','#3d5c32','#1f3319'],
+    landmarkT:0.26,
+    // Fasadene er en oker→krem-rampe der ALLE tre tonene måler over 3:1 mot den
+    // verste bakketonen (#605343): 3,24 / 3,71 / 4,56:1. De gamle cityPal-tonene
+    // kunne ikke brukes til kvartalene — den lyseste av dem måler 2,42:1 og den
+    // mørkeste 1,16:1 mot samme bakke (se SENERE.md).
+    //
+    // Taket er teglrødt `#8c3a2a`, som er den samme tonen roofPal alt hadde, og
+    // det er MÅLT at den holder: 3,31:1 mot den mørkeste fasaden. Merk at en
+    // LYSERE tegl stryker (`#a34733` måler 2,60:1) — taket står mot en lys
+    // vegg, så her er det den mørke tonen som bærer kontrasten. Motsatt av
+    // bakkemålingene ellers i runde 4, der veien alltid gikk lysere.
+    //
+    // VINDUET er MØRKT her, og det er den ene bybanen der det stemmer: en
+    // middelhavsby ved DAG har skodder og skygge i åpningene, ikke lys. Første
+    // utgave brukte den samme gule `#facc15` som kveldsbyen og nattbyen, og i
+    // dagslys leste husrekka da som terninger med gule øyne. Tonen måles mot
+    // FASADEN og ikke mot bakken (lagMot), av samme grunn som taket — en
+    // vindusåpning sitter i en vegg: 4,67:1 mot den mørkeste fasaden.
+    // `glod` er skilt ut som egen tone fordi nattgløden i klokketårnet fortsatt
+    // skal være varm: en flate og en glød er to ulike ting, og det var nettopp
+    // det å bruke ÉN tone til begge som gjorde dagsbildet feil.
+    lagPal:{ husA:'#bfa87e', husB:'#cbb48d', husC:'#d8c9a8', tak:'#8c3a2a',
+             mur:'#e3d8bf', vindu:'#4a3b2c', glod:'#facc15' },
+    lagMot:{ tak:'husA', vindu:'husA' },
+    groundLayer(s){
+      const P=s.TH.lagPal, u=s.utside(), ut=s.TW+s.GRAVEL_SAFE+34;
+      // Én rad ut og tre inn. Det er ikke en smaksavgjørelse: lerretet har bare
+      // 200 px utenfor omrisset på denne banen, så rad to utover (179 px ute)
+      // ligger over taket på 144 og sløyfes av rutenett() selv. Innover er det
+      // plass, og en bygate skal ha hus på begge sider.
+      s.kvartal(s.rutenett(0.02,0.96,u,ut,58,1,42),P);
+      s.kvartal(s.rutenett(0.06,0.92,-u,ut,58,3,42),P);
+    },
+    // Katedral med klokketårn. Buerekken på MONTE SPIRA sier «fjellpass»; et
+    // klokketårn som stikker opp over takrekka sier «gammel middelhavsby» på
+    // samme måte — og det er det ENESTE som rager over kvartalene her.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      // STØRRELSEN er rettet etter skjermbilde, ikke valgt. Første utgave var
+      // 208 × 50 px skip — 4,2:1 — med et 86 px tårn i den ene enden, og den
+      // leste som tallet «1»: nøyaktig fella CLAUDE.md steg B2 alt beskriver
+      // for olivengården (280 × 52 med et 74 px tårn). Rettelsen er den samme
+      // som der: KRYMPE, ikke bytte farge. Skipet er nå 116 × 46 (2,5:1), altså
+      // en kropp og ikke en strek, og tårnet rager 24 px over det i stedet for
+      // 36 — høyt nok til å lese som klokketårn, kort nok til at silhuetten
+      // fortsatt er «bygning med tårn» og ikke «siffer».
+      //
+      // hoyde=70 er tårnet, ikke skipet: plasser() klemmer avstanden ut mot
+      // lerretskanten med den HØYESTE delen av bygget (CLAUDE.md steg B2).
+      const p=s.plasser(s.TH.landmarkT,s.utside(),58,s.TW+s.GRAVEL_SAFE+40,70);
+      const L=p.halvLengde*2, H=46, TB=24, TH2=70;
+      bx.save(); bx.translate(p.x,p.y);
+      bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      // skipet
+      bx.fillStyle=P.mur; bx.fillRect(-L/2,-H,L,H);
+      // Apsis: en halvrunding i enden MOTSATT tårnet. Den er det andre grepet
+      // mot siffer-lesingen — en rektangulær kropp med en vertikal i enden er
+      // tvetydig, en kropp med rund ende i den ene og tårn i den andre er ikke
+      // det. Tegnes i murtonen, altså alt målt mot bakken.
+      bx.beginPath(); bx.arc(-L/2,-H*0.5,H*0.5,Math.PI*0.5,Math.PI*1.5); bx.fill();
+      bx.fillStyle=P.tak; bx.fillRect(-L/2-3,-H-7,L+6,8);
+      // Skipsvinduene: fem høye, smale åpninger langs fasaden. De er ikke pynt
+      // — uten dem var skipet en BLANK krem flate med én prikk på, og i
+      // skjermbildet leste det som et kort og ikke som en bygning. Det er
+      // vindusrekka som gir skalaen: øyet leser høyden på huset av hvor mange
+      // etasjer det ser, og en flate uten åpninger har ingen høyde i det hele
+      // tatt. Siste slissa stopper på x=31, altså innenfor tårnet som begynner
+      // på L/2-TB=34.
+      bx.fillStyle=P.vindu;
+      for(let k=0;k<5;k++) bx.fillRect(-L/2+12+k*18,-H*0.60,5,H*0.44);
+      // rosevinduet høyt på skipet, over vindusrekka
+      bx.beginPath(); bx.arc(-L/2+L*0.34,-H*0.80,5,0,Math.PI*2); bx.fill();
+      // klokketårnet i enden av skipet
+      bx.fillStyle=P.mur; bx.fillRect(L/2-TB,-TH2,TB,TH2);
+      bx.fillStyle=P.tak; bx.fillRect(L/2-TB-4,-TH2-9,TB+8,10);
+      // klokkegluggene: to åpninger øverst i tårnet
+      bx.fillStyle=P.vindu;
+      bx.fillRect(L/2-TB+5,-TH2+14,6,11);
+      bx.fillRect(L/2-TB+13,-TH2+14,6,11);
+      bx.restore();
+      // Nattlyset settes på selve gluggene, ikke ved foten av tårnet — og
+      // omregningen gjøres av s.lokal, som har BÅDE vendingen og høyden i seg
+      // (se ALPEN/DUNA-feilen i CLAUDE.md steg B4).
+      const g=s.lokal(p,L/2-TB+13,-TH2+20);
+      s.lys(g.x,g.y,P.glod,15);     // gløden er varm, flaten under er mørk
+      s.sperr(p.x,p.y,L*0.6);
+    } },
   // Kveldsby: lilla og blått, asfaltert utkjøring, og kerben er blå/hvit i
   // stedet for rød/hvit — det ene stedet rød/hvit ville forsvunnet i paletten.
   'SERPENTINA':{ ground:['#2a2338','#352c46','#403654'], speckle:'dry', asphalt:'#3a333e',
     runoff:{type:'asfalt',clr:'#2b2638',stripe:'rgba(199,210,254,.30)'}, curb:['#2563eb','#f1f5f9'],
     cluster:0.55, ads:true, cityPal:['#3a2d4a','#4a3a5e','#2b2138','#574468'],
-    treeTint:['#1f3b2e','#2a4f3c','#15281f'] },
+    treeTint:['#1f3b2e','#2a4f3c','#15281f'],
+    landmarkT:0.37,
+    // Samme rampe som LABIRINTO, men i banens egen lilla: 3,77 / 4,98 / 6,34:1
+    // mot verste bakketone. Vannet er LYSERE enn bakken av samme grunn som
+    // breelva på MONTE SPIRA — en mørk havn mot en mørk lilla bakke kommer
+    // ikke over 3:1 i det hele tatt.
+    lagPal:{ husA:'#9d8fb8', husB:'#b4a7cc', husC:'#c8bede', tak:'#3b2f45',
+             vann:'#6f8fa8', vannKant:'#8fa8bd', molo:'#a8bccd', baat:'#cfd8e4',
+             vindu:'#fde68a' },
+    lagMot:{ tak:'husA' },
+    groundLayer(s){
+      const P=s.TH.lagPal, R=Math.min(s.bw,s.bh)*0.010, u=s.utside();
+      // Havnebassenget ligger langs utsiden av ETT parti av banen, og
+      // kvartalene tar resten av runden. De to deler ikke strekning med vilje:
+      // et kvartal tegnet oppå vannet ville stått i sjøen.
+      s.vann(s.belte(0.28,0.46,u,s.TW+s.GRAVEL_SAFE+32,R,2,140),{flate:P.vann,kant:P.vannKant});
+      const ut=s.TW+s.GRAVEL_SAFE+30;
+      s.kvartal(s.rutenett(0.52,0.96,u,ut,62,1,46),P);
+      s.kvartal(s.rutenett(0.06,0.94,-u,ut,62,3,46),P);
+    },
+    // Havna: molo med fortøyde båter, lagt i samme parti som bassenget over.
+    // Det er bassenget som gjør moloen lesbar — en steinbar alene i terrenget
+    // er bare en strek, og det var nettopp derfor landemerket og flaten måtte
+    // lages i samme steg.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      const p=s.plasser(s.TH.landmarkT,s.utside(),118,s.TW+s.GRAVEL_SAFE+44,34);
+      const L=p.halvLengde*2;
+      bx.save(); bx.translate(p.x,p.y);
+      bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      // moloen
+      bx.fillStyle=P.molo; bx.fillRect(-L/2,-26,L,11);
+      // Båtene ligger på UTSIDEN av moloen (lenger fra banen), så moloen står
+      // mellom banen og båtene slik en molo gjør.
+      for(let k=0;k<4;k++){
+        const bxx=-L/2+14+k*(L-28)/3;
+        bx.fillStyle=P.baat;
+        bx.beginPath(); bx.ellipse(bxx,-34,13,5,0,0,Math.PI*2); bx.fill();
+        // masta: en strek opp fra dekket, ellers leser skroget som en stein
+        bx.strokeStyle=P.baat; bx.lineWidth=1.6;
+        bx.beginPath(); bx.moveTo(bxx,-34); bx.lineTo(bxx,-52); bx.stroke();
+      }
+      // havnefyret i enden av moloen
+      bx.fillStyle=P.molo; bx.fillRect(L/2-9,-46,8,20);
+      bx.fillStyle=P.vindu;
+      bx.beginPath(); bx.arc(L/2-5,-48,3.4,0,Math.PI*2); bx.fill();
+      bx.restore();
+      const g=s.lokal(p,L/2-5,-48);
+      s.lys(g.x,g.y,P.vindu,16);
+      s.sperr(p.x,p.y,L*0.6);
+    } },
   // Vulkan: svart basalt, askegrå grus, og gul/svart kerb — fareskilt-fargene,
   // som er det ene stedet på banene de hører hjemme.
   'VULCANO':{ ground:['#17141a','#201c22','#2a252b'], speckle:'ash', asphalt:'#373331',
@@ -2272,7 +2565,71 @@ const THEMES={
   // utkjøringen. Den ENE banen der kerben har lov til å være skrikende.
   'VISTANOTTE':{ ground:['#2a1f1a','#352821','#40322a'], speckle:'arid', asphalt:'#3a313a',
     runoff:{type:'asfalt',clr:'#241a2b',stripe:'rgba(244,114,182,.38)'}, curb:['#db2777','#f1f5f9'],
-    cluster:0.62, ads:true, cityPal:['#1d1030','#2a1744','#140a24','#36205a'] }
+    cluster:0.62, ads:true, cityPal:['#1d1030','#2a1744','#140a24','#36205a'],
+    landmarkT:0.14,
+    // Fasadene er nøytral betong (3,20 / 3,95 / 5,21:1 mot verste bakketone),
+    // ikke neon: det er pariserhjulet og vinduene som skal lyse. Hadde husene
+    // selv vært magenta, ville landemerket forsvunnet i sin egen by.
+    // Neontonene er banens egne — magenta fra kerben (`#db2777`) og cyan som
+    // motfarge, begge lysnet til godt over kravet (6,99 og 8,48:1).
+    lagPal:{ husA:'#8a7f88', husB:'#9a8f96', husC:'#b0a6ab', tak:'#2f2a33',
+             hjul:'#c9c3cc', kabin:'#f0abfc', vindu:'#67e8f9' },
+    lagMot:{ tak:'husA' },
+    groundLayer(s){
+      const P=s.TH.lagPal, u=s.utside(), ut=s.TW+s.GRAVEL_SAFE+28;
+      // Den ENESTE banen der TO rader får plass utover: lerretet har 264 px
+      // her (TW=56 er den bredeste banen, og pad er TW*4+40), så rad to på 198
+      // px ute så vidt klarer taket på 200. Derfor er blokka 64 og ikke 70 —
+      // med 70 havner rad to på 206 px og ryker med seks piksler.
+      s.kvartal(s.rutenett(0.20,0.98,u,ut,64,2,50),P);
+      s.kvartal(s.rutenett(0.24,0.96,-u,ut,64,3,50),P);
+    },
+    // Pariserhjul. Det er den ene silhuetten som ikke kan forveksles med noe
+    // annet på et skjermbilde — en ring med eiker leses som pariserhjul selv i
+    // utkanten av synsfeltet, og ingen annen bane har noe rundt som rager.
+    landmark(s){
+      const P=s.TH.lagPal, bx=s.bx;
+      const R=48, FOT=28;
+      // hoyde = hele hjulet pluss beina (2R+FOT=124). Ber man om mindre, blir
+      // toppen av hjulet klippet av lerretskanten der banen ligger ute ved
+      // omrisset — samme felle som dueslaget på DISCESA (CLAUDE.md steg B2).
+      const p=s.plasser(s.TH.landmarkT,s.utside(),70,s.TW+s.GRAVEL_SAFE+36,R*2+FOT);
+      const cy=-(R+FOT);
+      bx.save(); bx.translate(p.x,p.y);
+      bx.rotate(p.ang+(p.side>0?Math.PI:0));
+      // beina
+      bx.strokeStyle=P.hjul; bx.lineWidth=5; bx.lineCap='round';
+      bx.beginPath(); bx.moveTo(-24,0); bx.lineTo(0,cy); bx.lineTo(24,0); bx.stroke();
+      // eikene FØR ringen, så ringen ligger rent oppå dem
+      bx.lineWidth=1.6;
+      for(let k=0;k<12;k++){
+        const a=k*Math.PI/6;
+        bx.beginPath(); bx.moveTo(0,cy); bx.lineTo(Math.cos(a)*R,cy+Math.sin(a)*R); bx.stroke();
+      }
+      bx.lineWidth=4;
+      bx.beginPath(); bx.arc(0,cy,R,0,Math.PI*2); bx.stroke();
+      // kabinene i neon, én per eike
+      bx.fillStyle=P.kabin;
+      for(let k=0;k<12;k++){
+        const a=k*Math.PI/6;
+        bx.beginPath(); bx.arc(Math.cos(a)*R,cy+Math.sin(a)*R,4.2,0,Math.PI*2); bx.fill();
+      }
+      // navet
+      bx.fillStyle=P.hjul;
+      bx.beginPath(); bx.arc(0,cy,6,0,Math.PI*2); bx.fill();
+      bx.restore();
+      // Nattlys: navet pluss fire kabiner. Ikke alle tolv — nattlysbudsjettet
+      // er 150 per bane, og tolv glød oppå hverandre på samme ring leser som
+      // én diffus flekk i stedet for et hjul med lys i.
+      const nav=s.lokal(p,0,cy);
+      s.lys(nav.x,nav.y,P.kabin,24);
+      for(let k=0;k<4;k++){
+        const a=k*Math.PI/2;
+        const q=s.lokal(p,Math.cos(a)*R,cy+Math.sin(a)*R);
+        s.lys(q.x,q.y,P.vindu,13);
+      }
+      s.sperr(p.x,p.y,R*1.4);
+    } }
 };
 // Standardverdiene ligger her i stedet for spredt utover tegnekoden, slik at en
 // bane som mangler et felt får det samme som alle andre og ikke en tilfeldig

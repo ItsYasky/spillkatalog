@@ -9,8 +9,6 @@ høyst én linje under som sier hvor i koden det gjelder.
 
 ## GRAND PRIX (`vintage_f1.html`)
 
-- [GRAND PRIX] Runde 4 steg C: bykvartaler og landemerker for LABIRINTO, SERPENTINA og VISTANOTTE – stor – 2026-10-30
-  `dBuildingGrid` og city-grenen i `buildTrackBg`; de tre ble bevisst utsatt fordi landemerket og kvartalene må lages sammen.
 - [GRAND PRIX] Runde 4 steg D: bevegelige detaljer, maks én per bane, bare når den er på skjermen, styrt av `raceTime` – middels – 2026-10-30
   Samme steg: nattlys for byene, havna, pariserhjulet, lavaen, gården og hangarene; `addLight` lagrer VERDENSKOORDINATER.
 - [GRAND PRIX] Runde 4 steg E: kontaktark med alle 13 baner side om side, og sluttest på geometri, AI-sim, byggetid og bildefrekvens – liten – 2026-10-30
@@ -25,6 +23,8 @@ høyst én linje under som sier hvor i koden det gjelder.
   Gammel kjent sak, ikke forårsaket av steg H; alle andre ligger på ≤0,8.
 - [GRAND PRIX] Halv oppløsning på bakkeflis-fyllet hvis bildetiden blir trang – middels – 2026-10-30
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
+- [GRAND PRIX] `cityPal` og `roofPal` på de tre bybanene måler 1,02–2,42:1 mot bakken – liten – 2026-11-09
+  Gjelder de SPREDTE `dBuilding`-husene scatterTerrain strør utover, ikke kvartalene (de fikk egne målte toner i steg C); samme palettsak som ARDENNEs trær.
 
 ## Arkaden (felles)
 
