@@ -25,6 +25,12 @@ høyst én linje under som sier hvor i koden det gjelder.
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
 - [GRAND PRIX] Den YTRE kvartalsraden på LABIRINTO og SERPENTINA gir bare 4 kvartaler hver – middels – 2026-11-09
   `scene.rutenett`: klaringssjekken mot `CLEAR` kaster nesten hele raden på en trang gatebane, så byen står i praksis bare på innsiden (155 av 159, 195 av 199).
+- [GRAND PRIX] Bykvartalene leser som dominobrikker om natta på alle tre bybanene – middels – 2026-11-09
+  `dBuildingGrid`: tak mot fasade faller fra 3,80–5,56:1 ved dag til 1,78–2,06:1 under nattoverlegget, så taket slutter å si «hus» mens den lyse flaten og vindusrutenettet blir stående igjen som brikke og prikker.
+- [GRAND PRIX] VULCANOs lava kaster ikke lys på bakken rundt seg – liten – 2026-11-09
+  Temaets `groundLayer` linje ~2164: `s.lys(...,P.lava,26)` henger på kjernen, som ligger inne i en skorpe langt bredere enn 26 px, så spillets eneste selvlysende flate får aldri gløden ut av seg selv.
+- [GRAND PRIX] MONTE SPIRA er den eneste banen uten ett eneste nattlys – liten – 2026-11-09
+  Akvedukten i temaets `landmark` (linje 1763–1814) har ingen `s.lys`-kall; banen ser lik ut dag og natt bortsett fra overlegget.
 - [GRAND PRIX] `cityPal` og `roofPal` på de tre bybanene måler 1,02–2,42:1 mot bakken – liten – 2026-11-09
   Gjelder de SPREDTE `dBuilding`-husene scatterTerrain strør utover, ikke kvartalene (de fikk egne målte toner i steg C); samme palettsak som ARDENNEs trær.
 

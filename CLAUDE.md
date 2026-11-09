@@ -40,6 +40,13 @@ dagens, og `test_ai_sim.js` tar `--out fasit.json`. Skriv resultater til fil
 og rapporter bare sammendrag og tall videre. `chrome_harness.py` (samme mappe)
 kjøres på samme vis: `python3 tester/chrome_harness.py maal`.
 
+**`chrome_harness.py maal` er en OBLIGATORISK PORT etter hvert steg som rører
+`buildTrackBg` eller et tema.** Grønne JSC-tester beviser ikke at bakgrunnen lar
+seg bygge: der er hvert tegnekall en no-op på en stub-ctx, og ingen av testene
+kaller `groundLayer` eller `landmark`. Det har sluppet gjennom to ganger —
+`pad` i steg B2 og `LYS_PER_RUTENETT` i steg D1 — og begge gangene kastet
+bakgrunnen på ALLE tretten banene mens testene meldte full pott.
+
 ## «Før»-tallene for AI-simuleringen
 
 Målingen er dyr (~12 min per kjøring) og er allerede gjort. **Ikke mål på
