@@ -23,6 +23,8 @@ høyst én linje under som sier hvor i koden det gjelder.
   Gammel kjent sak, ikke forårsaket av steg H; alle andre ligger på ≤0,8.
 - [GRAND PRIX] Halv oppløsning på bakkeflis-fyllet hvis bildetiden blir trang – middels – 2026-10-30
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
+- [GRAND PRIX] Den YTRE kvartalsraden på LABIRINTO og SERPENTINA gir bare 4 kvartaler hver – middels – 2026-11-09
+  `scene.rutenett`: klaringssjekken mot `CLEAR` kaster nesten hele raden på en trang gatebane, så byen står i praksis bare på innsiden (155 av 159, 195 av 199).
 - [GRAND PRIX] `cityPal` og `roofPal` på de tre bybanene måler 1,02–2,42:1 mot bakken – liten – 2026-11-09
   Gjelder de SPREDTE `dBuilding`-husene scatterTerrain strør utover, ikke kvartalene (de fikk egne målte toner i steg C); samme palettsak som ARDENNEs trær.
 

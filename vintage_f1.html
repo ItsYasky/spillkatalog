@@ -614,6 +614,13 @@ function buildTrackBg(TR){
   // havner i vannet to steg senere.
   const sperrer=[];
   let kvartalN=0;                 // tegnede kvartaler, se TR.kvartalN nederst
+  let kvartalLysN=0;              // tente kvartalsvinduer, se TR.kvartalLysN
+  // MÅ stå her oppe, ikke nede ved dBuildingGrid der den brukes: groundLayer
+  // kalles på linje ~890, altså FØR deklarasjonen lenger ned i funksjonen, og
+  // en `const` i den temporale dødsonen kaster ReferenceError. Samme felle som
+  // `pad` i steg B2 — og igjen var alle JSC-testene grønne, fordi de aldri
+  // kaller groundLayer. Begrunnelsen for tallet står ved dBuildingGrid.
+  const LYS_PER_RUTENETT=40;
   function iSperre(x,y){
     for(let i=0;i<sperrer.length;i++){
       const s=sperrer[i], dx=x-s.x, dy=y-s.y;
@@ -1390,10 +1397,27 @@ function buildTrackBg(TR){
   // literaler i tegnekoden, av samme grunn som resten av lagPal: sjekk 13 i
   // test_banetema.js måler dem mot bakken, og en farge som bor inne i en
   // tegnefunksjon kan bare måles ved å kjøre tegningen og lese piksler.
+  // Tente vinduer: ETT per utvalgt kvartal, og utvalget er indeksbasert
+  // (hvert `steg`-te kvartal) og ikke `rnd()`-basert. To grunner. Antallet må
+  // fordeles over HELE runden — et tak som bare kuttet lista på 60 ville samlet
+  // alle lysene i det første partiet kvartalene ble lagt i, og resten av byen
+  // hadde stått bekmørk. Og et indeksvalg trekker ingen `rnd()`, så husenes
+  // høyder og fasadetoner er bit-identiske med steg C.
+  //
+  // 40 per rutenettkall (altså opptil 80 per bane, siden hver bybane legger ett
+  // rutenett ut og ett inn) er valgt mot nattlysbudsjettet på 150: landemerket
+  // tegnes ETTER groundLayer, så en by som spiste hele taket ville gjort
+  // klokketårnet og pariserhjulet mørke — addLight slipper stille det som
+  // kommer over. Med 60 står det 85+ igjen til landemerket.
   function dBuildingGrid(ruter,pal){
     const fasader=[pal.husA,pal.husB,pal.husC];
     kvartalN+=ruter.length;
-    ruter.forEach(r=>{
+    // `glod` er LABIRINTOs varme tone — der er selve vindusflaten mørk med
+    // vilje (middelhavsby ved dag), så det tente vinduet må ha en egen tone. På
+    // kveldsbyen og nattbyen ER vindustonen alt lys, og da er den sin egen.
+    const tent=pal.glod||pal.vindu;
+    const steg=Math.max(1,Math.ceil(ruter.length/LYS_PER_RUTENETT));
+    ruter.forEach((r,ri)=>{
       // Sperresonen settes av TEGNEREN og ikke av plasseringen, samme sted som
       // dFlate gjør det: uten den strør scatterTerrain trær og enkeltbygg midt
       // oppi husrekka. Sirkelen flyttes halve husrekkens høyde UTOVER, fordi
@@ -1414,6 +1438,9 @@ function buildTrackBg(TR){
       // den nå, med 15 px som mål per hus.
       const n=Math.max(2,Math.round(r.w/15));
       const w=r.w/n;
+      // Huset midt i rekka bærer det tente vinduet på de utvalgte kvartalene.
+      // Midt i, ikke i enden: et lys i ytterste hus leser som en lykt i gata.
+      const lysHus=(ri%steg===0)?Math.floor(n/2):-1;
       for(let k=0;k<n;k++){
         // Husene i ETT kvartal har ulik høyde, men står i samme husrekke med
         // felles vegger. Det er takhøydene som gir en bygate silhuett; gjør man
@@ -1435,11 +1462,35 @@ function buildTrackBg(TR){
         // hus ble hvert vindu 4–5 px bredt med bare to kolonner: husene leste
         // som terninger med øyne, ikke som fasader. Et vindu er like stort i
         // en smal bygård som i en bred, og det er TETTHETEN som sier «by».
+        // FORSØKT OG FORKASTET: å tenne ~12 % av vinduene i bakingen. Det gjorde
+        // nattbildet rikere, men dagbildet feil — og det er ikke en smakssak,
+        // det følger av målingen. Et tent vindu må være LYSERE enn veggen for å
+        // lese som tent, og en åpning ved dag må være MØRKERE enn veggen for å
+        // lese som åpning (steg C: 4,67:1 mot fasaden). Samme bakte flate kan
+        // ikke være begge, og bakgrunnen er felles for alle tre døgntidene.
+        // Derfor blir det med ÉTT tent vindu per utvalgt kvartal, og resten av
+        // nattbyen kommer fra gløden — som nettopp IKKE er en flate.
         bx.fillStyle=pal.vindu;
         const rader=Math.floor(h/7), kol=Math.max(1,Math.floor(bredde/5));
         for(let rr=0;rr<rader;rr++) for(let c=0;c<kol;c++){
           if(rnd()<0.4) continue;
           bx.fillRect(x0+2.2+c*5, -h+4+rr*7, 2.4, 3.2);
+        }
+        // Det tente vinduet: øverste etasje, ytterste kolonne, tegnet OVER
+        // rutenettet over (så det ikke kan ha blitt sløyfet av 0.4-sjansen) og
+        // meldt inn som nattlys på nøyaktig samme punkt. Flaten bakes, gløden
+        // tegnes bare om natta — samme todeling som resten av nattlysene.
+        if(k===lysHus && rader>0){
+          const vx=x0+2.2, vy=-h+4;
+          bx.fillStyle=tent; bx.fillRect(vx,vy,2.4,3.2);
+          // Lokal→bg med SAMME vending som transformen over (lokal −y peker bort
+          // fra banen), regnet ut her i stedet for via scene.lokal fordi
+          // tegnefunksjonene ikke ser scene-objektet.
+          const vend=r.side>0?-1:1;
+          const cs=Math.cos(r.ang)*vend, sn=Math.sin(r.ang)*vend;
+          const lx=vx+1.2, ly=vy+1.6;
+          addLight(r.x+lx*cs-ly*sn, r.y+lx*sn+ly*cs, tent, 20);
+          kvartalLysN++;
         }
       }
       bx.restore();
@@ -1674,6 +1725,10 @@ function buildTrackBg(TR){
   // nevneverdig — det ville sett ut som «alt grønt» i alle portene. Nå kan det
   // telles. 0 på en bybane betyr at kvartalene forsvant.
   TR.kvartalN=kvartalN;
+  // Samme begrunnelse for de tente vinduene: de ligger inne i nightLights
+  // sammen med landemerkets lys, så uten eget tall kan man ikke se forskjell på
+  // «byen er tent» og «landemerket er tent». 0 på en bybane betyr mørk by.
+  TR.kvartalLysN=kvartalLysN;
 }
 
 // Bare én bakgrunn skal ligge i minnet om gangen: de største er over 20M

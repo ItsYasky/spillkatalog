@@ -168,6 +168,11 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | B4 | ferdig | `e94db19` | `scene.lokal()`: gløden på selve lyskilden (ALPEN, ARDENNE, DUNA), og radier målt opp igjen | samme tre porter |
 | B5 | ferdig | `0bc25c6` | Bakkeflis som gjentakende mønster under hele skjermen + uttonet ytterkant på bakgrunnsbildet, så lerretskanten ikke lenger synes | samme tre porter + skjøtemåling |
 | C | ferdig | `7626746` | Bykvartaler (`scene.rutenett` + `dBuildingGrid`) og landemerker for LABIRINTO (katedral), SERPENTINA (havn med moloen) og VISTANOTTE (pariserhjul) | `test_banetema.js` (183/183), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + skjermbilder |
+| D1 | ferdig | `PLACEHOLDER_D1` | Nattlys i bykvartalene: ett tent vindu per utvalgt kvartal — LABIRINTO 44 lys, SERPENTINA 44, VISTANOTTE 72 (mot 1/1/5 før) | `test_banetema.js` (186/186), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + nattbilder |
+
+**Steg D er delt i tre fordi den er to ulike jobber:** D1 nattlysene i byene
+(ferdig), D2 stillaset for bevegelige detaljer (`raceTime`-styrt, culling, én
+per bane), D3 selve detaljene på de resterende banene.
 
 **De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
 VISTANOTTE). De trenger både landemerke og bykvartaler, og å skrive landemerket
@@ -554,6 +559,53 @@ kvartalene: den lyseste måler 2,42:1 og den mørkeste 1,16:1 mot bakken (lagt i
 VISTANOTTE 19,4 ms mot budsjettet på 100 — altså FLAT, selv med 692 nye
 kvartaler fordelt på tre baner. Nattlys: LABIRINTO 1 (klokketårnet),
 SERPENTINA 1 (havnelyset), VISTANOTTE 5 (navet + fire kabiner).
+
+**Avvik verdt å vite i steg D1 (nattlys i byene):**
+
+1. **Samme felle som `pad` i steg B2, i ny drakt.** `const LYS_PER_RUTENETT` ble
+   først skrevet rett over `dBuildingGrid`, altså ~500 linjer NEDENFOR det
+   stedet `TH.groundLayer(scene)` kalles. Funksjonsdeklarasjoner heises, men en
+   `const` gjør det ikke — den ligger i den temporale dødsonen og kaster
+   `ReferenceError` ved kallet. Alle JSC-testene var grønne (183/183), for de
+   kaller aldri `groundLayer`; `chrome_harness.py` kom tom tilbake. Konstanter
+   som brukes av tegnekoden hører hjemme ØVERST i `buildTrackBg`, der
+   `sperrer`/`kvartalN` alt ligger.
+2. **`--tod` på `chrome_harness.py shot` hadde ingen virkning.** `todIdx` ble
+   satt FØR `startRace()`, og `startRace()` kaller `resolveTodIdx(TR)`, som
+   leser `SETTINGS.tid` (standard AUTO = banens egen `naturligTid`) og
+   overskriver alt. Hvert «nattbilde» av en dagbane kom tilbake i fullt
+   dagslys. Flyttet til ETTER `startRace()`. Feilen kom inn med
+   `resolveTodIdx` i meny-steg A og har altså ligget der gjennom hele runde 4 —
+   nattbildene i steg B og C viste banens egen tid, ikke den som ble bedt om.
+3. **Et bilde «ved landemerket» viser ikke alltid kulissene.** VISTANOTTE
+   legger kvartalene på 0,20–0,98 og 0,24–0,96, mens landemerket står på 0,14 —
+   altså det ENE punktet på runden uten by. `shot` har derfor fått `--t`, som
+   overstyrer rundeposisjonen.
+4. **En flate kan ikke være både tent og mørk — FORKASTET forsøk.** Å tenne
+   ~12 % av vinduene i bakingen gjorde nattbyen rik, men ødela dagbildet: et
+   tent vindu må være LYSERE enn veggen, en åpning ved dag MØRKERE (steg C
+   målte 4,67:1 for den mørke), og bakgrunnen er felles for alle tre
+   døgntidene. Nattbyen må derfor komme fra GLØDEN, som ikke er en flate.
+   Det ene tente vinduet per utvalgt kvartal står igjen som lyskilde.
+5. **Utvalget er indeksbasert, ikke `rnd()`-basert**, av to grunner: lysene må
+   fordeles over HELE runden (et tak som bare kuttet lista ville samlet alt i
+   det partiet kvartalene ble lagt i først), og et indeksvalg trekker ingen
+   `rnd()`, så husenes høyder og fasadetoner fra steg C er bit-identiske.
+6. **Rekkefølgen groundLayer → landmark er et budsjettproblem.** `addLight`
+   slipper STILLE alt over 150, og bakkelaget tegnes først, så en by som spiste
+   hele taket ville gjort klokketårnet og pariserhjulet mørke uten at noe
+   feilet. 40 per rutenettkall gir 44/44/72 og lar det stå 78+ igjen.
+7. **Glødestørrelsen er det eneste håndtaket.** `drawTrackScene` tegner alle
+   nattlys med fast alpha 0,5, og nattoverlegget (`rgba(5,8,20,0.58)`) legges
+   OPPÅ etterpå. 12 px leste knapt i skjermbildet, 14 så vidt, 20 leser som et
+   opplyst vindu.
+
+**Kostnad, målt i steg D1:** bildetid verste 1,87 ms (VISTANOTTE/NATT) mot 1,98
+i steg B5 — altså flat/litt bedre, og LABIRINTO/NATT falt 0,31 → 0,25.
+Byggetiden er innenfor samme støy som før (to kjøringer ga sum 236 og 202 ms
+med ARDENNE 50,5 og TEMPIO 44,7 som hver sin engangstopp — se steg A punkt 3:
+ett høyt tall skal måles på nytt før det tolkes; bybanene selv ligger på
+14,2/15,1/20,8 ms).
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til

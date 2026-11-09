@@ -378,6 +378,23 @@ function kjør(game){
       (besteHi === -Infinity ? 'ingen' : besteHi.toFixed(2) + ':1') + ') når ikke ' + TREE_MIN + ':1');
   });
 
+  // 18. Et tema som legger BYKVARTALER må ha en tone å tenne vinduet med.
+  //     dBuildingGrid leser `pal.glod || pal.vindu` og bruker den både til den
+  //     bakte flaten og til fargen på nattgløden. Mangler begge, blir `tent`
+  //     undefined — og `fillStyle = undefined` kaster ikke, den BEHOLDER
+  //     forrige farge. Det tente vinduet ville da blitt malt i takets teglrødt
+  //     uten at noe som helst stoppet opp, og nattlyset hadde fått `undefined`
+  //     som farge. Sjekken leser groundLayer-kilden etter `s.kvartal(`, samme
+  //     grep som sjekk 14 bruker for å finne temaene som tegner noe eget.
+  TRACKS.forEach(function(t){
+    const gl = t.theme.groundLayer;
+    if(!gl || String(gl).indexOf('s.kvartal(') < 0) return;
+    const pal = t.theme.lagPal || {};
+    const tent = pal.glod || pal.vindu;
+    sjekk('kvartalslys: ' + t.name, erHex(tent),
+      'bykvartaler uten lagPal.glod/vindu — tent vindu og nattlys får ingen farge');
+  });
+
   return { res: res, verste: verste, versteLag: versteLag, refL: refL, lakkAntall: lakk.length };
 }
 

@@ -159,7 +159,7 @@ FPS_JS = r"""
 """
 
 
-def shot_js(bane, tod, modus, ved_landemerke=True):
+def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None):
     """Måleskript som rigger spillet til ett bilde og tegner det på canvaset.
 
     modus 'spill' = vanlig spillvisning (kamera bak bilen, HUD, 20 biler).
@@ -174,9 +174,13 @@ def shot_js(bane, tod, modus, ved_landemerke=True):
   var idx=-1;
   for(var i=0;i<TRACKS.length;i++) if(TRACKS[i].name===%s) idx=i;
   if(idx<0) throw new Error('ukjent bane');
-  todIdx=%d;
   trackSel=idx; lapsIdx=4; LAPS=20; difficulty=2;
   startRace();
+  // MÅ settes ETTER startRace(): den kaller resolveTodIdx(TR), som leser
+  // SETTINGS.tid (standard AUTO = banens egen naturligTid) og overskriver alt
+  // som er satt på forhånd. Satt før var --tod uten virkning, og hvert
+  // «nattbilde» av en dagbane kom tilbake i fullt dagslys.
+  todIdx=%d;
   state='playing';
   var MODUS=%s, VEDLM=%s, naadd='-';
   if(MODUS==='bg'){
@@ -212,7 +216,13 @@ def shot_js(bane, tod, modus, ved_landemerke=True):
     // Flytt feltet fram til det punktet bildet skal tas på. Landemerket
     // ligger i LANDMARK_T (en rundeposisjon lagret i temaet) der banen har
     // ett, ellers tas bildet rett etter start.
-    var maalT = VEDLM && TR.theme && TR.theme.landmarkT!=null ? TR.theme.landmarkT : 0.02;
+    // --t overstyrer rundeposisjonen. Trengs fordi landemerket og kulissene
+    // ikke alltid ligger samme sted: VISTANOTTE legger kvartalene på 0,20-0,98
+    // og 0,24-0,96, mens landemerket står på 0,14 — et bilde «ved landemerket»
+    // viser altså byen fra det ene punktet på runden der det ikke ER noen by.
+    var OVR=%s;
+    var maalT = OVR!=null ? OVR
+      : (VEDLM && TR.theme && TR.theme.landmarkT!=null ? TR.theme.landmarkT : 0.02);
     // Kameraet SETTES på kjørelinja; feltet kjøres ikke fram dit.
     //
     // To forsøk som ikke virker, begge prøvd: å kalle update() i løkke flytter
@@ -237,7 +247,8 @@ def shot_js(bane, tod, modus, ved_landemerke=True):
   pre.style.display='none';
   pre.textContent='OK '+TRACKS[idx].name+' rundepos '+naadd;
 })();
-""" % (json.dumps(bane), tod, json.dumps(modus), "true" if ved_landemerke else "false")
+""" % (json.dumps(bane), tod, json.dumps(modus), "true" if ved_landemerke else "false",
+       "null" if t_overstyr is None else repr(float(t_overstyr)))
 
 
 def main():
@@ -293,7 +304,8 @@ def main():
         modus = flagg("modus", "spill")
         ut = flagg("ut", "/tmp/gp_%s_%s.png" % (bane.replace(" ", "_"), modus))
         h = 680 if modus == "spill" else 1400
-        skjermbilde(html, shot_js(bane, tod, modus), ut, 520, h)
+        t_ovr = flagg("t")
+        skjermbilde(html, shot_js(bane, tod, modus, t_overstyr=t_ovr), ut, 520, h)
         print(ut)
 
     else:
