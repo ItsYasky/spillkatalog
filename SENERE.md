@@ -23,8 +23,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   Banen var ikke med i de fem som ble målt da `posFactor` ble strammet; mål med `test_ai_sim.js`.
 - [GRAND PRIX] SERPENTINA/REALISTISK/ULTRA har 6,65 banegrensebrudd per bil – middels – 2026-10-30
   Gammel kjent sak, ikke forårsaket av steg H; alle andre ligger på ≤0,8.
-- [GRAND PRIX] Død kode: `cfg.treeTint`/`rockTint`/`bushTint`/`groundBase`/`speckle` har ingen lesere etter at tonene flyttet inn i temaet – liten – 2026-10-30
-  Felt på cfg-nivå i `TRACKS`; sjekk at det faktisk er cfg-nivået som er dødt før noe slettes.
 - [GRAND PRIX] Halv oppløsning på bakkeflis-fyllet hvis bildetiden blir trang – middels – 2026-10-30
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
 

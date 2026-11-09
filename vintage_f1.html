@@ -30,34 +30,18 @@ const OVERTAKE_RANGE=70, OVERTAKE_CONE=0.6;
 // the wider overtake cone above) — see the slipstream block in update().
 const SLIP_RANGE=95, SLIP_CONE=0.92;
 
-// ══════════════════════════════════════════════════════════════════
-// GAME MODE: CASUAL vs REALISTISK — chosen on the main menu before you ever
-// touch the track-select screen. CASUAL is the original, forgiving feel
-// (steering alone can carry any corner). REALISTISK is a straight-up higher
-// top speed PLUS a genuine, universal grip-loss mechanic (PHYS_K/turnPenalty/
-// gripPenalty, wired into update() below) that does not exist in casual —
-// carry too much speed into a bend relative to its actual curvature and you
-// lose steering authority AND grip, so you run wide/lose the car if you
-// don't brake, for player and AI alike. This used to be a separate file
-// (f1_realistic.html); it's now just a mode switch on the same game.
-// ══════════════════════════════════════════════════════════════════
+// GAME MODE: CASUAL (forgiving, steering alone carries any corner) vs
+// REALISTISK (higher top speed PLUS universal grip-loss via PHYS_K/
+// turnPenalty/gripPenalty in update() — carry too much speed into a bend
+// and you lose steering and grip, for player and AI alike).
 let REALISTIC=false;
 const PLAYER_MAX_CASUAL=4.8,     PLAYER_MAX_REALISTIC=6.8;
 const PHYS_K=2.6;       // how hard curvature clamps the realistic safe-speed ceiling
-// Hvor mye FART det koster å ligge over physSafe. HVORFOR den måtte inn: før
-// gikk overRatio bare til styreutslag (turnPenalty) og grep (gripPenalty),
-// aldri til farten — `MAX` ble ikke rørt av den i det hele tatt. Taket fantes
-// altså på papiret, men kostet ingenting, og det eneste en sving tok fra deg
-// var en bredere linje, som banebredden svelget. Målt med gassen i bånn og
-// ALDRI en bremsing kom bilen rundt ARDENNE 3,0 % raskere enn «full toppfart
-// hele runden», og med Shift+Space 6,0 % raskere, uten ETT banegrensebrudd.
-// Med denne kostnaden ligger samme runde på −0,9 % til +3,0 % av den
-// teoretiske tiden, altså omtrent der den bør ligge.
-//
-// Verdien er ikke en hard vegg, med vilje: dette er negativ tilbakekobling, så
-// farten legger seg litt OVER physSafe i likevekt (ved physSafe 5,3 blir det
-// ca. 5,6). Man skal fremdeles kunne kjøre bevisst for hardt inn og ta igjen
-// på utgangen — det skal bare koste noe.
+// PHYS_SCRUB: fartskostnaden for å ligge over physSafe. Uten den var taket
+// bare på papiret — overRatio traff aldri `MAX`, bare styring/grep (se
+// CLAUDE.md steg H). Verdien er med vilje en myk fjær og ikke en hard vegg:
+// farten legger seg litt OVER physSafe i likevekt, så man fremdeles kan kjøre
+// bevisst for hardt inn og ta igjen på utgangen.
 const PHYS_SCRUB=0.8;
 const TURN_BASE=0.046;  // full steering-rack rate available under the safe speed (realistic)
 
@@ -189,20 +173,12 @@ function findStraightZones(smoothCurv, want){
 const MAX_BG_PX=16e6;
 
 // ── seedet tilfeldighet for bakgrunnen ─────────────────────────────────────
-// HVORFOR denne finnes: etter at bakgrunnsbyggingen ble gjort lat (bygges
-// først når banen faktisk startes, se ensureTrackBg) kjøres buildTrackBg på
-// nytt hver gang du går inn på en bane. Med Math.random() i tegnekoden betød
-// det at trær, steiner, tribunefolk og tagger FLYTTET SEG mellom hvert løp på
-// samme bane. En bane du har kjørt tjue runder på skal kjennes igjen, og et
-// skogholt du bruker som bremsepunkt kan ikke stå et annet sted neste løp.
-//
-// Frøet er banenavnet, ikke en teller: da er bildet det samme i dag og om et
-// år, uansett hvilken rekkefølge banene ble bygget i, og uansett om spilleren
-// har vært inne på tre andre baner først.
-//
-// MERK at dette med vilje BARE gjelder bakgrunnsbyggingen. AI, fysikk,
-// partikler og tribunenes kamerablitz bruker fortsatt Math.random() — de SKAL
-// variere mellom løp.
+// Bakgrunnen bygges på nytt hver gang du går inn på en bane (se
+// ensureTrackBg), og med Math.random() ville trær, steiner og tagger flyttet
+// seg mellom hvert løp på samme bane. Frøet er banenavnet (ikke en teller),
+// så bildet er det samme uansett rekkefølge banene besøkes i.
+// Gjelder KUN bakgrunnsbyggingen — AI, fysikk, partikler og tribunens
+// kamerablitz bruker fortsatt Math.random() og SKAL variere mellom løp.
 function seedFromName(navn){
   // FNV-1a over navnet. Trenger ikke være kryptografisk, bare spre to navn som
   // ligner («DESERTO»/«DISCESA») til helt ulike frø.
@@ -222,15 +198,11 @@ function mulberry32(seed){
 }
 
 // ── verdistøy ──────────────────────────────────────────────────────────────
-// To jobber i runde 4 trenger det SAMME organiske mønsteret: bakketonene (store
-// myke flekker i stedet for 1400 jevnt spredte prikker) og hvor vegetasjonen
-// får stå (skogholt og lunder i stedet for jevnt strødde trær). Deler de én
-// støyfunksjon, havner lundene faktisk der bakken er mørkest og grønnest, og
-// terrenget leser som ett landskap i stedet for to lag som ikke vet om hverandre.
-//
-// Verdistøy på et 64×64-rutenett med smoothstep-interpolasjon og to oktaver.
-// Perlin/simplex ville vært finere, men dette er store myke flater i
-// bakgrunnen — forskjellen er usynlig, og dette er tjue linjer uten tabeller.
+// Bakketoner og vegetasjonsplassering deler samme støyfunksjon, slik at
+// lundene faktisk står der bakken er mørkest og grønnest i stedet for to
+// usynkroniserte lag. Verdistøy på 64×64 med smoothstep og to oktaver —
+// Perlin/simplex ville vært finere, men forskjellen er usynlig på store
+// myke flater.
 const NOISE_N=64;
 function makeNoise(rnd){
   const g=new Float32Array(NOISE_N*NOISE_N);
@@ -248,22 +220,11 @@ function makeNoise(rnd){
   return function(x,y){ return oktav(x,y,7)*0.65+oktav(x+0.37,y+0.71,19)*0.35; };
 }
 
-// Å bygge en bane er delt i to deler, fordi de koster vilt forskjellig:
-//
-//  1. buildTrack()   — geometrien. Billig, og må finnes for ALLE baner med én
-//                      gang: banevalg-skjermen tegner minikart rett fra PATH
-//                      og viser antall rett-modus-soner, og wallOffsArr må ligge
-//                      klart før første frame siden kollisjonen i update()
-//                      leser det.
-//  2. buildTrackBg() — det forhåndstegnede bakgrunnscanvaset. Dyrt: flere
-//                      tusen piksler i hver retning, og terrengspredningen
-//                      måler avstand til banen for hvert eneste objekt.
-//
-// Før denne delingen gjorde buildTrack() begge deler for alle 13 banene ved
-// oppstart: 164M piksler bakgrunn (~650 MB) lå i minnet samtidig før
-// spilleren i det hele tatt hadde valgt bane, oppstarten var treg, og de fire
-// største banene sprengte iOS-grensen over. Nå bygges bakgrunnen først når
-// banen faktisk startes, og bare én av dem holdes i minnet (se ensureTrackBg).
+// Å bygge en bane er delt i to deler: buildTrack() er billig geometri og må
+// finnes for alle 13 baner ved oppstart (minikart, rett-modus-soner,
+// wallOffsArr); buildTrackBg() er det dyre forhåndstegnede bakgrunnscanvaset
+// og bygges lat, først når banen faktisk startes — bare én bakgrunn holdes i
+// minnet samtidig (se ensureTrackBg).
 function buildTrack(cfg){
   const CP=genCP(cfg);
   const PATH=buildPath(CP,18);
@@ -325,18 +286,14 @@ function buildTrack(cfg){
 }
 
 // Den dyre halvdelen: baker underlag, asfalt, høydeskygge, curbs, barrierer,
-// rett-modus-soner, terreng og tribuner inn i ett forhåndstegnet canvas, og plasserer
-// samtidig det levende lagets posisjoner (tribuner/flagg/marshaler/flomlys),
-// som må finnes før første frame av løpet. Idempotent: er bakgrunnen allerede
-// bygget, er det ingenting å gjøre — å kjøre samme bane om igjen etter et løp
-// skal ikke koste noe.
-// Den finkornede prikketeksturen i bakken. Lagt i en egen funksjon fordi den
-// brukes to steder — i bakgrunnsbildet og i bakkeflisen under det — og de to
-// MÅ være samme tekstur, ellers ser man hvor bildet slutter.
-// Merk at hver gren bruker nøyaktig TRE `rnd()`-kall. Det er ikke tilfeldig:
-// bakgrunnen er seedet på banenavnet og skal være bit-identisk fra gang til
-// gang, så en gren som trakk et annet antall tall ville flyttet alt som tegnes
-// etterpå. Legges en ny `speckle`-type inn, må den også bruke tre.
+// rett-modus-soner, terreng og tribuner (inkl. flagg/marshaler/flomlys) inn i
+// ett forhåndstegnet canvas. Idempotent — kjører du samme bane om igjen etter
+// et løp, er det ingenting å bygge på nytt.
+// Den finkornede prikketeksturen i bakken, i egen funksjon fordi den brukes
+// to steder (bakgrunnsbildet og bakkeflisen under det) og MÅ være samme
+// tekstur, ellers ser man hvor bildet slutter. Hver gren bruker nøyaktig TRE
+// `rnd()`-kall for å holde den seedede bakgrunnen bit-identisk — en ny
+// speckle-type må også bruke tre.
 function speckleFarge(speckle,rnd){
   if(speckle==='arid') return `rgba(${150+rnd()*70},${118+rnd()*55},${65+rnd()*40},.4)`;
   if(speckle==='dune') return `rgba(${205+rnd()*40},${160+rnd()*45},${120+rnd()*35},.4)`;
@@ -348,17 +305,12 @@ function speckleFarge(speckle,rnd){
   return `rgba(${20+rnd()*26},${60+rnd()*40},${20+rnd()*18},.55)`;
 }
 
-// Bakkeflis: et lite, gjentakbart utsnitt av banens egen bakke.
-//
-// HVORFOR den trengs: bakgrunnsbildet har bare `pad` (= TW*4+40) piksler
-// utenfor banens omriss — ~230 px på MONTE SPIRA — mens et skjermhjørne kan
-// ligge 545 px fra bilen, fordi bildet roterer med kjøreretningen og hjørnet
-// svinger utover. Kjører man nær yttersiden, kom kanten av bakgrunnsbildet inn
-// i bildet som en knivrett strek mot svart.
-//
-// HVORFOR ikke bare større bakgrunn: de fire største banene er alt klemt under
-// 16 MP-taket (`bgScale<1`), og arealet vokser med kvadratet av marginen. En
-// flis koster 256×256 piksler én gang, uansett hvor stor banen er.
+// Bakkeflis: et lite, gjentakbart utsnitt av banens egen bakke. Trengs fordi
+// bakgrunnsbildet bare har `pad` piksler utenfor banens omriss (~230 px på
+// MONTE SPIRA), mens et skjermhjørne kan ligge 545 px fra bilen når bildet
+// roterer med kjøreretningen — uten flisen kom bakgrunnskanten inn som en
+// knivrett strek. En større bakgrunn hjelper ikke: fire baner er alt klemt
+// under 16 MP-taket, og arealet vokser med kvadratet av marginen.
 const GROUND_TILE=256;
 // Bredden på den uttonede ytterkanten av bakgrunnsbildet. Tallet står her
 // fordi BEGGE sidene av skjøten må kjenne det: `buildTrackBg` toner ut akkurat
@@ -392,10 +344,8 @@ function buildGroundTile(TH,navn,bw,bh){
   });
   const seg=toner.length-1;
   // Feltet summeres opp SEPARABELT: sin(A+B) = sinA·cosB + cosA·sinB, der A
-  // bare avhenger av x og B bare av y. Da trengs 4·256 sinusoppslag per bølge
-  // i stedet for ett per piksel. Målt kuttet det flisen fra 6,7 til 0,9 ms per
-  // bane — den naive løkka var 393 000 Math.sin-kall, og alene stod den for
-  // hele økningen i byggetid.
+  // bare avhenger av x og B bare av y — færre sinusoppslag enn å kalle
+  // Math.sin per piksel (se CLAUDE.md steg B5 for måletallene).
   const felt=new Float32Array(N*N);
   for(let k=0;k<boelger.length;k++){
     const b=boelger[k];
@@ -1587,55 +1537,14 @@ function ensureTrackBg(t){
   bgTrack=t;
 }
 
-// ══════════════════════════════════════════════════════════════════
-// BANETEMA
-// ══════════════════════════════════════════════════════════════════
-// Før runde 4 var alle 13 banene bygget av NØYAKTIG de samme byggeklossene:
-// samme asfalt (#33333e), samme grus (#7a6c54), samme rød-hvite kerb, og trær,
-// steiner og busker strødd jevnt og tilfeldig utover. Det eneste som skilte dem
-// var bakkefargen og fargen på trærne. To baner med samme terrain-type var
-// praktisk talt umulige å skille på et skjermbilde uten å lese navnet.
-//
-// Temaet samler derfor ALT som bestemmer hvordan en bane ser ut, på ett sted:
-//
-//   ground    2–3 bakketoner. Tegnes som store myke flekker styrt av
-//             verdistøyen (se makeNoise), ikke som jevnt spredte prikker.
-//   speckle   den finkornede teksturen oppå. Samme nøkler som før, men med
-//             langt færre prikker nå som flekkene gjør grovarbeidet.
-//   asphalt   banedekkets egen tone. MÅLT: lysheten holder seg innenfor ±8 %
-//             av det gamle felles #33333e (L=0,2216), slik at
-//             lakkeringskontrasten fra runde 2 fortsatt holder på hver bane.
-//             Verifiseres av test_banetema.js — ikke øyemål.
-//   runoff    utkjøringssonen. 'grus' med egen farge, eller 'asfalt' (mørk
-//             blågrå med malte striper). BARE FARGE: bredden og fysikken er
-//             uendret, se GRAVEL_SAFE og gruskanten i buildTrackBg.
-//   curb      de to kerbfargene. Mønsteret er det samme som før.
-//   cluster   terskelen i støyen for hvor vegetasjon får stå. Lav = tett
-//             skog overalt, høy = spredte lunder med åpne sletter mellom.
-//   mow       klippestriper i plenen (bare TEMPIO).
-//   ads       om banen har reklameskilt langs rettene (alle unntatt de helt
-//             landlige).
-//   groundLayer store landskapsflater UNDER vegetasjonen: elva, havet,
-//             saltsletta, isen. Bygges av `belte()`, som følger banen — en
-//             flate lagt midt i indre felt er det ENE stedet spilleren aldri
-//             kommer nær nok til å se.
-//   landmark  det ene bygget som gjør banen gjenkjennelig. Tegnes etter
-//             asfalten, men før vegetasjonen og tribunene.
-//   landmarkT rundeposisjonen landemerket står ved. Brukes to steder: av
-//             `plasser()` når bygget settes ut, og av skjermbildetesten til å
-//             sette kameraet der det faktisk er noe å se.
-//   lagPal    landemerkets toner som DATA og ikke som hex inne i tegnekoden,
-//             slik at test_banetema.js kan måle dem mot bakken.
-//   lagMot    unntakene i den målingen: en tone som står mot en annen tone i
-//             samme bygg (tak på vegg) og ikke mot bakken. Må finnes som data,
-//             ellers er «måles mot noe annet» ikke til å skille fra «glemt».
-//
-// treeTint/rockTint/bushTint/cityPal lå løst på cfg før og er flyttet inn hit,
-// slik at det ikke finnes to steder å lete etter «hvilken farge har denne banen».
-// Asfalten alle banene hadde felles før runde 4, og som de nye tonene måles
-// mot. Står her og ikke nede ved kontrastsjekken fordi makeTheme leser den, og
-// `const` er i TDZ til deklarasjonen er kjørt — TRACKS bygges lenger ned, men
-// THEMES/makeTheme er i bruk før kontrastseksjonen i det hele tatt er nådd.
+// Banetema: ALT som styrer hvordan en bane ser ut, samlet på ett sted i stedet
+// for spredt på cfg + hardkodede farger i tegnekoden. groundLayer bygges av
+// belte() (følger banen, ikke indre felt — spilleren ser aldri indre felt på
+// nært hold). lagPal/lagMot er landemerkets toner som DATA, så
+// test_banetema.js kan måle kontrast mot bakken; lagMot unntar toner som
+// måles mot en annen tone i samme bygg og ikke mot bakken. Står her og ikke
+// ved kontrastsjekken lenger ned fordi makeTheme leser denne, og `const` er
+// i TDZ til deklarasjonen er kjørt.
 const ASPHALT_BASE='#33333e';
 const CURB_RW=['#d63a2e','#f1f5f9'];   // rød/hvit — standarden, som før
 const THEMES={
@@ -2406,24 +2315,11 @@ function makeTheme(navn){
   };
 }
 
-// The three original tracks are redesigned around real circuit-design
-// vocabulary (researched: racetrackdesign.com's design-principles guide, and
-// corner-sequence writeups of Spa-Francorchamps/Monza) instead of generic
-// procedural wobble — each is deliberately an entry/mid/exit corner sequence
-// with real low-curvature straights between the features, not just a blob:
-//  - MONTE SPIRA: a tight mountain pass — kink out of the line, a fast sweep
-//    into the signature tightening hairpin ("spira"), a quick esses pair,
-//    a flowing mid-speed sweeper, then a second slower hairpin into the line.
-//  - ARDENNE: Spa-flavoured — a hairpin off the line, a fast uphill esses
-//    complex right after it (Eau Rouge/Raidillon-style), a long straight,
-//    then a trio of broad high-speed sweepers (Les Combes/Pouhon/Blanchimont)
-//    back to the line.
-//  - AUTODROMO: Monza-flavoured "temple of speed" — three snappy chicane
-//    pairs and a connected double-apex (Lesmo-style) breaking up long flat
-//    straights, finished off by one big increasing-radius sweeper
-//    (Parabolica-style) onto the pit straight.
-// Background wobble amplitude/frequency is kept low on all three now so the
-// gaps between features read as genuine straights, not constant undulation.
+// MONTE SPIRA, ARDENNE og TEMPIO er bygget rundt ekte baneforbilder (Spa/
+// Monza-sekvenser) i stedet for generisk wobling — hver er en bevisst entry/
+// mid/exit-sekvens med ekte rettstrekk mellom features. wobbleAmp er lav på
+// alle tre, så gapene mellom features leser som rettstrekk og ikke konstant
+// krumming.
 const TRACKS=[
   buildTrack({name:'MONTE SPIRA', info:'Trangt · Hårnålskurver', ncp:34, R0:1144, cx:1240, cy:1240,
     wobbleAmp:24, wobbleFreq:2, wobblePhase:.3, TW:48, terrain:'mountain',
@@ -2591,7 +2487,6 @@ const TRACKS=[
   // terrain:'forest' but keep the default deep summer-green look.
   buildTrack({name:'ESSE', info:'Teknisk · Tett med S-svinger', ncp:40, R0:1300, cx:1350, cy:1300,
     wobbleAmp:14, wobbleFreq:2, wobblePhase:.25, TW:44, terrain:'forest',
-    treeTint:['#7a4a1f','#b8722a','#5c3315'], rockTint:'#7a6b58', groundBase:'#1f160a', speckle:'autumn',
     features:[
       {a0:.03*Math.PI*2,width:.014*Math.PI*2,depth:-260},
       {a0:.08*Math.PI*2,width:.012*Math.PI*2,depth:220},
@@ -2610,7 +2505,6 @@ const TRACKS=[
   // the default cool grey rock.
   buildTrack({name:'DISCESA', info:'Høyder · Opp og ned i terrenget', ncp:36, R0:1150, cx:1250, cy:1200,
     wobbleAmp:20, wobbleFreq:3, wobblePhase:.45, TW:50, terrain:'mountain',
-    treeTint:['#4a5c1f','#6b7a2a','#374512'], rockTint:'#8a5a42', groundBase:'#1a140a', speckle:'dry',
     features:[
       {a0:.02*Math.PI*2,width:.016*Math.PI*2,depth:-420},
       {a0:.06*Math.PI*2,width:.014*Math.PI*2,depth:260},
@@ -2629,7 +2523,6 @@ const TRACKS=[
   // mountains) description.
   buildTrack({name:'ALPEN', info:'Kort · Brattest i fjellet', ncp:30, R0:1000, cx:1080, cy:1050,
     wobbleAmp:12, wobbleFreq:2, wobblePhase:.15, TW:54, terrain:'forest',
-    treeTint:['#0f3d3a','#1a5c4f','#0a2e28'], rockTint:'#7d8a94', groundBase:'#0a1620', speckle:'snow',
     features:[
       {a0:.05*Math.PI*2,width:.020*Math.PI*2,depth:-440},
       {a0:.18*Math.PI*2,width:.030*Math.PI*2,depth:200},
@@ -2645,7 +2538,6 @@ const TRACKS=[
   // uses terrain:'arid' but keeps the default deep tan desert look.
   buildTrack({name:'DUNA', info:'Klitter · Bankede svinger ved kysten', ncp:32, R0:1050, cx:1150, cy:1100,
     wobbleAmp:18, wobbleFreq:2, wobblePhase:.55, TW:46, terrain:'arid',
-    bushTint:['#8a9a52','#9aa860','#6a7a3a'], rockTint:'#9a8878', groundBase:'#4a3824', speckle:'dune',
     features:[
       {a0:.04*Math.PI*2,width:.018*Math.PI*2,depth:-420},
       {a0:.14*Math.PI*2,width:.030*Math.PI*2,depth:200},
@@ -2656,18 +2548,10 @@ const TRACKS=[
     ],
     straightCount:2
   }),
-  // NOTE on ncp:58 — this is the biggest-R0 track in the roster (1950), and
-  // buildPath samples a fixed 18 steps per control-point segment regardless
-  // of that segment's physical length. At the original ncp:38 this left
-  // PATH points ~19px apart (vs ~12px on LABIRINTO, the other walls:true
-  // track), which thinned out how many samples landed inside the first
-  // hairpin's narrow gaussian — smoothCurv's fixed 10-point moving average
-  // then under-reported that corner's true peak curvature, so the AI judged
-  // it safe to carry too much speed off the long Strip straight and ran
-  // wide into the Armco barrier. Bumping ncp to 58 brings point spacing
-  // back down to ~13px (matching LABIRINTO) with no shape change — verified
-  // via a 6-trial x 3600-tick AI-only sweep going from 155-456 wall-hit
-  // events per run down to 0 across every trial.
+  // ncp:58 fordi standard sampling ga ~19px mellom PATH-punkter her — for
+  // grovt til at smoothCurv fanget hårnålens sanne kurvatur, så AI-en kjørte
+  // for fort og rett inn i Armco-veggen. 58 punkter matcher LABIRINTOs
+  // tetthet (~13px) uten å endre banens form.
   buildTrack({name:'VISTANOTTE', info:'Neonby · Lang rettstrekk, street circuit', ncp:58, R0:1950, cx:1850, cy:1850,
     wobbleAmp:8, wobbleFreq:2, wobblePhase:.1, TW:56, terrain:'city', cityPal:'#120a24', walls:true, naturligTid:'NATT',
     features:[
@@ -2685,27 +2569,15 @@ const TRACKS=[
 // ══════════════════════════════════════════════════════════════════
 // TEAMS / CARS
 // ══════════════════════════════════════════════════════════════════
-// 10 oppdiktede konstruktører × 2 biler = en full startgrid på 20. Lagene er
-// fri fantasi — ingen av dem, og ingen av sponsorene, er ment å være et ekte
-// lag eller et ekte merke. Fargene er valgt for å holde seg tydelig fra
-// hverandre på en bil som bare er 28 px lang, og er kontrollsjekket mot
-// WCAG-kontrast mot asfalten (se contrastReport nedenfor).
-//
-// Feltene:
-//   name      lagnavnet alene, store bokstaver
-//   short     tre bokstaver — brukes BARE i den trange resultatlista i HUD-en
-//             (108 px bred), der fullt navn ville rent over på tosifret plass
-//   sponsor   tittelsponsoren. Fullt lagnavn = sponsor + name, slik ekte
-//             konstruktører heter, og det er den varianten podiet,
-//             resultatlista og baneutvalget viser
-//   sponsors  de to andre sponsorene — vises bare i lagoversikten (L)
-//   base/acc/dark/hel/pat/spc  lakkeringen, nøyaktig samme sett som SKINS
-//             bruker, slik at lag og skin kan mates inn i samme tegnefunksjon
-//
-// color/dark/accent beholdes som aliaser for base/dark/acc. De er ikke døde:
-// minimap-prikkene, HUD-stripa og resultatlistas fargeruter leser dem, og å
-// bytte navn på feltene i alle de kallestedene ville vært en ren mekanisk
-// endring med reell risiko for å overse ett sted.
+// 10 oppdiktede konstruktører × 2 biler = full startgrid på 20. Lagene og
+// sponsorene er fri fantasi, ikke ekte merker. Fargene er kontrastsjekket mot
+// asfalten (se contrastReport nedenfor).
+//   short    tre bokstaver, brukes bare i den trange resultatlista (108 px)
+//   sponsor  tittelsponsor; sponsor+name er fullt lagnavn (podiet, resultat-
+//            lista, baneutvalget)
+//   base/acc/dark/hel/pat/spc  lakkering, samme sett som SKINS
+// color/dark/accent (satt av .forEach under) er aliaser for base/dark/acc og
+// IKKE dødkode — minimap, HUD-stripa og resultatlistas fargeruter leser dem.
 const TEAMS=[
   {name:'VULCANA', short:'VUL', sponsor:'Ignaro',            sponsors:['Tessera Ur','Ventoli Kaffe'],
    base:'#9e1b32', acc:'#e8b04a', dark:'#3d0a14', hel:'#f4ecd8', pat:'split',   spc:'#f4ecd8'},
@@ -2792,19 +2664,11 @@ function contrastReport(){
   return out;
 }
 
-// ── lagfarge brukt som TEKST ───────────────────────────────────────────
-// Lakkeringen er valgt mot asfalten, som er lys nok (#33333e) til at en mørk
-// bil fortsatt leses. HUD-en og menyene ligger derimot på nesten svart, og der
-// forsvinner de mørkeste lagene helt: ONYX (#232328) lander på 1,26:1 mot
-// bakgrunnen og NORDHAV (#1b2e4a) på 1,44:1 — altså uleselig som skrift.
-// Fargen lysnes derfor til den når 4,5:1, som er WCAG-kravet for vanlig tekst.
-//
-// Lysningen skjer i HSL, ikke ved å blande mot hvitt. Blanding mot hvitt var
-// første forsøk, og den trekker metningen ut samtidig: NORDHAV endte på
-// #748091 og GRANITT på #747a88 — to lag som ble praktisk talt samme grå.
-// Å bare skru opp L holder fargetonen og metningen i ro, så et mørkeblått lag
-// blir lyst BLÅTT og ikke grått, og lagene er fortsatt til å skille fra
-// hverandre. Lag som allerede er lyse nok røres ikke.
+// Lagfargen leser dårlig som TEKST på HUD/menyenes nesten-svarte bakgrunn
+// (laget er valgt mot asfalten, ikke mot svart) — de mørkeste landet under
+// 1,5:1. Lysnes i HSL til 4,5:1 i stedet for å blandes mot hvitt: blanding
+// trekker metningen ut og gjør ulike lag like grå, mens L opp alene holder
+// fargetonen (mørkeblått blir lyst BLÅTT, ikke grått).
 const UI_BG='#0b0b0e';
 const inkCache={};
 function rgbToHsl(r,g,b){
@@ -2853,44 +2717,21 @@ const podiumInkCache={};
 function podiumInk(hex){ return inkFor(hex,RESULT_BG_WORST,podiumInkCache); }
 const DRIVERS_PER_TEAM=2, NUM_CARS=TEAMS.length*DRIVERS_PER_TEAM; // 20
 
-// AI difficulty tiers — rebuilt so the tiers are differentiated by TECHNIQUE,
-// not raw straight-line pace. baseMax (flat-out speed) is now nearly IDENTICAL
-// across every tier (≈6% spread total, down from the old ~51%) — on a clean
-// straight, an ENKEL car and an ULTRA car accelerate to almost the same top
-// speed. The entire difficulty gap instead comes from how a tier actually
-// *drives*:
-//  - curveK: cornering confidence. HIGHEST on ENKEL, LOWEST on ULTRA — a weak
-//    driver lifts off far more than a corner actually needs (overly cautious,
-//    loses time), a great driver stays confident and carries speed through
-//    the bend. This is the single biggest technique lever.
-//  - steerPrec / overspeed: how tightly a tier holds its line and its braking
-//    margin into a corner — sloppier and more cautious on ENKEL, razor-sharp
-//    on ULTRA.
-//  - mistakeChance: occasional misjudged braking points — frequent on ENKEL,
-//    literally zero on ULTRA.
-//  - overtakeCommit: how decisively a tier executes a passing move (bigger,
-//    more sustained swing around a blocker) — a weak driver half-commits and
-//    often doesn't complete the pass, a great driver fully commits.
-//  - defendSkill: genuine defensive driving — the probability (per frame,
-//    only ever applied on a low-curvature straight/braking zone, never mid-
-//    corner) that this car reacts to an attacker closing from behind by
-//    moving to cover that side of the track. ENKEL barely defends at all;
-//    ULTRA defends its position hard.
-//  - ersSkill: how well a tier manages its battery (see the boost system in
-//    update()) — a sharp driver deploys it when it matters (on a straight or
-//    mid-overtake/defend), a weak driver uses it more on a whim.
-// NOTE on lookAhead: this is held constant (11) across every tier on purpose.
-// It sets how far down the race line the AI steers toward each frame; pushing
-// it higher (as a naive "better driver sees further" tier scale once did)
-// makes the AI aim straight at a race-line point that cuts across the inside
-// of hairpins, driving it off-track almost permanently.
-// All of the above was recalibrated via automated lap testing across every
-// track to keep off-track time near 0% while still giving each tier a
-// clearly distinct *feel* to race against, without a dominant pace gap.
-// two full tables — one per game mode (see REALISTIC above). REALISTISK's
-// much higher baseMax/curveK pair with the player's higher PLAYER_MAX and
-// the universal grip-loss mechanic so the AI stays competitive at the new
-// pace instead of being trivially outrun or (if undertuned) off constantly.
+// AI-nivåene skiller tier ved TEKNIKK, ikke råfart: baseMax er nesten likt på
+// alle nivåer, og gapet kommer fra hvordan et nivå KJØRER:
+//   curveK          kurvetillit — lav på ULTRA (holder fart i svingen), høy på
+//                   ENKEL (løfter unødig tidlig). Den største knotten.
+//   steerPrec/overspeed  linjedisiplin og bremsemargin
+//   mistakeChance   feilbremsing, null på ULTRA
+//   overtakeCommit  hvor helhjertet en forbikjøring kjøres
+//   defendSkill     sjanse (kun på rett/bremsesone, aldri midt i sving) for å
+//                   dekke siden mot en angriper bak
+//   ersSkill        hvor smart batteriet (boost, se update()) brukes
+// lookAhead er MED VILJE konstant (11) på alle nivåer: en høyere verdi fikk
+// AI-en til å style mot et kjørelinjepunkt som skjærer innsiden av hårnåler,
+// og den kjørte av banen nesten permanent.
+// To fulle tabeller, én per modus: REALISTISK har mye høyere baseMax/curveK,
+// matchet mot spillerens høyere PLAYER_MAX og gummistrikk-mekanikken.
 const DIFFICULTIES_CASUAL=[
   {name:'ENKEL',     clr:'#4ade80', baseMax:5.00, curveK:16,  overspeed:1.14,  mistakeChance:.0028,  steerPrec:.088, lookAhead:11, rubberRate:.015, rubberThresh:.03, defendSkill:.10, overtakeCommit:.55, ersSkill:.30},
   {name:'MIDDELS',   clr:'#38bdf8', baseMax:5.12, curveK:8,   overspeed:1.08,  mistakeChance:.0007,  steerPrec:.065, lookAhead:11, rubberRate:.010, rubberThresh:.05, defendSkill:.40, overtakeCommit:.72, ersSkill:.55},
@@ -2920,23 +2761,13 @@ const DIFFICULTIES_REALISTIC=[
 let DIFFICULTIES=DIFFICULTIES_CASUAL;
 let difficulty=1;
 
-// Lakkeringer spilleren kan velge — uavhengig av hvilket lag han tilfeldig
-// havner i. STANDARD er fortsatt førstevalget og bruker lagets egen lakkering.
-//
-// De tolv gamle lakkeringene er byttet ut, av to grunner. For det første
-// brukte tre av mønstrene gradient, og en gradient over 28 piksler gjør bare
-// lakkeringen grumsete — den nye bilen er bygd på få, flate flater, og da må
-// lakkeringene være det samme. For det andre lå mange av fargene altfor nær
-// hverandre i spillstørrelse: KARBON, MIDNATT og SØLVPIL ble tre varianter av
-// «mørk grå bil», og FLAMME, MAGENTA og SOLOPPGANG tre varianter av «rød».
-// Åtte godt adskilte lakkeringer sier mer enn tolv som overlapper.
-//
-// Hver lakkering har fire farger og ett mønster:
-//   base — karosseriets grunnfarge
-//   acc  — mønster, vingeklaffer og trim
-//   dark — vingenes hovedplan (den mørke «skyggesiden» av lakkeringen)
-//   hel  — hjelmen, og sponsorflatene for spillerlakkeringene (se drawCarStatic)
-//   pat  — split / spine / sash / chevron / tail / edges (se drawPattern)
+// Lakkeringer spilleren kan velge, uavhengig av tilfeldig lag. STANDARD
+// bruker lagets egen lakkering. Åtte adskilte farger i stedet for de tolv
+// gamle — de brukte gradient (grumsete på en 28 px bil) og lå for tett i
+// farge (tre «mørk grå», tre «rød»).
+//   base/acc/dark/hel  karosseri / mønster+trim / vingenes hovedplan / hjelm
+//                      (+sponsorflater for spillerlakkeringer, se drawCarStatic)
+//   pat  split/spine/sash/chevron/tail/edges (se drawPattern)
 const SKINS=[
   // base:null er signalet om at lagets egen lakkering skal brukes i stedet.
   {name:'STANDARD',    base:null,      acc:null,      dark:null,      hel:null,      pat:null},
@@ -2997,16 +2828,11 @@ const LAP_OPTIONS=[3,5,8,12,20];
 let lapsIdx=1, LAPS=LAP_OPTIONS[lapsIdx];
 
 // ── tidtakingspunkter ──────────────────────────────────────────────────────
-// Ekte F1-tidtaking måler ikke avstand, den måler TID: banen er delt i et
-// antall punkter, og hver bil får et tidsstempel hver gang den passerer ett av
-// dem. Gapet mellom to biler er da differansen mellom tidsstemplene deres på
-// SAMME punkt — ikke en omregning fra avstand, som ville blitt feil i det
-// øyeblikket to biler holder ulik fart.
-//
-// HVORFOR 50 PUNKTER: en runde tar rundt 40 sekunder, altså cirka 2400 steg.
-// 50 punkter gir et oppdatert gap hvert 48. steg, altså cirka hvert 0,8
-// sekund. Det er omtrent takten en ekte tidtakingsskjerm oppdateres i, og det
-// er tett nok til at tallet føles levende uten at det flimrer.
+// Ekte F1-tidtaking måler TID, ikke avstand: banen er delt i punkter, og
+// gapet mellom to biler er differansen mellom tidsstemplene deres på SAMME
+// punkt — ikke en avstandsomregning, som blir feil så snart farten er ulik.
+// 50 punkter (~0,8 s mellom oppdateringer på en ~40 s runde) er omtrent takten
+// en ekte tidtakingsskjerm oppdateres i, og tett nok til at tallet ikke flimrer.
 const GAP_MARKS=50;
 // To runder med punkter. Lengre historikk trengs ikke: gapet leses alltid på
 // det punktet bilen SIST passerte, og trendfargen sammenligner med forrige
@@ -3261,22 +3087,13 @@ function carAhead(c){ return c.aheadCar; }
 function carBehind(c){ return c.behindCar; }
 
 // Gapet til bilen foran, i sekunder, eller null når det ikke kan måles.
-//
-// Hovedleddet tas på det punktet BILEN SELV sist passerte: «da jeg var her,
-// hvor lenge var det siden han var her?». Begge tidene er låste tidsstempler,
-// så tallet står stille mellom punktene. Prompten ba om «nå minus tiden bilen
-// foran passerte mitt siste punkt», men da vokser gapet jevnt fram til neste
-// punkt og faller tilbake idet det passeres — et sagtannmønster på opptil 0,8
-// sekunder, som er mer enn gapet man faktisk kjemper om.
-//
-// Et låst tidsstempel alene er likevel for lite: står bilen stille, blir tallet
-// hengende på den siste målingen for alltid (målt i nettleseren: «▲ +0.00» mens
-// bilen i praksis var sju sekunder bak). Derfor et andre ledd — hvor lenge det
-// er siden bilen foran forlot punktet JEG er på vei mot. Det leddet begynner
-// først å vokse når jeg bruker lengre tid på strekket enn han gjorde, altså
-// bare når gapet virkelig øker, og treffer akkurat hovedleddet i det jeg
-// passerer punktet. Maksimum av de to gir derfor et tall som står stille når
-// farten holder, vokser når den ikke gjør det, og aldri hopper.
+// Hovedleddet: «da jeg var her, hvor lenge var det siden han var her?» (begge
+// tidsstempler låst, så tallet står stille mellom punktene — å ta «nå minus
+// tiden han passerte MITT punkt» i stedet gir et sagtannmønster på opptil
+// 0,8 s). Et andre ledd dekker stillestående biler (uten det ville tallet
+// hengt fast på siste måling for alltid): hvor lenge siden bilen foran forlot
+// punktet jeg er på vei mot. Maksimum av de to står derfor stille når farten
+// holder og vokser når den ikke gjør det, uten å hoppe.
 function gapAhead(c){
   if(c.lastMark===null || c.finished) return null;
   const a=carAhead(c); if(!a) return null;
@@ -3416,32 +3233,11 @@ function buildCars(){
     // drivers, backmarkers (just ahead of the player) are its weakest —
     // so starting last means picking off easy traffic first before facing
     // real resistance up front, instead of 19 identical clones.
-    // Spennet ble strammet fra 0,22 til 0,06 da gummistrikken ble svekket.
-    // HVORFOR: gummistrikken skjulte før hvor stort spennet egentlig var — den
-    // dro de raske ned til 85 % og de trege opp til 118 %, så feltet holdt seg
-    // samlet uansett. Med spennet urørt og strikken borte ble siste bil 1,4–1,8
-    // runder bak etter åtte runder (målt på alle 13 banene), altså rundet av
-    // lederen. Det er ikke et felt, det er en oppstilling.
-    //
-    // Så strammet videre fra 0,06 til 0,04 i steg G. HVORFOR: 0,06 traff
-    // riktig den gang, men det var FØR boost og overtake kom inn i steg D, og
-    // de legger på spredning som posFactor ikke kontrollerer. Sluttmålingen
-    // viste snitt 0,750 over alle 52 konfigurasjoner og VULCANO/CASUAL/ULTRA
-    // på 1,0642 — altså siste bil rundet av lederen, nettopp det 0,06 skulle
-    // hindre. Målt på de fem verste banene:
-    //
-    //     0,06 → maks 1,0642, snitt 0,795
-    //     0,05 → maks 0,9499, snitt 0,745
-    //     0,04 → maks 0,8639, snitt 0,688
-    //
-    // 0,05 ble forkastet fordi 0,05 margin til taket er mindre enn
-    // variasjonen mellom to kjøringer (0,02–0,03 med bare 2 forsøk). 0,04 gir
-    // maks 0,864 med reell margin, og snittet ligger fortsatt inne i
-    // målbåndet 0,5–0,8.
-    //
-    // Midtpunktet er med vilje holdt på 0,97 (som før: snittet av 1,08…0,86).
-    // Flyttes det, endres AI-ens absolutte fart og dermed balansen mot
-    // spillerens egen toppfart — og det er ikke det dette steget skal gjøre.
+    // posFactor: spennet mellom raskeste og tregeste AI på gridden. Strammet
+    // til 0,04 for å hindre at siste bil blir rundet av lederen etter at
+    // gummistrikken ble svekket (måltallene står i CLAUDE.md, steg G).
+    // Midtpunktet står med vilje på 0,97 — flyttes det, endres AI-ens
+    // absolutte fart og dermed balansen mot spillerens egen toppfart.
     const posFactor=1.00-0.04*(p/(AI_COUNT-1));
     c.skillVar=posFactor*(0.97+Math.random()*0.06);
     cars.push(c);
@@ -3462,13 +3258,10 @@ function buildCars(){
 }
 
 // Bakgrunnen bygges her, i det banen faktisk startes — ikke ved oppstart.
-// Målt i nettleseren tar det 3–14 ms per bane (90 ms for alle 13 til sammen),
-// altså under ett enkelt 60Hz-bilde, så den bygges rett ut synkront i stedet
-// for bak en «LASTER BANE…»-mellomskjerm: en lasteskjerm som bare vises i ett
-// bilde ville vært et uleselig glimt ved hver eneste løpsstart. Skulle en
-// svakere maskin bruke vesentlig lenger tid, er det eneste utslaget et kort
-// hakk, og det tapte tidshoppet fanges allerede av >250ms-nullstillingen i
-// loop() slik at spillet ikke byks framover etterpå.
+// Bygges rett ut synkront, uten en «LASTER BANE…»-mellomskjerm: en lasteskjerm
+// som bare vises i ett bilde ville vært et uleselig glimt ved hver løpsstart.
+// Skulle en svakere maskin bruke lenger tid, fanges det tapte tidshoppet
+// allerede av >250ms-nullstillingen i loop(), så spillet ikke byks framover.
 function startRace(){
   TR=TRACKS[trackSel];
   todIdx=resolveTodIdx(TR);
@@ -4522,19 +4315,12 @@ function update(){
 // DRAW
 // ══════════════════════════════════════════════════════════════════
 // ── BILEN: 2026-generasjonen ──────────────────────────────────────
-// Bilen er tegnet etter 2026-reglementet: kortere akselavstand (3400 mm mot
-// 3600) og 100 mm smalere bil, ingen hjulbuer over forhjulene så hjulene står
-// fritt, færre vingeelementer, og ingen bjelkevinge under bakvingen.
-//
-// Men den virkelige grunnen til omskrivingen er lesbarhet. Bilen er cirka
-// 28 px lang på skjermen. Den gamle bilen stablet gradientfyll, glansstrek,
-// halo-ring, diagonal sponsorstripe, nesetipp i aksentfarge, sidepod-gløder
-// for boost og slipstream OG et plassnummer oppå hverandre innenfor de samme
-// 28 pikslene. Hver detalj var fin alene; til sammen smeltet de til én grøtete
-// flekk så snart bilen beveget seg, og to lag var ikke til å skille fra
-// hverandre i fart. Den nye bilen bruker FÅ, STORE former med harde kanter og
-// ÉN eneste skyggelegging (den flate lysflaten), slik at både silhuetten og
-// lakkeringen fortsatt leses i full fart.
+// Bilen er tegnet etter 2026-reglementet (kortere akselavstand, smalere bil,
+// ingen hjulbuer over forhjul, færre vingeelement). Hovedgrunnen til
+// omskrivingen er likevel lesbarhet: bilen er bare ~28 px lang, og den gamle
+// bilens mange lag (gradient, glans, halo, striper, gløder) smeltet til én
+// grøtete flekk i fart. Den nye bruker FÅ, STORE former med harde kanter og
+// ÉN skyggelegging, så silhuett og lakkering fortsatt leses i full fart.
 //
 // Lokalt koordinatsystem: nesen peker mot +x, én enhet = én spillpiksel.
 const CAR_SHADOW_COL='rgba(0,0,0,.3)';
@@ -4711,15 +4497,10 @@ function steerAngle(c){
   return Math.max(-STEER_VIS_MAX,Math.min(STEER_VIS_MAX,c.steerVel*STEER_VIS_GAIN));
 }
 
-// Lakkering = ett samlet sett farger pluss ett mønster. Både lagene og
-// spillerens valgbare skins leverer det samme settet, slik at all tegnekode
-// bare trenger å forholde seg til ÉN form for lakkering og aldri trenger å
-// vite hvor fargene kom fra.
-// Både SKINS og TEAMS leverer settet direkte nå, så det finnes ingen
-// konvertering igjen — et lag ER en lakkering.
-// Spillerlakkeringene har ingen egen sponsorfarge (`spc`) — der brukes
-// hjelmfargen, som alltid er den lyseste fargen i settet og derfor leser som
-// en dekal uansett hvilken grunnfarge bilen har.
+// Lakkering = ett farge-/mønstersett; SKINS og TEAMS leverer det samme
+// settet direkte, så tegnekoden aldri trenger å vite hvor fargene kom fra.
+// Spillerlakkeringer har ingen egen sponsorfarge (`spc`) — de bruker
+// hjelmfargen, alltid den lyseste i settet, som dekal uansett grunnfarge.
 function skinLivery(sk){
   return {base:sk.base, acc:sk.acc, dark:sk.dark, hel:sk.hel, spc:sk.spc||sk.hel, pat:sk.pat};
 }
@@ -4755,17 +4536,12 @@ function drawCarShape(g,lv,o){
 }
 
 // ── forhåndstegnede sprites ───────────────────────────────────────
-// Den statiske delen av bilen er identisk hvert eneste bilde, men besto av
-// over tjue tegnekall med tre klippeoperasjoner. Med 20 biler ble det ~400
-// kall per bilde på å tegne nøyaktig det samme om igjen. I stedet tegnes den
-// ÉN gang per bil til en liten offscreen-canvas og kopieres med drawImage —
-// standardrådet for gjentatte former på canvas.
-// 3× oppløsning: sprite-en vises alltid nedskalert til 1× på banen, og
-// nedskalering av et skarpt bilde gir ren antialiasing, mens oppskalering av
-// et 1×-bilde ville gitt synlige trappetrinn når bilen roterer.
-// To varianter per bil (klaffer lukket/åpen) — det er den eneste tilstanden i
-// den statiske delen som endrer seg under løpet, og å gjøre den til to ferdige
-// bilder er billigere enn å tegne vingen live for alle 20.
+// Den statiske delen av bilen er lik hvert bilde, men dyr å tegne på nytt for
+// 20 biler hvert bilde — tegnes derfor ÉN gang per bil til en offscreen-
+// canvas og kopieres med drawImage. 3× oppløsning gir ren nedskalert
+// antialiasing i stedet for trappetrinn når bilen roterer. To varianter per
+// bil (klaff lukket/åpen) dekker den eneste tilstanden som endrer seg i den
+// statiske delen under løpet.
 const CAR_SPR_HW=16, CAR_SPR_HH=9, CAR_SPR_RES=3;
 let carSprites=[];
 // WebKit frigjør først minnet bak en canvas når den krympes til 0×0 — å bare
@@ -4793,21 +4569,13 @@ function buildCarSprites(){
 }
 
 // ── forhåndstegnet glød ───────────────────────────────────────────
-// Alt mykt lys i spillet ble før laget på nytt for hvert eneste bilde, på to
-// måter som begge er dyre:
-//   • Lyktene på bilene brukte shadowBlur. Det er en ekte uskarphet som
-//     canvas regner ut på nytt for hver form den tegner — fire lykter per
-//     bil ganger tjue biler er åtti uskarpheter i sekstidelssekundet.
-//   • Flomlysene kalte createRadialGradient inne i løkka, altså 27 nye
-//     gradientobjekter per bilde som ble bygd, brukt én gang og kastet.
-// Begge deler lager det samme: en rund flekk som er sterkest i midten og
-// toner ut mot kanten. Den tegnes nå ÉN gang per farge til et lite offscreen-
-// canvas og kopieres inn med drawImage i akkurat den størrelsen hvert lys
-// trenger. Et radialt forløp er rotasjonssymmetrisk, så den samme sprite-en
-// kan strekkes fra en 5 px lykt til et 46 px flomlys uten at noen ser det.
-// 32×32 holder: et radialt forløp har ingen skarpe kanter, så det ser like
-// mykt ut om det strekkes opp til 92 px for et flomlys som om det krympes ned
-// til 8 px for en billykt. Større sprite kostet bare mer filtrering per kall.
+// Alt mykt lys ble før tegnet dyrt per bilde: shadowBlur på billyktene (fire
+// lykter × tjue biler = åtti uskarpheter per bilde) og createRadialGradient
+// inne i flomlys-løkka (nye gradienter hvert bilde, brukt én gang og kastet).
+// Begge lager det samme — en rund, utglidende flekk — tegnet nå ÉN gang per
+// farge til en offscreen-canvas og kopiert inn med drawImage i riktig
+// størrelse. 32×32 holder: et radialt forløp har ingen skarpe kanter, så det
+// ser like mykt ut strukket til 92 px som krympet til 8 px.
 const GLOW_RES=32; // sprite-en er GLOW_RES×GLOW_RES med gløden tegnet inn i sirkelen
 function makeGlow(r,g,b){
   const cv=document.createElement('canvas');
@@ -4842,13 +4610,10 @@ function glowFor(hex){
 }
 // Tegner en glød sentrert i (x,y) med ytre radius `rad` og styrke `a`.
 // Styrken settes med globalAlpha i stedet for egne sprites per intensitet,
-// slik at det fortsatt bare finnes to bilder.
-// Merk at alpha lagres og settes tilbake for hånd i stedet for med save()/
-// restore(). Det er ikke pirk: save() tar en kopi av HELE tegnetilstanden —
-// transformasjon, klipping, farger, linjestiler — og med fire lykter på tjue
-// biler ble det 80 slike kopier per bilde. Målt isolert var det save/restore,
-// ikke selve drawImage, som gjorde den første versjonen av denne funksjonen
-// tregere enn shadowBlur-en den skulle erstatte.
+// slik at det fortsatt bare finnes to bilder. Alpha settes tilbake for hånd
+// i stedet for med save()/restore(), som kopierer HELE tegnetilstanden
+// (transformasjon, klipping, farger, linjestiler) — med fire lykter på tjue
+// biler er det kostnaden som teller, ikke selve drawImage.
 function drawGlow(g,spr,x,y,rad,a){
   const prev=g.globalAlpha;
   g.globalAlpha=a;
@@ -6108,18 +5873,11 @@ document.addEventListener('keyup',e=>{keys[normKey(e.key)]=false;});
 // ══════════════════════════════════════════════════════════════════
 // FAST TIDSSTEG (Glenn Fiedler «Fix Your Timestep», akkumulator-metoden)
 // ══════════════════════════════════════════════════════════════════
-// update() over kaller raceTime++ én gang per kall og alle fysikk-/AI-/
-// tidtakingskonstanter (speed, GRIP, D.baseMax, osv.) er tunet med den
-// forutsetningen at update() kjøres nøyaktig 60 ganger i sekundet. Før
-// denne fiksen ble update() kalt én gang per requestAnimationFrame — på
-// en 120 Hz- eller 144 Hz-skjerm kjører rAF 2–2,4x oftere enn 60/s, så
-// hele spillet (fart, styring, AI, rundetider) gikk like mye for fort og
-// raceTime/60 ga feil sekundtall. Løsningen: mål ekte forløpt tid mellom
-// frames med performance.now() (tidsstempelet rAF selv gir callbacken),
-// legg den i en akkumulator, og kjør update() i faste 1000/60 ms-biter
-// så lenge akkumulatoren har nok tid liggende — resten tas med videre
-// til neste frame. draw() tegnes fortsatt nøyaktig én gang per frame,
-// uavhengig av hvor mange update()-steg som kjørte.
+// Fysikk-/AI-/tidtakingskonstanter er tunet for at update() kjører nøyaktig
+// 60 ganger i sekundet, uavhengig av skjermens faktiske rAF-takt (60/120/144
+// Hz). Ekte forløpt tid måles med performance.now(), legges i en
+// akkumulator, og update() kjøres i faste 1000/60 ms-biter til akkumulatoren
+// er tom; draw() tegnes likevel bare én gang per frame.
 const STEP_MS = 1000/60;
 const MAX_STEPS_PER_FRAME = 5; // tak per frame, så en hengende maskin ikke går i en "spiral of death" av flere og flere steg
 let lastFrameT = null, accumulator = 0;
