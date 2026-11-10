@@ -1953,12 +1953,32 @@ const THEMES={
     // utgave brukte den samme gule `#facc15` som kveldsbyen og nattbyen, og i
     // dagslys leste husrekka da som terninger med gule øyne. Tonen måles mot
     // FASADEN og ikke mot bakken (lagMot), av samme grunn som taket — en
-    // vindusåpning sitter i en vegg: 4,67:1 mot den mørkeste fasaden.
+    // vindusåpning sitter i en vegg: 4,79:1 mot den mørkeste fasaden.
     // `glod` er skilt ut som egen tone fordi nattgløden i klokketårnet fortsatt
     // skal være varm: en flate og en glød er to ulike ting, og det var nettopp
     // det å bruke ÉN tone til begge som gjorde dagsbildet feil.
-    lagPal:{ husA:'#bfa87e', husB:'#cbb48d', husC:'#d8c9a8', tak:'#8c3a2a',
-             mur:'#e3d8bf', vindu:'#4a3b2c', glod:'#facc15' },
+    //
+    // STEG C2 måler tonene PÅ DET KOMPOSITERTE bildet, altså etter at
+    // døgntidens overlegg er lagt på. Før satt natta på 1,99 og byen leste som
+    // en haug dominobrikker: den lyse flaten overlevde overlegget, men taket
+    // gjorde det ikke, og et kvartal uten tak er en brikke med prikker.
+    //
+    // Rettelsen er TAKET, ikke fasaden. Første forsøk lysnet fasaden helt opp
+    // til natta nådde 3:1, og det gjorde bildet VERRE: skjermbildene viste
+    // lysere og mer avmettede brikker enn før, og gulltonen måtte bli nesten
+    // hvit for å holde seg over veggen — da slutter et tent vindu å lese som
+    // lys. Fasaden er derfor flyttet 1 % og gullet 1,6 % (metningen står
+    // urørt), mens taket mørknet fra lyshet 0,36 til 0,21. Nattgulvet er 2,5:1
+    // og ikke 3:1, fordi WCAG-brøken er BLIND FOR KULØR: den siste biten av
+    // brøken kan bare betales i metning, og det er metningen som bærer
+    // nattbyen. Tak/fasade: 5,95 dag — 4,15 solnedgang — 2,53 natt.
+    //
+    // Gullet er lysnet LANGS SIN EGEN TONE (hue 48°, metning 0,957 — altså
+    // uendret fra steg C sin `#facc15`), ikke bleket mot hvitt. Det er to ulike
+    // ting: en lysning langs tonen koster ingen metning i det hele tatt, mens
+    // det forrige forsøkets `#fef6d5` lå på 0,33 og hadde sluttet å være gull.
+    lagPal:{ husA:'#c2ac83', husB:'#ceb893', husC:'#dbcdae', tak:'#522219',
+             mur:'#e3d8bf', vindu:'#4a3b2c', glod:'#fbd84a' },
     lagMot:{ tak:'husA', vindu:'husA' },
     groundLayer(s){
       const P=s.TH.lagPal, u=s.utside(), ut=s.TW+s.GRAVEL_SAFE+34;
@@ -2030,13 +2050,25 @@ const THEMES={
     cluster:0.55, ads:true, cityPal:['#3a2d4a','#4a3a5e','#2b2138','#574468'],
     treeTint:['#1f3b2e','#2a4f3c','#15281f'],
     landmarkT:0.37,
-    // Samme rampe som LABIRINTO, men i banens egen lilla: 3,77 / 4,98 / 6,34:1
-    // mot verste bakketone. Vannet er LYSERE enn bakken av samme grunn som
-    // breelva på MONTE SPIRA — en mørk havn mot en mørk lilla bakke kommer
-    // ikke over 3:1 i det hele tatt.
-    lagPal:{ husA:'#9d8fb8', husB:'#b4a7cc', husC:'#c8bede', tak:'#3b2f45',
+    // Samme rampe som LABIRINTO, i banens egen lilla. Vannet er LYSERE enn
+    // bakken av samme grunn som breelva på MONTE SPIRA — en mørk havn mot en
+    // mørk lilla bakke kommer ikke over 3:1 i det hele tatt.
+    //
+    // STEG C2: taket er mørknet fra lyshet 0,23 til 0,10, fasaden lysnet 3,2 %.
+    // Et FØRSTE forsøk tvang 3:1 også om natta, og da måtte fasaden helt opp i
+    // `#ece8f3` — nesten hvitt. To ting gikk galt av det: kvartalet ble en
+    // dominobrikke (det stikk motsatte av hensikten), og den tente ruta måtte
+    // vike oppover til `#fff9e3`, altså mistet kveldsbyen nettopp det gule
+    // lyset den er bygget rundt. Nattgulvet er derfor 2,5:1 og ikke 3:1 — se
+    // LABIRINTO for hvorfor WCAG-brøken ikke kan presses siste stykket.
+    //
+    // Ruta er dermed fortsatt LYS (`#fde68a`), slik steg C hadde den: dette er
+    // kveldsbyen der lyset er tent, og den tonen måles mot bakken som alle
+    // andre flater. `glod` er den SAMME tonen, så D1-gløden og den bakte ruta
+    // er det samme lyset. Tak/fasade: 6,90 dag — 4,76 solnedgang — 2,52 natt.
+    lagPal:{ husA:'#a699be', husB:'#bdb1d2', husC:'#d1c9e3', tak:'#18131c',
              vann:'#6f8fa8', vannKant:'#8fa8bd', molo:'#a8bccd', baat:'#cfd8e4',
-             vindu:'#fde68a' },
+             vindu:'#fde68a', glod:'#fde68a' },
     lagMot:{ tak:'husA' },
     groundLayer(s){
       const P=s.TH.lagPal, R=Math.min(s.bw,s.bh)*0.010, u=s.utside();
@@ -2070,13 +2102,16 @@ const THEMES={
         bx.strokeStyle=P.baat; bx.lineWidth=1.6;
         bx.beginPath(); bx.moveTo(bxx,-34); bx.lineTo(bxx,-52); bx.stroke();
       }
-      // havnefyret i enden av moloen
+      // havnefyret i enden av moloen. BÅDE flaten og gløden bruker `glod` og
+      // ikke `vindu`, selv om de to tonene er like på denne banen: fyret er en
+      // LYKT, og om vindustonen en gang skulle mørknes til en åpning, skal ikke
+      // lykta følge med ned — da ville fyret blitt slukket av en palettendring.
       bx.fillStyle=P.molo; bx.fillRect(L/2-9,-46,8,20);
-      bx.fillStyle=P.vindu;
+      bx.fillStyle=P.glod;
       bx.beginPath(); bx.arc(L/2-5,-48,3.4,0,Math.PI*2); bx.fill();
       bx.restore();
       const g=s.lokal(p,L/2-5,-48);
-      s.lys(g.x,g.y,P.vindu,16);
+      s.lys(g.x,g.y,P.glod,16);
       s.sperr(p.x,p.y,L*0.6);
     } },
   // Vulkan: svart basalt, askegrå grus, og gul/svart kerb — fareskilt-fargene,
@@ -2622,13 +2657,25 @@ const THEMES={
     runoff:{type:'asfalt',clr:'#241a2b',stripe:'rgba(244,114,182,.38)'}, curb:['#db2777','#f1f5f9'],
     cluster:0.62, ads:true, cityPal:['#1d1030','#2a1744','#140a24','#36205a'],
     landmarkT:0.14,
-    // Fasadene er nøytral betong (3,20 / 3,95 / 5,21:1 mot verste bakketone),
-    // ikke neon: det er pariserhjulet og vinduene som skal lyse. Hadde husene
-    // selv vært magenta, ville landemerket forsvunnet i sin egen by.
-    // Neontonene er banens egne — magenta fra kerben (`#db2777`) og cyan som
-    // motfarge, begge lysnet til godt over kravet (6,99 og 8,48:1).
-    lagPal:{ husA:'#8a7f88', husB:'#9a8f96', husC:'#b0a6ab', tak:'#2f2a33',
-             hjul:'#c9c3cc', kabin:'#f0abfc', vindu:'#67e8f9' },
+    // Fasadene er nøytral betong, ikke neon: det er pariserhjulet og de TENTE
+    // vinduene som skal lyse. Hadde husene selv vært magenta, ville
+    // landemerket forsvunnet i sin egen by.
+    //
+    // STEG C2 mørknet TAKET (lyshet 0,14 → 0,10) og lysnet betongen 11,4 %, som
+    // er det mest noen av de tre byene flyttet seg. Grunnen er at VISTANOTTE
+    // hadde det LYSESTE taket i forhold til fasaden sin, altså minst å gå på.
+    // Et første forsøk tvang 3:1 også om natta, og da endte fasaden på
+    // `#e5e2e4` og cyanen måtte blekes til `#d3f8fd` for å holde seg over den.
+    // En nøytral nesten-hvit by med nesten-hvite vinduer er ikke en neonby —
+    // nattgulvet er derfor 2,5:1 (se LABIRINTO for hvorfor brøken ikke kan
+    // presses siste stykket).
+    //
+    // Cyanen `#67e8f9` står dermed urørt fra steg C, og er BÅDE den bakte ruta
+    // og `glod`: her er lyset tent, og det er nettopp den mettede cyanen som
+    // gjør byen til neon. Tak/fasade: 6,87 dag — 4,75 solnedgang — 2,52 natt,
+    // mot 1,61 om natta før.
+    lagPal:{ husA:'#a69da4', husB:'#b6aeb3', husC:'#cbc5c8', tak:'#18151a',
+             hjul:'#c9c3cc', kabin:'#f0abfc', vindu:'#67e8f9', glod:'#67e8f9' },
     lagMot:{ tak:'husA' },
     groundLayer(s){
       const P=s.TH.lagPal, u=s.utside(), ut=s.TW+s.GRAVEL_SAFE+28;
@@ -2681,7 +2728,10 @@ const THEMES={
       for(let k=0;k<4;k++){
         const a=k*Math.PI/2;
         const q=s.lokal(p,Math.cos(a)*R,cy+Math.sin(a)*R);
-        s.lys(q.x,q.y,P.vindu,13);
+        // `glod` og ikke `vindu`, selv om de to er samme cyan her: en kabinglød
+        // er LYS per definisjon, så den skal lese fra lys-tonen. Mørknes
+        // vindustonen en gang til en åpning, skal ikke hjulet slukne med den.
+        s.lys(q.x,q.y,P.glod,13);
       }
       s.sperr(p.x,p.y,R*1.4);
     } }
@@ -3229,7 +3279,16 @@ function rollPlayerIdent(){
 const TOD=[
   {name:'DAG',         clr:'#facc15', night:false, overlay:null},
   {name:'SOLNEDGANG',  clr:'#fb923c', night:false, overlay:'rgba(120,45,10,0.22)'},
-  {name:'NATT',        clr:'#818cf8', night:true,  overlay:'rgba(5,8,20,0.58)'}
+  // 0.58 ble SENKET til 0.50 i steg C2, og det er en måling og ikke en
+  // smakssak: et flatt overlegg klemmer hele scenen ned i toppen av sitt eget
+  // lysområde, og ved 0.58 er HØYESTE mulige kontrast mellom to hvilke som
+  // helst farger 4,11:1. Et krav på 3:1 bruker da 73 % av alt som finnes, og
+  // det er bare nær-svart mot nær-hvitt igjen — derfor fantes det ingen palett
+  // som både besto kravet og beholdt byens farge. 0.50 hever taket til 5,45:1,
+  // og da løser alle tre bybanene det med metningen urørt.
+  // Dette er grunnen til at det er TAKET og ikke palettene som er flaskehalsen
+  // om natta: samme tak gjelder hvert eneste objekt på alle tretten banene.
+  {name:'NATT',        clr:'#818cf8', night:true,  overlay:'rgba(5,8,20,0.50)'}
 ];
 let todIdx=0;
 

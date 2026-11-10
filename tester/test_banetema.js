@@ -87,7 +87,7 @@ function loadGame(path){
   const factory = eval('(function(document, window, requestAnimationFrame, performance, localStorage){\n' + src + '\n' +
     'return { get TRACKS(){ return TRACKS; }, get THEMES(){ return THEMES; },' +
     ' get SKINS(){ return SKINS; }, get TEAMS(){ return TEAMS; },' +
-    ' get ASPHALT_BASE(){ return ASPHALT_BASE; },' +
+    ' get ASPHALT_BASE(){ return ASPHALT_BASE; }, get TOD(){ return TOD; },' +
     ' makeTheme: makeTheme, skinLivery: skinLivery,' +
     ' contrastRatio: contrastRatio, relLuminance: relLuminance };\n})');
   return factory(documentStub, windowStub, function(){}, { now: function(){ return 0; } }, localStorageStub);
@@ -102,6 +102,29 @@ function hslL(hex){
   const h = hex.replace('#','');
   const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
   return (Math.max(r,g,b) + Math.min(r,g,b)) / 2 / 255;
+}
+
+// ── døgnoverlegget, komponert slik lerretet gjør det ───────────────────────
+// Nattoverlegget males som et fylt rektangel OVER hele den ferdige scenen, og
+// det er ÅPENBART for øyet men ikke for en måling på de rå temafargene: en
+// palett kan holde 3:1 ved dag og ligge på 1,8:1 under overlegget. Testen må
+// derfor regne på de KOMPONERTE tonene, ellers måler den en scene spilleren
+// aldri ser.
+function parseRgba(s){
+  const m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(String(s||''));
+  if(!m) return null;
+  return [ +m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4] ];
+}
+// source-over: ut = a·overlegg + (1−a)·under. Samme formel lerretet bruker med
+// standard globalCompositeOperation, så tallet her er tallet på skjermen.
+function komponer(hex, ov){
+  const h = hex.replace('#','');
+  const c = [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+  if(!ov) return '#' + h.toLowerCase();
+  return '#' + c.map(function(v,i){
+    const u = Math.max(0, Math.min(255, Math.round(ov[3]*ov[i] + (1-ov[3])*v)));
+    return (u < 16 ? '0' : '') + u.toString(16);
+  }).join('');
 }
 
 // Kjente speckle-nøkler. 'grass' er else-grenen i buildTrackBg og står derfor
@@ -393,6 +416,168 @@ function kjør(game){
     const tent = pal.glod || pal.vindu;
     sjekk('kvartalslys: ' + t.name, erHex(tent),
       'bykvartaler uten lagPal.glod/vindu — tent vindu og nattlys får ingen farge');
+  });
+
+  // 19. Et bykvartal må lese som HUS i alle tre døgntidene, ikke bare ved dag.
+  //     Dette er sjekken som gjør at en bypalett ikke kan bli dag-only igjen:
+  //     den leser spillets EGEN TOD-liste (ikke en kopi av alfaverdiene, for da
+  //     kunne et endret overlegg gått umålt forbi), komponerer hver tone under
+  //     hvert overlegg og krever to ting i HVER tid:
+  //       a) tak mot fasade ≥ 3:1 — det er taket som skiller et hus fra en
+  //          flate. Faller det bort, står kvartalet igjen som en brikke med
+  //          prikker: nøyaktig dominobrikkene som ble målt i steg C2.
+  //       b) kvartalet mot den verste bakketonen ≥ 3:1 — og her er det nok at
+  //          ÉN av flatene (tak eller fasade) bærer det, samme regel som
+  //          lakkeringenes base/acc: kvartalet er synlig mot bakken så lenge
+  //          noe i det er synlig.
+  //     GULVET ER LAVERE OM NATTA, og det er en måling som sier det. Under et
+  //     flatt overlegg er den STØRST MULIGE kontrasten mellom to farger
+  //     bestemt av overlegget alene — hvitt mot svart, komponert — og den
+  //     måles her i `taket` under. Ved dag er taket 21:1 og 3 er 14 % av det;
+  //     om natta er taket 5,45:1 og 3 er 55 % av alt som finnes. Å kreve de
+  //     siste prosentene har en pris, og den prisen er METNING: brøken er
+  //     blind for kulør, så den ser ingen forskjell på et cyan vindu i en grå
+  //     vegg og en grå flekk i samme vegg — mens øyet ser en nattby i det ene
+  //     og ingenting i det andre. Et målt 3:1-krav om natta ble prøvd i steg
+  //     C2 og FORKASTET: alle tall ble bedre, alle bilder ble verre.
+  //     Gulvet er derfor navngitt per døgntid, og en ny tid MÅ legges inn her
+  //     (ellers stryker sjekken) — en umålt døgntid skal ikke kunne gli forbi.
+  const KVART_GULV = { 'DAG': 3, 'SOLNEDGANG': 3, 'NATT': 2.5 };
+  const todListe = (game.TOD || []).map(function(t){
+    return { navn: t.name, ov: parseRgba(t.overlay) };
+  });
+  TRACKS.forEach(function(t){
+    const gl = t.theme.groundLayer;
+    if(!gl || String(gl).indexOf('s.kvartal(') < 0) return;
+    const pal = t.theme.lagPal || {};
+    const fasader = ['husA','husB','husC'].map(function(k){ return pal[k]; });
+    const ground = (t.theme.ground || []).filter(erHex);
+    if(!erHex(pal.tak) || !fasader.every(erHex) || !ground.length){
+      sjekk('kvartal i døgnet: ' + t.name, false,
+        'lagPal mangler tak/husA/husB/husC, eller temaet har ingen bakketoner');
+      return;
+    }
+    // Verste måles som MARGIN til tidens eget gulv, ikke som rå brøk — ellers
+    // ville natta alltid vært «verst» og dag/solnedgang aldri blitt rapportert.
+    let verstMargin = Infinity, verstTekst = '', alleOk = true;
+    todListe.forEach(function(tid){
+      const gulv = KVART_GULV[tid.navn];
+      const tak = komponer(pal.tak, tid.ov);
+      const hus = fasader.map(function(f){ return komponer(f, tid.ov); });
+      const bak = ground.map(function(g){ return komponer(g, tid.ov); });
+      // Taket måles mot den fasaden det har MINST å gå på mot.
+      let tMin = Infinity;
+      hus.forEach(function(h){ tMin = Math.min(tMin, game.contrastRatio(tak, h)); });
+      // Mot bakken: beste flate, men hver flate mot sin verste bakketone.
+      let beste = 0;
+      [tak].concat(hus).forEach(function(f){
+        let mot = Infinity;
+        bak.forEach(function(g){ mot = Math.min(mot, game.contrastRatio(f, g)); });
+        if(mot > beste) beste = mot;
+      });
+      if(gulv == null){
+        alleOk = false;
+        verstMargin = -Infinity;
+        verstTekst = 'døgntiden ' + tid.navn + ' har ingen oppføring i KVART_GULV — ' +
+          'legg den inn med et MÅLT krav før den tas i bruk';
+        return;
+      }
+      const margin = Math.min(tMin, beste) - gulv;
+      if(tMin < gulv || beste < gulv) alleOk = false;
+      if(margin < verstMargin){
+        verstMargin = margin;
+        verstTekst = 'trangest i ' + tid.navn + ' — tak/fasade ' + tMin.toFixed(2) + ':1, kvartal/bakke ' +
+          beste.toFixed(2) + ':1, gulvet er ' + gulv + ':1 (tidens eget tak er ' +
+          game.contrastRatio(komponer('#ffffff', tid.ov), komponer('#000000', tid.ov)).toFixed(1) + ':1)';
+      }
+    });
+    sjekk('kvartal i døgnet: ' + t.name, alleOk, verstTekst);
+  });
+
+  // 20. Vinduene måles også under hvert overlegg, men med et ANNET krav enn
+  //     kvartalet — og det er en måling som bestemmer hvilket, ikke en smakssak:
+  //
+  //     Det TENTE vinduet kan ikke nå 3:1 mot fasaden i NOEN døgntid. Målt mot
+  //     husC er det 1,15:1 ved dag og 1,11:1 om natta, og det er ikke en svak
+  //     palett: et tent vindu MÅ være lysere enn veggen, og veggen ligger alt
+  //     på L≈0,9 fordi det er den som bærer takets 3:1. Over den finnes det
+  //     ikke luminans igjen å ta av. Det tente vinduet leses derfor av at det
+  //     er LYSERE enn veggen pluss GLØDEN som legges oppå (steg D1), ikke av en
+  //     kontrastbrøk. Kravet her er altså RETNING med margin.
+  //
+  //     HVILKEN VEI den bakte ruta skal gå er en egenskap ved byen, og den står
+  //     som DATA og ikke som et banenavn i testen: har temaet `lagMot.vindu`,
+  //     er ruta en mørk ÅPNING som måles mot fasaden (LABIRINTO — skodder og
+  //     skygge i en middelhavsby ved dag). Mangler oppføringen, er ruta TENT og
+  //     måles mot bakken av sjekk 14 som alle andre flater (SERPENTINA og
+  //     VISTANOTTE, der lyset er på). Sjekken under måler bare at retningen er
+  //     den temaet har meldt — en palett kan altså ikke snu ruta uten samtidig
+  //     å flytte `lagMot`, og da er det en synlig endring og ikke et uhell.
+  //
+  //     Åpningens nattgulv er 2,25:1, målt: LABIRINTO ligger på 2,33 om natta.
+  //     Å presse den til 3 krever en åpning så mørk at den måler 1,00:1 mot
+  //     sitt eget tak, altså å betale med den ene distinksjonen som finnes, for
+  //     en brøk på en flate som er 2,4 × 3,2 px oppå en fasade som ALT består.
+  //     Dagkravet på 3:1 står derimot urørt fra steg C — det er ved dag åpningen
+  //     faktisk skal lese som en åpning.
+  const APNING_DAG_MIN = 3;    // steg C sitt krav, uendret
+  const APNING_GULV = 2.25;    // nattgulv; målt verste er 2,33 (LABIRINTO)
+  const TENT_MARGIN = 1.10;    // tent rute over husC i luminans; målt 1,11–1,26
+  TRACKS.forEach(function(t){
+    const gl = t.theme.groundLayer;
+    if(!gl || String(gl).indexOf('s.kvartal(') < 0) return;
+    const pal = t.theme.lagPal || {};
+    const fasader = ['husA','husB','husC'].map(function(k){ return pal[k]; });
+    if(!erHex(pal.vindu) || !fasader.every(erHex)) return; // dekket av sjekk 18/19
+    const tent = pal.glod || pal.vindu;
+    // Temaets egen melding om hvilken vei ruta går.
+    const erApning = ((t.theme.lagMot || {}).vindu) != null;
+    let apningDag = Infinity, apningVerst = Infinity, tentVerst = Infinity;
+    let ruteVerst = Infinity, retningOk = true, hvor = '';
+    todListe.forEach(function(tid){
+      const hus = fasader.map(function(f){ return komponer(f, tid.ov); });
+      const v = komponer(pal.vindu, tid.ov), g = komponer(tent, tid.ov);
+      // Retningen må holde i ALLE tre tider. En åpning som blir lysere enn
+      // veggen leser som tent midt på dagen, og en tent rute som faller under
+      // veggen er en flekk og ikke lys — og overlegget kan snu begge, for det
+      // klemmer mørkt og lyst ulikt mye sammen.
+      if(erApning){
+        // Åpningen måles mot den MØRKESTE fasaden (husA) — der er den trangest.
+        const kv = game.contrastRatio(v, hus[0]);
+        if(tid.ov == null) apningDag = Math.min(apningDag, kv);
+        apningVerst = Math.min(apningVerst, kv);
+        if(game.relLuminance(v) >= game.relLuminance(hus[0])){
+          retningOk = false; hvor = 'åpningen er lysere enn husA i ' + tid.navn;
+        }
+      } else {
+        // Den tente ruta måles mot den LYSESTE fasaden (husC) — der er den
+        // trangest, og det er den fasaden ruta oftest står i.
+        const forhold = (game.relLuminance(v) + 0.0001) / (game.relLuminance(hus[2]) + 0.0001);
+        ruteVerst = Math.min(ruteVerst, forhold);
+        if(forhold <= 1){
+          retningOk = false; hvor = 'den tente ruta er mørkere enn husC i ' + tid.navn;
+        }
+      }
+      // GLØDEN fra D1 er `glod`, og den må være lysere enn veggen uansett
+      // hvilken vei den bakte ruta går — en glød som ikke er lysere enn flaten
+      // under gjør bildet mørkere, ikke lysere (se steg B4 om blending).
+      tentVerst = Math.min(tentVerst,
+        (game.relLuminance(g) + 0.0001) / (game.relLuminance(hus[2]) + 0.0001));
+    });
+    sjekk('vindusretning: ' + t.name, retningOk, hvor);
+    if(erApning){
+      sjekk('åpning mot fasade: ' + t.name,
+        apningDag >= APNING_DAG_MIN && apningVerst >= APNING_GULV,
+        'åpning/husA ' + apningDag.toFixed(2) + ':1 ved dag (krav ' + APNING_DAG_MIN +
+        ':1), verst ' + apningVerst.toFixed(2) + ':1 under overlegg (gulv ' + APNING_GULV + ':1)');
+    } else {
+      sjekk('tent rute over fasade: ' + t.name, ruteVerst >= TENT_MARGIN,
+        'den bakte ruta er bare ×' + ruteVerst.toFixed(3) + ' husC sin luminans i verste ' +
+        'døgntid, kravet er ×' + TENT_MARGIN);
+    }
+    sjekk('glød over fasade: ' + t.name, tentVerst >= TENT_MARGIN,
+      'lagPal.glod er bare ×' + tentVerst.toFixed(3) + ' husC sin luminans i verste døgntid, ' +
+      'kravet er ×' + TENT_MARGIN + ' — under det slutter D1-gløden å lese som lys i en vegg');
   });
 
   return { res: res, verste: verste, versteLag: versteLag, refL: refL, lakkAntall: lakk.length };

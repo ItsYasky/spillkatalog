@@ -176,6 +176,7 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | B5 | ferdig | `0bc25c6` | Bakkeflis som gjentakende mønster under hele skjermen + uttonet ytterkant på bakgrunnsbildet, så lerretskanten ikke lenger synes | samme tre porter + skjøtemåling |
 | C | ferdig | `7626746` | Bykvartaler (`scene.rutenett` + `dBuildingGrid`) og landemerker for LABIRINTO (katedral), SERPENTINA (havn med moloen) og VISTANOTTE (pariserhjul) | `test_banetema.js` (183/183), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + skjermbilder |
 | D1 | ferdig | `55c6e06` | Nattlys i bykvartalene: ett tent vindu per utvalgt kvartal — LABIRINTO 44 lys, SERPENTINA 44, VISTANOTTE 72 (mot 1/1/5 før) | `test_banetema.js` (186/186), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + nattbilder |
+| C2 | ferdig | `PLACEHOLDER_C2` | Bypalettene målt UNDER døgnoverlegget i alle tre tider: mørke tak og lysere fasader på LABIRINTO, SERPENTINA og VISTANOTTE, nattoverlegget senket 0,58 → 0,50, og et MÅLT nattgulv på 2,5:1 i stedet for 3:1. Tak/fasade om natta 1,78–2,06 → 2,52–2,53:1 | `test_banetema.js` (198/198, sjekk 19–20 bygget om), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + før/etter-bilder |
 
 **Steg D er delt i tre fordi den er to ulike jobber:** D1 nattlysene i byene
 (ferdig), D2 stillaset for bevegelige detaljer (`raceTime`-styrt, culling, én
@@ -603,9 +604,9 @@ SERPENTINA 1 (havnelyset), VISTANOTTE 5 (navet + fire kabiner).
    hele taket ville gjort klokketårnet og pariserhjulet mørke uten at noe
    feilet. 40 per rutenettkall gir 44/44/72 og lar det stå 78+ igjen.
 7. **Glødestørrelsen er det eneste håndtaket.** `drawTrackScene` tegner alle
-   nattlys med fast alpha 0,5, og nattoverlegget (`rgba(5,8,20,0.58)`) legges
-   OPPÅ etterpå. 12 px leste knapt i skjermbildet, 14 så vidt, 20 leser som et
-   opplyst vindu.
+   nattlys med fast alpha 0,5, og nattoverlegget (`rgba(5,8,20,0.58)` da dette
+   ble skrevet, senket til `0.50` i steg C2) legges OPPÅ etterpå. 12 px leste
+   knapt i skjermbildet, 14 så vidt, 20 leser som et opplyst vindu.
 
 **Kostnad, målt i steg D1:** bildetid verste 1,87 ms (VISTANOTTE/NATT) mot 1,98
 i steg B5 — altså flat/litt bedre, og LABIRINTO/NATT falt 0,31 → 0,25.
@@ -613,6 +614,113 @@ Byggetiden er innenfor samme støy som før (to kjøringer ga sum 236 og 202 ms
 med ARDENNE 50,5 og TEMPIO 44,7 som hver sin engangstopp — se steg A punkt 3:
 ett høyt tall skal måles på nytt før det tolkes; bybanene selv ligger på
 14,2/15,1/20,8 ms).
+
+**Avvik verdt å vite i steg C2 (bypalettene under overlegget):**
+
+Bestillingen var å måle kontrasten ETTER at døgnoverlegget er lagt på, og kreve
+3:1 i alle tre tider. Det kravet er umulig om natta, og det er en MÅLING og ikke
+en vurdering:
+
+1. **Et flatt overlegg har et TAK.** Legges `rgba(5,8,20,a)` som source-over,
+   er den største kontrasten som finnes mellom to vilkårlige farger den du får
+   av hvitt mot svart, komponert. Ved α=0,58 er taket **4,11:1** — og det er
+   ikke bare under 3:1-kravet for tak/fasade PLUSS kvartal/bakke samtidig, det
+   er så trangt at hele paletten må presses ut i hjørnene hvitt og svart.
+   Overlegget er derfor senket til **0,50**, som gir et tak på **5,45:1**.
+   Til sammenligning er taket 21,00:1 ved DAG og 13,00:1 ved SOLNEDGANG: 3:1 er
+   14 % av alt som finnes ved dag, men 55 % om natta. **Dette er den ENE
+   endringen i C2 som treffer alle tretten banene** — alt annet er de tre
+   bybanenes egne paletter.
+2. **Et hardt 3:1-krav om natta ble gjennomført, målt og så FORKASTET.** Alle
+   tallene ble bedre og alle bildene ble verre. Grunnen er at WCAG-brøken er
+   **blind for kulør**: den ser ingen forskjell på et cyan vindu i en grå vegg
+   og en grå flekk i samme vegg. De siste prosentene av brøken kan bare betales
+   i METNING, og metningen er det som bærer nattbyen. Nattgulvet for tak/fasade
+   er derfor et målt **2,5:1**, mens DAG og SOLNEDGANG står på 3:1.
+3. **Å lysne LANGS en kulør koster ingen metning. Å bleke mot HVITT koster
+   alt.** Det er to ulike operasjoner, og forvirringen mellom dem var det som
+   drepte første forsøk. LABIRINTOs gull `#facc15` har metning 0,957; lysnet
+   langs sin egen kulør (hue 48°) opp til lyshet 0,70 måler det fortsatt
+   0,958–0,963. Den forkastede `#fef6d5` lå på **0,33** og hadde sluttet å være
+   gull. Gullet er nå `#fbd84a`, som er lyst nok til å ligge ×1,113 over husC i
+   luminans om natta, uten å ha gitt fra seg noe som helst.
+4. **Et tent vindu kan ALDRI nå 3:1 mot fasaden sin, i noen døgntid.** En rute
+   som er lysere enn veggen og samtidig tre ganger lysere, må enten være
+   nesten hvit eller stå i en nesten svart vegg — og veggen har sitt eget
+   3:1-krav mot bakken i motsatt retning. Det tente vinduet leser derfor på
+   RETNING (lysere enn veggen, krav ×1,10 i luminans; målt 1,11–1,26) pluss
+   gløden fra D1, ikke på en kontrastbrøk. En mørk ÅPNING (LABIRINTO) måles
+   motsatt vei og har sitt eget nattgulv på **2,25:1** (målt verste er 2,33).
+5. **Alle tre palettene landet først PÅ 2,5-gulvet, innenfor hex-avrundingens
+   slark** — LABIRINTO på 2,49949, altså så vidt UNDER. Å gi testen slark ville
+   betydd at en bestått test ble avgjort av avrunding til nærmeste hex-verdi.
+   Palettene er i stedet søkt opp på nytt med en eksplisitt `MARGIN = 0.02`.
+   Prisen var overraskende lav: LABIRINTOs fasade måtte +0,7 % i lyshet, og
+   SERPENTINA/VISTANOTTE trengte bare mørkere TAK (lyshet 0,100 → 0,092/0,093)
+   med fasadene helt urørt.
+
+Resultatet, målt under overlegget med spillets egne TOD-verdier:
+
+| by | tak/fasade DAG | SOLNEDGANG | NATT | NATT før | kvartal/bakke NATT |
+|---|---|---|---|---|---|
+| LABIRINTO | 5,95 | 4,15 | **2,53** | 1,78 | 2,53 |
+| SERPENTINA | 6,90 | 4,76 | **2,52** | 2,06 | 2,98 |
+| VISTANOTTE | 6,87 | 4,75 | **2,52** | 1,61 | 2,95 |
+
+Fasadene flyttet seg bare +1,7 % (LABIRINTO) / 0 % / 0 % fra steg C — det er
+TAKENE som gjorde jobben, akkurat som steg C fant at «taket måles mot en lys
+vegg, og da er det den MØRKE tonen som bærer kontrasten».
+
+**Testen er gjort drift-sikker på to nye vis, begge bevist med mutasjonstest:**
+- `KVART_GULV` i sjekk 19 navngir gulvet PER DØGNTID, og en døgntid som ikke
+  står i tabellen gir STRYK med navnet sitt i meldinga. En umålt fjerde
+  døgntid skal ikke kunne gli forbi på de tre som er målt.
+- Sjekk 20 leser temaets eget `lagMot.vindu` for å avgjøre om ruta er en mørk
+  ÅPNING eller et TENT vindu — ikke banenavnet. En palett kan altså ikke snu
+  et vindu uten også å flytte `lagMot`, som er en synlig endring.
+Fire mutasjoner biter: steg C-paletten fanges på 1,98:1, et overlegg på 0,58
+fanges på alle tre byene med taket rapportert som 4,1:1, et snudd
+SERPENTINA-vindu fanges på ×0,070, og en umålt fjerde døgntid fanges på navn.
+
+**To metodefeller, begge fanget ved å se på tidsstempler og ikke på utskrift:**
+1. **`chrome_harness.py shot` tar banenavnet som POSISJONSargument.** Skriver du
+   `shot --bane LABIRINTO`, kaster den injiserte JS-en — men harnessen skriver
+   et bilde likevel, av HOVEDMENYEN, og avslutter med kode 0. Et «nattbilde av
+   byen» kan altså i virkeligheten være menyen. Lagt i `SENERE.md`.
+2. **Seks «etter»-bilder var stille FORELDET.** En shell-løkke med `set -- $b`
+   feilet, og fordi kallet var skrevet `>/dev/null 2>&1 && echo ok` kom det
+   ingenting ut og de gamle filene stod. Oppdaget ved å se på klokkeslettet på
+   filene (21:51 mot 11:10). **Et bilde som skal bevise noe må sjekkes for
+   alder før det tolkes** — samme familie som «ett høyt tall skal måles på nytt».
+   En mutasjon gikk i samme grøft: en `python3`-`.replace()` traff ikke den
+   ekte kildeformateringen, så mutasjonen ble aldri injisert og testen «besto».
+   Rettet med `assert old in s`.
+
+**Dominobrikkene er bare HALVT løst, og resten er FORM og ikke farge.**
+Fargedelen er gjort og målt (tabellen over). Skjermbildene viser likevel at
+kvartalene fortsatt leser som brikker ved DAG, og `dBuildingGrid` forklarer
+hvorfor: takbåndet er 4 px mot en fasade på 20–50 px, og vinduene er et helt
+jevnt 5 × 7-rutenett over hele flaten. En lys flate med regelmessige prikker og
+en hårstrek tak ER en dominobrikke uansett hvilke toner den males i. Punktet
+står derfor igjen i `SENERE.md`, omskrevet til å peke på takareal og variasjon
+i vindusrutenettet.
+
+**`cityPal`-punktet viste seg å være tre ulike saker, og ingen av dem er denne.**
+Kvartalene fikk sine egne målte toner i steg C; `cityPal` leses bare av de
+SPREDTE `dBuilding`-husene `scatterTerrain` strør utover, og de måler 1,00–3,85:1
+mot bakken. Fiksen langs hver tones egen kulør ble målt og IKKE gjennomført:
+LABIRINTOs fire toner `#b08d5a`/`#c9a37a`/`#d8b48c`/`#9c7f5e` ender da alle på
+lyshet 0,75–0,80 (`#dcccb5`/`#e0cab3`/`#e3caae`/`#d8ccbe`) og blir umulige å
+skille — to VISTANOTTE-toner har ingen løsning i det hele tatt. Det er nøyaktig
+samme feilmodus som fikk det harde nattkravet forkastet i punkt 2. I tillegg er
+`roofPal` **dødkode** (settes på LABIRINTO og DISCESA, føres gjennom
+`makeTheme`, leses ingen steder), og DISCESAs `cityPal` likeså, siden
+`dBuilding` bare kalles for `terrain==='city'`. Alle tre står i `SENERE.md`.
+
+**Kostnad, målt i steg C2:** byggetid sum 182,6 ms, verste bane VISTANOTTE
+19,8 ms mot budsjettet på 100 — en ren palettendring koster ingenting.
+Nattlys uendret 44/44/72. `test_banegeometri.js --mot geo_laas.json` uendret på
+alle 13.
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til

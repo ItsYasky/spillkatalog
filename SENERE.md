@@ -25,14 +25,18 @@ høyst én linje under som sier hvor i koden det gjelder.
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
 - [GRAND PRIX] Den YTRE kvartalsraden på LABIRINTO og SERPENTINA gir bare 4 kvartaler hver – middels – 2026-11-09
   `scene.rutenett`: klaringssjekken mot `CLEAR` kaster nesten hele raden på en trang gatebane, så byen står i praksis bare på innsiden (155 av 159, 195 av 199).
-- [GRAND PRIX] Bykvartalene leser som dominobrikker om natta på alle tre bybanene – middels – 2026-11-09
-  `dBuildingGrid`: tak mot fasade faller fra 3,80–5,56:1 ved dag til 1,78–2,06:1 under nattoverlegget, så taket slutter å si «hus» mens den lyse flaten og vindusrutenettet blir stående igjen som brikke og prikker.
+- [GRAND PRIX] Bykvartalene leser som dominobrikker på grunn av FORMEN, ikke fargen – middels – 2026-11-10
+  Fargedelen er gjort i steg C2: tak mot fasade er nå 2,52–2,53:1 om natta mot 1,78–2,06:1 før, målt under overlegget. Skjermbildene viser at brikkelesningen likevel står. I `dBuildingGrid` er takbåndet 4 px mot en fasade på 20–50 px, og vinduene er et jevnt 5 × 7-rutenett over hele flaten — en lys flate med regelmessige prikker og en hårstrek tak ER en dominobrikke uansett hvilke toner den males i. Det som gjenstår er takareal og variasjon i vindusrutenettet, altså tegning og ikke palett.
 - [GRAND PRIX] VULCANOs lava kaster ikke lys på bakken rundt seg – liten – 2026-11-09
   Temaets `groundLayer` linje ~2164: `s.lys(...,P.lava,26)` henger på kjernen, som ligger inne i en skorpe langt bredere enn 26 px, så spillets eneste selvlysende flate får aldri gløden ut av seg selv.
 - [GRAND PRIX] MONTE SPIRA er den eneste banen uten ett eneste nattlys – liten – 2026-11-09
   Akvedukten i temaets `landmark` (linje 1763–1814) har ingen `s.lys`-kall; banen ser lik ut dag og natt bortsett fra overlegget.
-- [GRAND PRIX] `cityPal` og `roofPal` på de tre bybanene måler 1,02–2,42:1 mot bakken – liten – 2026-11-09
-  Gjelder de SPREDTE `dBuilding`-husene scatterTerrain strør utover, ikke kvartalene (de fikk egne målte toner i steg C); samme palettsak som ARDENNEs trær.
+- [GRAND PRIX] `cityPal` på de tre bybanene måler 1,00–3,85:1 mot bakken – middels – 2026-11-10
+  Gjelder de SPREDTE `dBuilding`-husene scatterTerrain strør utover, ikke kvartalene (de fikk egne målte toner i steg C). Forsøkt i steg C2 og IKKE gjennomført: flyttes de fire tonene langs sin egen kulør til gulvet holder i alle tre døgntider, havner de alle på lyshet 0,75–0,80 og blir umulige å skille — LABIRINTO går fra `#b08d5a`/`#c9a37a`/`#d8b48c`/`#9c7f5e` til `#dcccb5`/`#e0cab3`/`#e3caae`/`#d8ccbe`. Da er poenget med en palett på fire toner borte. Trenger en annen vei enn lyshet (tak eller omriss på de spredte husene, slik kvartalene har).
+- [GRAND PRIX] `roofPal` er dødkode, og DISCESAs `cityPal` likeså – liten – 2026-11-10
+  `roofPal` settes på LABIRINTO (linje ~1937) og DISCESA (~2453) og føres gjennom `makeTheme`, men leses ingen steder. `dBuilding` kalles bare for `terrain==='city'`, så DISCESAs `cityPal` har heller ingen leser. Samme familie som cfg-feltene ryddet i `fc4996f`.
+- [GRAND PRIX] `chrome_harness.py shot` skriver et bilde selv når den injiserte JS-en kaster – liten – 2026-11-10
+  Et ukjent banenavn (f.eks. `shot --bane LABIRINTO`, der banen er et POSISJONSargument) gir et skjermbilde av hovedmenyen i stedet for en feil, så et «nattbilde av byen» kan i virkeligheten være menyen. Bør gi exit-kode ulik 0 når injeksjonen kaster.
 
 ## Arkaden (felles)
 
