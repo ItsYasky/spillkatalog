@@ -9,16 +9,14 @@ høyst én linje under som sier hvor i koden det gjelder.
 
 ## GRAND PRIX (`vintage_f1.html`)
 
-- [GRAND PRIX] Runde 4 steg E: kontaktark med alle 13 baner side om side, og sluttest på geometri, AI-sim, byggetid og bildefrekvens – liten – 2026-10-30
-  E1 (minikart i baneutvalget) er bevisst HOPPET OVER — den nye menyen bygger om baneutvalget uansett.
 - [GRAND PRIX] Vanskelighetsgrad-stigen: raskeste AI-bil mot Yasirs beste runde – middels – 2026-10-30
   ENKEL 12–15 % tregere, MIDDELS 7–8 %, VANSKELIG 3–4 %, ULTRA 0,5–1,5 %; samme stige i CASUAL (REALISTISK ULTRA er ferdig). Mål bare MONTE SPIRA, ARDENNE og CAMPAGNA.
 - [GRAND PRIX] LEGENDE: femte nivå over ULTRA, like raskt som Yasirs beste runde ±0,5 %, ingen feil, hele feltet innenfor 1 % – stor – 2026-10-30
   Kan kreve bedre AI-linjer i hårnålene; `buildRaceLine` er alt forsøkt strammet én gang og ble FORKASTET (se `CLAUDE.md` steg H).
 - [GRAND PRIX] ESSE/CASUAL/ULTRA har spredning 0,9857, så vidt under én runde – middels – 2026-10-30
   Banen var ikke med i de fem som ble målt da `posFactor` ble strammet; mål med `test_ai_sim.js`.
-- [GRAND PRIX] SERPENTINA/REALISTISK/ULTRA har 6,65 banegrensebrudd per bil – middels – 2026-10-30
-  Gammel kjent sak, ikke forårsaket av steg H; alle andre ligger på ≤0,8.
+- [GRAND PRIX] SERPENTINA har 4,9–6,7 banegrensebrudd per bil i ALLE FIRE konfigurasjonene – middels – 2026-10-30
+  Gammel kjent sak, ikke forårsaket av steg H. Punktet sa før «6,65 på REALISTISK/ULTRA, alle andre ≤0,8»; sluttmålingen i steg E viser at det var for snilt — SERPENTINA ligger på 5,00/6,50/4,88/6,70, og DISCESA/CASUAL/ULTRA på 4,85. Resten er fortsatt ≤0,8.
 - [GRAND PRIX] Halv oppløsning på bakkeflis-fyllet hvis bildetiden blir trang – middels – 2026-10-30
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
 - [GRAND PRIX] Den YTRE kvartalsraden på LABIRINTO og SERPENTINA gir bare 4 kvartaler hver – middels – 2026-11-09
@@ -39,6 +37,12 @@ høyst én linje under som sier hvor i koden det gjelder.
   6 px forskyvning av rammen leser 6,00 px på DUNA, men bare 2,50 px på VISTANOTTE: hjulets faste punktsett inneholder hjørnene i boksen til nav-prikken (`arc(0,cy,6)`), som ligger 8,49 px fra dreiepunktet, og `|rotert(±6,±6)+(6,0)|` bunner ut på 8,49−6. Mutasjonen biter uansett, men følsomheten er ikke 1:1. Kan strammes ved å kreve at det faste punktet også ligger nær dreiepunktet.
 - [GRAND PRIX] `chrome_harness.py fps --runder 6` sprenger harnessens eget tidsavbrudd – liten – 2026-11-10
   `kjor_chrome` har `timeout=180`, og seks runder x to døgntider x 300 bilder går over. Feilen kommer ut som en halv Python-traceback, så med `2>/dev/null` er den usynlig. Beste-av-N må i dag gjøres ved å kjøre `--runder 3` flere ganger og ta laveste blokk-tall selv. Bør enten skalere tidsavbruddet med `runder*tider` eller si tydelig hva som gikk galt — samme familie som de to andre harness-punktene over, der kallet tier når det feiler.
+- [GRAND PRIX] VULCANO og DISCESA ble MINDRE ulike av runde 4 – middels – 2026-11-10
+  Fingeravtrykksmålingen i steg E (`maalinger/maal_signatur_E.txt`) gir 35,47 → 24,94, og de er nå det svakeste paret av alle 78. Begge leser som brun bakke med et blekt rektangulært landemerke til venstre (observatoriet og olivengården). VULCANOs ene kjennetegn, lavaelva, er ikke i bildet i det hele tatt ved banens egen `landmarkT` 0,72. Fem andre par ble også dårligere, men bare med 0,1–4,1.
+- [GRAND PRIX] `ARK_T`-overstyringene i harnessen dekker bare to baner, resten er ikke vurdert – liten – 2026-11-10
+  Steg E målte at et landemerke er inne i bildet i bare 4–9 av 100 rundeposisjoner, men bare CAMPAGNA og VISTANOTTE har fått et målt kamerapunkt. De elleve andre står på temaets `landmarkT`, og for VULCANO er det beviselig et dårlig valg (punktet over). `maalinger/maal_ark_kamera_E.txt` har allerede tallene for hele runden på alle 13.
+- [GRAND PRIX] ESSE/CASUAL/ULTRA-spredningen er ikke stabil nok til å måles med ett tall – liten – 2026-11-10
+  Punktet over sier 0,9857, men sluttmålingen i steg E gir 0,744 for samme konfigurasjon. To kjøringer av `test_ai_sim.js` spriker altså med 25 %, så terskelen «under én runde» kan ikke avgjøres av én kjøring. Trenger beste-av-N eller flere forsøk per konfigurasjon før punktet kan lukkes.
 
 ## Arkaden (felles)
 

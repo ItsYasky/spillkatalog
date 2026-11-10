@@ -182,6 +182,8 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | D3a | ferdig | `96dd567` | DUNAs fyrstråle: lykta sveiper én omdreining på 8 s (tårnet bakt, strålen og lampegløden live, gløden blinker én gang per omdreining). `fps` fikk `--t` + en ekte `--tod`, så en synlig detalj kan måles for første gang — begge detaljene koster 0,002–0,006 ms per bilde mot et budsjett på 0,3. `test_bevegelse.js` dekker nå BEGGE sider av banen (ny sjekk 7), og D2-hullet er lukket | `test_bevegelse.js` (7 sjekker, 13 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps --t` + `shot --tid` |
 | D3b | ferdig | `7a4f9c3` | De to siste detaljene: CAMPAGNAs møllevinger (korset dreier én omdreining på 5 s, og vindusgløden under demper seg med `cos(4*vinkel)`, altså fire pust per omdreining uten én `if`) og SERPENTINAs havnekran (jibben bakt, heisetauet og kassa live, 32 px vandring på 5,5 s). Begge koster 0,0004–0,0014 ms per bilde mot et budsjett på 0,3, altså 222–765x margin. `test_bevegelse.js`-opptakslerretet bokfører nå gløders SENTER, så sjekk 5 leser eksakt 6,00 px på de nye banene | `test_bevegelse.js` (7 sjekker, 14 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps --t` + `shot --tid` |
 
+| E | ferdig | — | Sluttest og kontaktark. `chrome_harness.py` fikk to nye kommandoer: `ark` (alle 13 banene side om side, 1:1 med spillvisningen, hver i sin egen `naturligTid`) og `signatur` (middelfargen per rute i et rutenett over spillvisningen, så «er banene til å skille» blir ET TALL). Målt mot fila fra før runde 4 (`10f2261`) med samme kamerapunkt og samme døgntid: minste avstand i feltet 4,72 → 24,94 (+429 %), og det likeste paret, ARDENNE/CAMPAGNA, gikk fra 4,72 til 48,02 — 10,2x. Alle fire portene grønne, og AI-simuleringen viser ingen regresjon | `test_banegeometri.js` (13/13 uendret), `test_banetema.js` (198/198), `test_bevegelse.js` (PASS), `chrome_harness.py maal` + `fps` + `ark` + `signatur`, `test_ai_compare.js` |
+
 **Steg D er delt i tre fordi den er to ulike jobber:** D1 nattlysene i byene
 (ferdig), D2 stillaset for bevegelige detaljer (ferdig), D3 selve detaljene på
 de resterende banene (D3a DUNA ferdig, D3b CAMPAGNA + SERPENTINA ferdig —
@@ -1248,6 +1250,134 @@ konto-ID fra `gh api user`, siden den private adressen er skjult og tokenet
 mangler `user`-scope). De 18 commitene som alt er pushet bærer fortsatt den
 gamle `.local`-adressen og er ikke knyttet til GitHub-profilen — å rette det
 krever force-push til `main` og er IKKE gjort.
+
+**Avvik verdt å vite i steg E (kontaktarket og sluttesten):**
+
+Runde 4 har hele veien hvilt på én påstand: «hver bane skal kjennes igjen på et
+skjermbilde». Steg E gjør den påstanden om til et TALL, og `vintage_f1.html` er
+ikke rørt med én linje — steget er ren måling.
+
+1. **Fingeravtrykket er et RUTENETT, ikke én middelfarge.** To baner kan ha
+   nøyaktig samme gjennomsnittsfarge og se helt ulike ut (asfalt i midten med
+   terreng i kantene gir samme snitt som en jevn grøt). `signatur` legger derfor
+   et 6 x 8-rutenett over spillvisningen og skriver middel-RGB per rute;
+   avstanden mellom to baner er RMS over rutene. Fire områder er MASKERT bort,
+   og det er ikke pynt: HUD-stripa, ledertavla, minikartet og spillerbilen er
+   felles for alle tretten og ville trukket hver avstand mot null. Ledertavla og
+   bilen må dessuten bort fordi lagfargene og lakkeringen trekkes PÅ NYTT ved
+   hver sidelasting — nøyaktig den fella pikseldiffen gikk i i D3a punkt 7.
+2. **FØR-fila kan ikke svare på sitt eget kamerapunkt, og det måtte løses.**
+   `theme.landmarkT` og `naturligTid` kom begge INN i runde 4, så fila fra
+   `10f2261` ville gitt t=0,02 og DAG på alle tretten og målt et helt annet
+   bilde. Derfor `--meta-fra`: kamerapunktet og døgntiden hentes fra ÉN fil og
+   brukes på begge. Det er forsvarlig nettopp fordi runde 4 er en pynterunde —
+   `geo_laas.json` beviser at PATH, raceLine og heading er bit-identiske, så
+   **samme t ER samme kamerapose i begge filene**.
+3. **Døgntiden måtte kunne slås AV, ellers måler man feil runde.** Hver banes
+   `naturligTid` skiller banene godt (DESERTO er natt, DUNA er dag), men den ble
+   satt i MENY-arbeidet og ikke i runde 4. Tabellen er derfor kjørt to ganger:
+   i hver banes egen tid, og med alle tretten tvunget til DAG. Den andre er det
+   ærlige målet på runde 4s eget arbeid, og den er den STERKESTE av de to.
+
+| mål | egen døgntid | alle på DAG |
+|---|---|---|
+| minste avstand, alle 78 par | 4,72 → **24,94** (+429 %) | 4,78 → **30,77** (+544 %) |
+| minste avstand, samme terreng | 31,27 → **38,46** (+23 %) | 19,90 → **38,48** (+93 %) |
+| snitt over alle 78 par | 40,06 → **65,61** (+64 %) | 40,80 → **69,94** (+71 %) |
+
+4. **Det likeste paret før runde 4 var ARDENNE/CAMPAGNA på 4,72 — og de er ikke
+   engang samme terreng** (forest mot hedge). Til sammenligning ligger det
+   svakeste paret i dag på 24,94. De tre parene i bunnen før runde 4 var alle
+   «grønn bane mot grønn bane»: ARDENNE/CAMPAGNA 4,72 → 48,02 (10,2x),
+   ARDENNE/TEMPIO 13,54 → 56,22 (4,2x), TEMPIO/CAMPAGNA 14,71 → 54,01 (3,7x).
+   De åtte parene med SAMME terreng ble alle bedre, verst DESERTO/DUNA som gikk
+   19,90 → 101,62 på felles døgntid.
+5. **ETT PAR BLE MINDRE ULIKT, og det er et ekte funn og ikke støy.**
+   VULCANO/DISCESA gikk 35,47 → **24,94** og er nå det svakeste paret i hele
+   feltet. Bekreftet på bildet og ikke bare i tallet: begge cellene er brun
+   bakke med et blekt, rektangulært landemerke til venstre (VULCANOs
+   observatorium og DISCESAs olivengård), og VULCANOs ENE kjennetegn — lavaelva
+   — er ikke i bildet i det hele tatt ved banens egen `landmarkT` 0,72.
+   Seks av 78 par ble dårligere; de fem andre med 0,1–4,1 i utslag. Lagt i
+   `SENERE.md`.
+6. **Et landemerke er inne i bildet i bare 4–9 av 100 rundeposisjoner.** Målt
+   ved å sveipe hele runden og regne om ankeret med spillets EGEN
+   `worldToScreen` (`maalinger/maal_ark_kamera_E.txt`). Selv på det tetteste
+   punktet i en by ligger bare 5–8 av 44–68 nattlys inne. `landmarkT` ± 0,01 er
+   altså forskjellen på å se landemerket og ikke, og det er grunnen til at
+   `ARK_T` i harnessen i det hele tatt trengs.
+7. **VISTANOTTE er den ene banen der landemerket og byen ikke kan være i samme
+   bilde.** Pariserhjulet er inne bare på t = 0,12–0,15, og der ligger 0–1
+   nattlys inne; byen er tettest på 0,63–0,65 med 5. Det bekrefter D1 punkt 3
+   («landmarkT 0,14 er det ENE punktet på runden uten by»), nå målt over hele
+   runden i stedet for bare ved landemerket. **Arket viser BYEN (t=0,63).**
+   Grunnen er hva arket skal brukes til: påstanden som prøves er at to baner med
+   samme terreng er til å skille, og den prøves på de tre bybanene — LABIRINTO
+   (0,26, katedral + 4 lys) og SERPENTINA (0,37, kran + 5 lys, banens maksimum)
+   viser BEGGE bymassen. En VISTANOTTE-celle med hjul mot tom eng ville vært den
+   ene cellen som ikke er med i sammenligningen. Begge bildene ligger i
+   `maalinger/bilder/E_vistanotte_*.png`.
+8. **Jeg satte først kameraet til 0,30 ut fra NOTATET og ikke ut fra bildet.**
+   Overstyringen var begrunnet med D1 punkt 3 alene, altså «her er det ingen
+   by», uten at jeg hadde sett på hvordan 0,14 faktisk leser — og 0,14 leser
+   utmerket, med et glødende pariserhjul mot mørk mark. Tallet 0,30 var hverken
+   hjul eller tettest by. **En overstyring begrunnet i en gammel notatlinje er
+   ikke en måling**, og rettelsen kom først da bildene ble lagt ved siden av
+   hverandre. Samme familie som D3a punkt 10, der bildet måtte til for å si at
+   tallet var for lavt.
+9. **Første kontaktark kom ut HELT HVITT**, fordi oppryddingen før skjermbildet
+   skjulte `cv.parentNode` for å ta med en eventuell innpakning. Forelderen ER
+   `<body>` i denne fila (body > canvas#g direkte), så hele sida forsvant.
+   Bare `cv` skjules nå.
+10. **`buildTrack(TRACKS[i])` kaster.** `TRACKS` inneholder FERDIG BYGDE baner —
+   `buildTrack({...})` kalles inne i selve array-literalen — så argumentet er en
+   bane og ikke en cfg, og `genCP` faller på `cfg.features.forEach`. Metadataen
+   leses rett av `TRACKS[i].theme` / `.naturligTid` / `.cfg`.
+11. **En injisert løkke som kaster etter at `<pre id="gpout">` er laget, gir
+   TOM utskrift og exit-kode 0.** Første metadatakjøring kom tilbake med en tom
+   streng og ingen feil. Løkka er nå pakket i `try/catch` som skriver
+   `FEIL: <melding> | <stack>` inn i den samme `<pre>`-en — og det var nettopp
+   den diagnosen som avslørte `genCP`-feilen over. Samme familie som de tre
+   harness-punktene i `SENERE.md`: harnessen tier når kallet er feil.
+12. **`worldToScreen` returnerer et ARRAY `[x,y]`, ikke `{x,y}`.** Lest som et
+   objekt blir hver sammenligning `false` og hvert tall `undefined`, og
+   kamerasveipen meldte først 0 nattlys inne på ALLE banene — et fullt troverdig
+   tall som var rent tøys. Verdt å merke seg fordi `test_bevegelse.js` og
+   `fps`-grenen begge leser den samme funksjonen.
+
+**Sluttesten, alle fire portene:**
+
+| port | resultat |
+|---|---|
+| `test_banegeometri.js --mot geo_laas.json` | UENDRET på alle 13 |
+| `test_banetema.js` | 198/198, svakeste 3,45:1 (CORALIS/DUNA) |
+| `test_bevegelse.js` | PASS, 7 sjekker, begge sider dekket |
+| `chrome_harness.py maal` | alle 13 bygger, sum 180,5 ms, verste VISTANOTTE 20,2 ms |
+
+**Bildetid — og dette er den FØRSTE ærlige dag/natt-tabellen for hele feltet**,
+siden `--tod` ikke virket før D3a punkt 1 rettet den. Verste bane i hele spillet
+er **1,88 ms (VISTANOTTE/NATT)** mot **1,92 ms før runde 4** — altså koster hele
+pynterunden ingenting per bilde. Alle 13 ligger på 532–4464 bilder/s.
+
+Det nye tallet den ærlige målingen gir, er at **natt alltid koster mer enn dag,
+og at de BILLIGE banene betaler mest relativt:** LABIRINTO +33 %, ALPEN +31 %,
+DUNA +26 %, MONTE SPIRA +12 %, mot +1–7 % på de tunge. Det er som forventet —
+nattoverlegget og glødene er en omtrent fast kostnad per bilde, så den utgjør en
+større andel av et bilde som ellers koster 0,22 ms enn av ett som koster 1,8.
+
+**Byggetiden er det eneste som har steget, og den var budsjettert:** sum
+107,7 → 180,5 ms (+68 %), verste bane VISTANOTTE 10,9 → 20,2 ms mot et budsjett
+på 100 ms per bane. Ingen bane er i nærheten av taket.
+
+**AI-simuleringen viser ingen regresjon** (`ai_baseline_etter_runde4.json` mot
+`..._after_H.json`, 52 konfigurasjoner, 724,6 s): snittspredning 0,674 → 0,679
+runder, største 0,996 (DUNA/CASUAL/ULTRA), ingen konfigurasjon over én runde,
+og ingen bane fikk flere veggtreff. To bittesmå utslag i tid utenfor banen
+(0,00000 → 0,00010 og 0,00060 → 0,00070). Det er som det skal være — runde 4
+rører ikke fysikk eller AI, og geometriporten beviser det uavhengig.
+Merk samtidig at ESSE/CASUAL/ULTRA, som står i `SENERE.md` med 0,9857, måler
+0,744 i denne kjøringen — spredningen er altså ikke stabil nok til at ett tall
+avgjør den.
 
 **Åpent punkt i steg B:** ARDENNEs skog har praktisk talt usynlige trær —
 `treeTint:['#0e2e1c','#14472a','#071d12']` måler ~1,3:1 mot

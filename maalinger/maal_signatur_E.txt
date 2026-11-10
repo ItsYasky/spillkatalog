@@ -1,0 +1,72 @@
+==============================================================================
+A) HVER BANE I SIN EGEN DOEGNTID (slik spillet faktisk starter den)
+==============================================================================
+
+-- De 8 parene med SAMME terreng (det runde 4 lover aa ha fikset) --
+BANE A      BANE B      TERRENG       FOER    ETTER  ENDRING
+ARDENNE     ALPEN       forest       31.27    38.46    +7.19
+ARDENNE     ESSE        forest       33.05    38.62    +5.57
+MONTE SPIRA DISCESA     mountain     39.82    44.35    +4.53
+ESSE        ALPEN       forest       49.72    53.74    +4.02
+LABIRINTO   SERPENTINA  city         48.95    57.21    +8.26
+LABIRINTO   VISTANOTTE  city         54.36    86.12   +31.76
+SERPENTINA  VISTANOTTE  city         55.51    87.32   +31.81
+DESERTO     DUNA        arid         59.36   130.76   +71.40
+
+-- Svakeste par i HELE feltet (78 par i alt) --
+BANE A      BANE B      SAMME?        FOER    ETTER  ENDRING
+VULCANO     DISCESA     -            35.47    24.94   -10.53
+VULCANO     ESSE        -            26.76    25.09    -1.67
+DESERTO     VISTANOTTE  -            18.94    28.47    +9.54
+MONTE SPIRA CAMPAGNA    -            31.62    32.63    +1.01
+VULCANO     VISTANOTTE  -            39.53    35.39    -4.13
+ESSE        DISCESA     -            39.58    37.64    -1.94
+ARDENNE     ALPEN       ja           31.27    38.46    +7.19
+ARDENNE     ESSE        ja           33.05    38.62    +5.57
+
+MINSTE avstand, alle 78 par:       foer   4.72  ->  etter  24.94  (+429 %)
+MINSTE avstand, samme terreng:    foer  31.27  ->  etter  38.46  (+23 %)
+SNITT over alle par:              foer  40.06  ->  etter  65.61  (+64 %)
+Par som ble MINDRE ulike: 6 av 78
+   VULCANO     DISCESA        35.47 ->    24.94  (-10.53)
+   VULCANO     VISTANOTTE     39.53 ->    35.39  (-4.13)
+   ESSE        DISCESA        39.58 ->    37.64  (-1.94)
+   MONTE SPIRA LABIRINTO      49.47 ->    47.55  (-1.92)
+   VULCANO     ESSE           26.76 ->    25.09  (-1.67)
+
+==============================================================================
+B) ALLE 13 TVUNGET TIL DAG (runde 4s eget arbeid, uten doegntid-hjelp)
+==============================================================================
+
+-- De 8 parene med SAMME terreng (det runde 4 lover aa ha fikset) --
+BANE A      BANE B      TERRENG       FOER    ETTER  ENDRING
+ARDENNE     ALPEN       forest       31.20    38.48    +7.28
+ARDENNE     ESSE        forest       32.97    38.61    +5.64
+MONTE SPIRA DISCESA     mountain     39.94    44.39    +4.45
+ESSE        ALPEN       forest       49.65    53.76    +4.11
+LABIRINTO   VISTANOTTE  city         54.40    56.03    +1.63
+SERPENTINA  VISTANOTTE  city         44.82    73.77   +28.95
+LABIRINTO   SERPENTINA  city         54.41    75.68   +21.27
+DESERTO     DUNA        arid         19.90   101.62   +81.72
+
+-- Svakeste par i HELE feltet (78 par i alt) --
+BANE A      BANE B      SAMME?        FOER    ETTER  ENDRING
+MONTE SPIRA VISTANOTTE  -            43.19    30.77   -12.42
+VULCANO     ESSE        -            30.95    30.96    +0.01
+MONTE SPIRA CAMPAGNA    -            31.54    32.61    +1.07
+VULCANO     DISCESA     -            37.80    33.90    -3.90
+ARDENNE     VULCANO     -            30.98    37.21    +6.23
+ESSE        DISCESA     -            39.46    37.72    -1.74
+ARDENNE     ALPEN       ja           31.20    38.48    +7.28
+ARDENNE     ESSE        ja           32.97    38.61    +5.64
+
+MINSTE avstand, alle 78 par:       foer   4.78  ->  etter  30.77  (+544 %)
+MINSTE avstand, samme terreng:    foer  19.90  ->  etter  38.48  (+93 %)
+SNITT over alle par:              foer  40.80  ->  etter  69.94  (+71 %)
+Par som ble MINDRE ulike: 5 av 78
+   MONTE SPIRA VISTANOTTE     43.19 ->    30.77  (-12.42)
+   VULCANO     DISCESA        37.80 ->    33.90  (-3.90)
+   MONTE SPIRA LABIRINTO      49.32 ->    47.57  (-1.75)
+   ESSE        DISCESA        39.46 ->    37.72  (-1.74)
+   MONTE SPIRA ALPEN          50.85 ->    50.71  (-0.14)
+
