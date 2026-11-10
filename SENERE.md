@@ -9,8 +9,6 @@ høyst én linje under som sier hvor i koden det gjelder.
 
 ## GRAND PRIX (`vintage_f1.html`)
 
-- [GRAND PRIX] Runde 4 steg D3: bevegelige detaljer på de resterende banene – middels – 2026-10-30
-  Stillaset er ferdig i D2 (`scene.beveg` + `drawBevegelse` + `test_bevegelse.js`), VISTANOTTEs pariserhjul er den første detaljen og DUNAs fyrstråle den andre (D3a). Et nytt landemerke registrerer seg selv med `s.beveg(p, rekkevidde, tegn)`; alt som IKKE rører seg skal fortsatt bakes. Aktuelle igjen: havnekrana på SERPENTINA, vindmølla på CAMPAGNA.
 - [GRAND PRIX] Runde 4 steg E: kontaktark med alle 13 baner side om side, og sluttest på geometri, AI-sim, byggetid og bildefrekvens – liten – 2026-10-30
   E1 (minikart i baneutvalget) er bevisst HOPPET OVER — den nye menyen bygger om baneutvalget uansett.
 - [GRAND PRIX] Vanskelighetsgrad-stigen: raskeste AI-bil mot Yasirs beste runde – middels – 2026-10-30
@@ -39,6 +37,8 @@ høyst én linje under som sier hvor i koden det gjelder.
   `fps` skriver utdata med `--out`, `shot` med `--ut`. Bruker du `--out` på `shot`, tas bildet til standardnavnet uten at noe feiler, og et glob etterpå finner ingenting. Samme familie som punktet over: harnessen tier når kallet er feil.
 - [GRAND PRIX] Sjekk 5 i `test_bevegelse.js` er fortsatt utvannet på VISTANOTTE – liten – 2026-11-10
   6 px forskyvning av rammen leser 6,00 px på DUNA, men bare 2,50 px på VISTANOTTE: hjulets faste punktsett inneholder hjørnene i boksen til nav-prikken (`arc(0,cy,6)`), som ligger 8,49 px fra dreiepunktet, og `|rotert(±6,±6)+(6,0)|` bunner ut på 8,49−6. Mutasjonen biter uansett, men følsomheten er ikke 1:1. Kan strammes ved å kreve at det faste punktet også ligger nær dreiepunktet.
+- [GRAND PRIX] `chrome_harness.py fps --runder 6` sprenger harnessens eget tidsavbrudd – liten – 2026-11-10
+  `kjor_chrome` har `timeout=180`, og seks runder x to døgntider x 300 bilder går over. Feilen kommer ut som en halv Python-traceback, så med `2>/dev/null` er den usynlig. Beste-av-N må i dag gjøres ved å kjøre `--runder 3` flere ganger og ta laveste blokk-tall selv. Bør enten skalere tidsavbruddet med `runder*tider` eller si tydelig hva som gikk galt — samme familie som de to andre harness-punktene over, der kallet tier når det feiler.
 
 ## Arkaden (felles)
 

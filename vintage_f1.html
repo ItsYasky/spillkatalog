@@ -2233,7 +2233,15 @@ const THEMES={
     // lages i samme steg.
     landmark(s){
       const P=s.TH.lagPal, bx=s.bx;
-      const p=s.plasser(s.TH.landmarkT,s.utside(),118,s.TW+s.GRAVEL_SAFE+44,34);
+      // Høyden er ikke moloen og ikke mastene, den er KRANA: jibben henger
+      // 74 px opp, og nattlyset i jibbhodet har glødradius 14, altså 88 px i
+      // alt. Tallet sto på 34 før steg D3b, og 34 var alt for lavt — mastene
+      // rakk 52 px opp. Det gjorde ingen skade, fordi `plasser` bare bruker
+      // høyden til å KLEMME avstanden ut: taket er pad 224 − 88 − 14 = 122, og
+      // avstanden ut er 113, så klemmen slår ikke inn. Havna ligger derfor
+      // piksel for piksel der den sto, og det er hele poenget med å sjekke
+      // tallet før man hever det.
+      const p=s.plasser(s.TH.landmarkT,s.utside(),118,s.TW+s.GRAVEL_SAFE+44,88);
       const L=p.halvLengde*2;
       bx.save(); bx.translate(p.x,p.y);
       bx.rotate(p.ang+(p.side>0?Math.PI:0));
@@ -2249,6 +2257,38 @@ const THEMES={
         bx.strokeStyle=P.baat; bx.lineWidth=1.6;
         bx.beginPath(); bx.moveTo(bxx,-34); bx.lineTo(bxx,-52); bx.stroke();
       }
+      // Havnekrana. Den står i ÅPNINGEN mellom de to midtbåtene, og åpningen er
+      // regnet ut og ikke anslått: båtene ligger på `-L/2+14+k*(L-28)/3`, altså
+      // −104, −34,7, 34,7 og 104 med L=236, og skroget er en ellipse med
+      // halvbredde 13. Mellomrommet i midten går dermed fra −21,7 til 21,7 og
+      // har senter i x=0 — for ENHVER L, siden de to midtbåtene er symmetriske
+      // om midten. Tårnet på 8 px står på −19..−11 og lasta svinger på 12..24,
+      // begge godt innenfor. Hadde krana stått noe annet sted enn i en åpning,
+      // ville den heist lasta rett gjennom et skrog.
+      //
+      // DELELINJA mellom bakt og levende er den samme som på pariserhjulet,
+      // fyrstrålen og møllevingene: det som ser likt ut i alle stillinger
+      // bakes, det som endrer seg med tida kan ikke bakes. Tårnet, jibben og
+      // motvekta står bom stille uansett hvor lasta er, så de ligger i
+      // bakgrunnen. Det er nettopp DERFOR krana heiser og ikke svinger: en
+      // jibb som dreide ville tvunget hele kranarmen ut i den levende delen,
+      // og da hadde banens ene bevegelsesbudsjett gått til å tegne om en
+      // bjelke som ser ut som en bjelke i hver stilling.
+      bx.fillStyle=P.molo;
+      bx.fillRect(-19,-78,8,52);          // tårnet, fra molodekket og opp
+      bx.fillRect(-30,-76,50,4);          // jibben, med bakenden forbi tårnet
+      bx.fillRect(-34,-74,8,11);          // motvekta på bakenden
+      // Lykta i jibbhodet. Den ligger i det SAMME punktet som heisetaua går ut
+      // fra, og det er ikke pynt: punktet er rotasjonsfritt (jibben er bakt),
+      // så det er det ene stedet på krana der et bakt nattlys og en levende
+      // strek kan dele koordinat for alltid. Sjekk 5 i `test_bevegelse.js`
+      // krever nettopp det — et stillestående levende punkt innen 1 px av et
+      // nattlys på samme landemerke — og her er avstanden null fordi begge
+      // leser (18,−74). `glod` og ikke `vindu` av samme grunn som havnefyret
+      // under: dette er en LYKT, og den skal ikke slukkes av at vindustonen
+      // en gang mørknes.
+      bx.fillStyle=P.glod;
+      bx.beginPath(); bx.arc(18,-74,2.8,0,Math.PI*2); bx.fill();
       // havnefyret i enden av moloen. BÅDE flaten og gløden bruker `glod` og
       // ikke `vindu`, selv om de to tonene er like på denne banen: fyret er en
       // LYKT, og om vindustonen en gang skulle mørknes til en åpning, skal ikke
@@ -2259,6 +2299,45 @@ const THEMES={
       bx.restore();
       const g=s.lokal(p,L/2-5,-48);
       s.lys(g.x,g.y,P.glod,16);
+      // Jibbhodet, og de to tingene som møtes der: nattlyset og heisetaua.
+      // Begge regnes ut fra SAMME tall, slik `vinY` gjør på CAMPAGNA, for
+      // ellers er det to steder å glemme å flytte det ene.
+      const JX=18, JY=-74;
+      const jh=s.lokal(p,JX,JY);
+      s.lys(jh.x,jh.y,P.glod,14);
+      // Lasta er banens ene bevegelige detalj. Den heiser og senker, og
+      // vandringen er regnet ut fra hva den skal TREFFE i endene: nederst skal
+      // kassas underkant stå på molodekket (y=−26), øverst skal den henge fritt
+      // under jibben. Kassa er 9 px høy og henger i enden av tauet, så
+      // underkanten er `JY+len+9`; len=39 gir −26 nøyaktig, len=7 gir −58 med
+      // 5 px klaring til jibbens underkant. Derfor 23 ± 16.
+      const MIDT=23, SVING=16, KB=12, KH=9;
+      // 5,5 sekunder på en full opp-og-ned. Pariserhjulet måtte gå langsomt
+      // for ikke å lese som en vifte, møllevingene fort for ikke å lese som et
+      // malt kors — en kranlast har ingen slik felle, og tallet er valgt for å
+      // være TYDELIG ULIKT 7,3 s. Det er ikke tilfeldig: sjekk 2 sammenligner
+      // nøyaktig t=0 og t=7,3, og en periode på 7 s ville gitt 4,3 px forskjell
+      // mellom de to, altså nesten bestått på en tilfeldighet. 5,5 s gir 14,1
+      // px, og da er det bevegelsen som består sjekken og ikke flaksen.
+      const FART=Math.PI*2/5.5;
+      // Rekkevidden er jibbhodet selv (76,2 px fra ankeret) pluss en slump.
+      // Kassa henger NEDOVER fra hodet og kommer derfor nærmere ankeret, ikke
+      // lenger unna, så hodet er ytterpunktet i hele vandringen.
+      s.beveg(p,Math.round(Math.hypot(JX,JY)+14),(g2,t)=>{
+        const len=MIDT+SVING*Math.sin(t*FART);
+        // Tauet FØRST, så kassa ligger oppå sitt eget tau og ikke under det —
+        // samme rekkefølge som kabinene på pariserhjulet og gløden på møllas
+        // rute. `moveTo` i jibbhodet er punktet sjekk 5 leser: det står stille
+        // i all tid, og det er det som fester det levende til det bakte.
+        g2.strokeStyle=P.molo; g2.lineWidth=1.4;
+        g2.beginPath(); g2.moveTo(JX,JY); g2.lineTo(JX,JY+len); g2.stroke();
+        // Kassa males i `baat` og ikke i `molo`: øyet følger det LYSESTE, og
+        // det som skal følges her er lasta, ikke stålet. Begge tonene er
+        // allerede målt mot kveldsbakken i steg C2 — båtskroget står på samme
+        // bakgrunn — så kontrasten er arvet og ikke anslått.
+        g2.fillStyle=P.baat;
+        g2.fillRect(JX-KB/2,JY+len,KB,KH);
+      });
       s.sperr(p.x,p.y,L*0.6);
     } },
   // Vulkan: svart basalt, askegrå grus, og gul/svart kerb — fareskilt-fargene,
@@ -2488,10 +2567,21 @@ const THEMES={
     landmark(s){
       const P=s.TH.lagPal, bx=s.bx;
       // Høyden er ikke tårnet, den er VINGEN: navet sitter 72 px opp, og en
-      // vinge på 50 px som står på skrå rekker ~49 px videre, altså 121 px i
-      // alt. Taket på 282 px (pad 296 − 14) tvang avstanden ut fra 173 til 147.
-      const p=s.plasser(s.TH.landmarkT,s.utside(),70,s.TW+s.GRAVEL_SAFE+60,121);
-      const L=p.halvLengde*2, tH=66, fot=L*0.62, topp=L*0.34;
+      // vinge på 50 px rekker 50,1 px videre (hjørnet av vingebjelken, ikke
+      // midtlinja), altså 123 px i alt. Taket på 282 px (pad 296 − 14) tvang
+      // avstanden ut fra 173 til 147.
+      //
+      // Tallet er 123 og ikke 121 fra steg D1 fordi vingene nå DREIER: den
+      // bakte versjonen sto i én vinkel, og der rakk korset 121 px. Et kors
+      // som går rundt stiller før eller siden en vinge rett opp, og da er det
+      // den stillingen som bestemmer. Avstanden ut står likevel urørt på 147 —
+      // taket er 159 px med den nye høyden, så `plasser` klemmer ikke, og
+      // møllas bakte halvdel ligger derfor piksel for piksel der den sto.
+      const p=s.plasser(s.TH.landmarkT,s.utside(),70,s.TW+s.GRAVEL_SAFE+60,123);
+      // `vinY` er SENTERET i den tente ruta, ikke hjørnet den tegnes fra.
+      // Nattgløden skal stå i senteret, og den regnes ut fra samme tall som
+      // ruta males med — ellers er det to steder å glemme å flytte den ene.
+      const L=p.halvLengde*2, tH=66, fot=L*0.62, topp=L*0.34, vinY=-tH*0.45+5.5;
       bx.save(); bx.translate(p.x,p.y); bx.rotate(p.ang+(p.side>0?Math.PI:0));
       // Tårnet smalner oppover — det er innsmalningen som gir høyde på en flat
       // tegning, samme grep som fyrtårnet på DUNA.
@@ -2505,17 +2595,79 @@ const THEMES={
       bx.beginPath();
       bx.moveTo(-topp/2-6,-tH); bx.lineTo(0,-tH-26); bx.lineTo(topp/2+6,-tH);
       bx.closePath(); bx.fill();
-      bx.fillStyle=P.vindu; bx.fillRect(-5,-tH*0.45,10,11);
-      // Vingekorset står på skrå og ikke rett opp: et kors med en vinge rett
-      // opp og en rett ned leses som et plusstegn, på skrå leses det som noe
-      // som roterer.
-      bx.translate(0,-tH-6); bx.rotate(0.42);
-      bx.fillStyle=P.vinge;
-      const vl=50, vb=7;
-      bx.fillRect(-vl,-vb/2,vl*2,vb);
-      bx.fillRect(-vb/2,-vl,vb,vl*2);
+      bx.fillStyle=P.vindu; bx.fillRect(-5,vinY-5.5,10,11);
       bx.restore();
-      s.lys(p.x,p.y,P.vindu,16);
+      // Vingekorset er banens ene bevegelige detalj. Delelinja er den samme som
+      // pariserhjulets og fyrstrålens: det som ser likt ut i ALLE stillinger
+      // bakes, det som endrer seg med vinkelen kan ikke bakes. Tårnet, hatten
+      // og ruta er de samme pikslene uansett hvor korset står, så de ligger
+      // fortsatt i bakgrunnen; korset er det eneste som dreier, og det er
+      // derfor det eneste som er flyttet ut hit.
+      //
+      // Hele korset må flyttes, ikke halve: lot man ett sett vinger stå igjen i
+      // bakingen «så oversiktsbildet ser riktig ut», ville møllas gamle kors
+      // stått stille mens det nye dreide forbi — samme felle som eikene på
+      // pariserhjulet.
+      //
+      // Startvinkelen er de SAMME 0,42 radianene den bakte versjonen sto i, så
+      // bildet ved t=0 er piksel for piksel det gamle. Grunnen til at korset
+      // sto på skrå gjelder dessuten fortsatt, den gjelder bare ikke lenger
+      // ETT tidspunkt: står korset som et plusstegn, leses det som et
+      // plusstegn, og det stillbildet treffer nå fire ganger per omdreining.
+      const navY=-tH-6, vl=50, vb=7;
+      // Én omdreining på 5 sekunder. Pariserhjulet måtte gå LANGSOMT for ikke å
+      // lese som en vifte (28,5 s per omdreining), men møllevingene er det
+      // motsatte: her er det nettopp farten som skiller en vindmølle fra et
+      // vanntårn med et kors malt på. 5 s er 12 omdreininger i minuttet, som er
+      // der en virkelig kornmølle ligger.
+      const FART=Math.PI*2/5;
+      // Hvor sterk vindusgløden er, og hvor mye den dempes når en vinge går
+      // foran ruta. Begge tallene er MÅLT på skjermen, ikke valgt — og det
+      // første forsøket (0,34 med radius 15) var i praksis ikke der: den
+      // levende gløden løftet 0,12 luminans til sammen fordelt på 50 piksler,
+      // mot fyrstrålens 70 på 4000. Grunnen er at det bakte nattlyset ligger i
+      // NØYAKTIG samme punkt og alt metter midten, så en liten glød oppå den
+      // kan bare legge til i ytterkanten. Pulsen må derfor være STØRRE enn det
+      // bakte lyset (28 mot 16) for at det skal finnes en rand å puste med.
+      // Målt lavpunkt–høypunkt: 1,80 mot 0,30, altså 83 % av lyset forsvinner
+      // når vingen ligger foran. Hele tabellen står i
+      // `maalinger/maal_molle_D3b.txt`.
+      const GLOD_BASE=0.75, GLOD_DYP=0.55;
+      // Rekkevidden er navet pluss vingens HJØRNE (50,1 px, ikke 50) pluss en
+      // slump: kuttes det tettere, popper korset inn idet det kommer på
+      // skjermen i stedet for å gli inn. Gløden ligger langt innenfor dette.
+      s.beveg(p,Math.round(-navY+Math.hypot(vl,vb/2)+14),(g,t,tod)=>{
+        const vinkel=0.42+t*FART;
+        // Gløden FØRST, så vingene ligger oppå sitt eget lys og ikke under det
+        // — samme rekkefølge som kabinene på pariserhjulet.
+        //
+        // At den DEMPES er ikke pynt: en mølle med lys i har nettopp dette som
+        // kjennemerke, lyset kommer i støt fordi vingene klipper det. Korset
+        // har fire armer, så `cos(4*vinkel)` er +1 nøyaktig når en arm står
+        // rett ned foran ruta og −1 når den står midt mellom to — altså fire
+        // dempinger per omdreining, uten en eneste GREN i koden. Det siste er
+        // et krav og ikke en forenkling: en detalj som tegner ulikt mye arbeid
+        // på ulike tidspunkt har ikke én kostnad per bilde å måle, og
+        // `test_bevegelse.js` sjekk 2 avviser den.
+        if(tod.night) drawGlow(g,glowFor(P.vindu),0,vinY,28,
+          GLOD_BASE-GLOD_DYP*(1+Math.cos(4*vinkel))/2);
+        g.save(); g.translate(0,navY); g.rotate(vinkel);
+        g.fillStyle=P.vinge;
+        g.fillRect(-vl,-vb/2,vl*2,vb);
+        g.fillRect(-vb/2,-vl,vb,vl*2);
+        g.restore();
+      });
+      // Nattlyset ligger i RUTA og ikke på ankeret. Det er den samme rettelsen
+      // `scene.lokal` ble laget for: en glød satt på lokal y = 0 havner ved
+      // FOTEN av det som lyser, og ALPENs vinduer (25–45 px opp), ARDENNEs (23)
+      // og DUNAs lykt (97) ble flyttet i steg D1 — møllas rute på 24 px var
+      // den siste som sto igjen på bakken. Den flyttes her og ikke som et eget
+      // punkt på ventelista fordi steg D3 TRENGER den: gløden er det eneste
+      // levende på denne møllas som står stille, og sjekk 5 måler nettopp om
+      // det levende og det bakte deler ramme ved å se om de to faller sammen.
+      // Sto lyset på bakken, ville møllas to halvdeler vært umålbare.
+      const vin=s.lokal(p,0,vinY);
+      s.lys(vin.x,vin.y,P.vindu,16);
       s.sperr(p.x,p.y,L*0.75);
     } },
   // Høstskog — fargene fra runde 2 beholdes, de var alt bankers.

@@ -1,0 +1,95 @@
+STEG D3b — SERPENTINA: havnekrana, og at lasta FAKTISK heiser
+=============================================================
+
+DELELINJA, og hvorfor den ble heising og ikke svinging
+------------------------------------------------------
+Samme regel som pariserhjulet, fyrstrålen og møllevingene: det som ser likt ut
+i ALLE stillinger bakes, det som endrer seg med tida kan ikke bakes.
+
+En kran kan deles på to måter. En SVINGENDE jibb ville tvunget tårn, jibb og
+motvekt ut i det levende laget — og en bjelke ser ut som en bjelke i hver
+eneste stilling, så banens ene bevegelsesbudsjett hadde gått til å tegne om
+noe som ikke trengte det. En HEISENDE last flytter bare tauet og kassa.
+
+Valget har en andre virkning som er viktigere enn kostnaden: med en bakt jibb
+er jibbhodet et punkt som ALDRI flytter seg, og det er det ene stedet på krana
+der et bakt nattlys og en levende strek kan dele koordinat for alltid. Sjekk 5
+i `test_bevegelse.js` krever nettopp et stillestående levende punkt innen 1 px
+av et nattlys på samme landemerke. Her er avstanden 0,00 px, fordi begge leser
+(18,−74). Med en svingende jibb måtte lykta enten stått på det bakte tårnet
+(og da deler det levende og det bakte ingen ramme) eller fulgt med jibben (og
+da er den ikke stillestående).
+
+BAKT:    tårn (−19..−11 i x, fra molodekket −26 opp til −78), jibb
+         (−30..20 i x, −76..−72 i y), motvekt på bakenden, lykt i jibbhodet
+         + `s.lys(lokal(p,18,−74), glod, 14)`.
+LEVENDE: heisetau fra jibbhodet og kassa i enden av det.
+
+PLASSERINGEN ER REGNET UT, IKKE ANSLÅTT
+---------------------------------------
+Moloens lengde er lest av fra spillet selv (`buildTrackBg` på SERPENTINA,
+`p.halvLengde*2`): L = 236, side −1, anker (870, 2997) i et bilde på
+3911 × 3573.
+
+Båtene ligger på `-L/2+14+k*(L-28)/3`, altså −104 / −34,7 / 34,7 / 104, og
+skroget er en ellipse med halvbredde 13. Åpningen i midten går dermed fra
+−21,7 til 21,7, og senteret er x = 0 for ENHVER L, siden de to midtbåtene er
+symmetriske om midten. Tårnet (−19..−11) og lasta (12..24) ligger begge godt
+innenfor. Hadde krana stått noe annet sted enn i en åpning, ville den heist
+lasta rett gjennom et skrog.
+
+HØYDEN: 34 → 88, OG HAVNA FLYTTET SEG IKKE
+------------------------------------------
+`plasser(t,side,halvLengde,avstandUt,hoyde)` bruker høyden til å KLEMME
+avstanden ut: `tak = pad − hoyde − 14`, `ut = min(avstandUt, tak)`.
+
+SERPENTINA har TW = 46, altså pad = 46*4+40 = 224, og avstandUt = 46+23+44 =
+113. Taket er dermed 224 − 88 − 14 = 122, som er større enn 113 — klemmen slår
+ikke inn, og `ut` står urørt på 113. Havna ligger piksel for piksel der den
+sto. (Grensa går ved hoyde = 97; over den begynner landemerket å bli trukket
+innover mot banen.)
+
+Tallet sto på 34 før dette steget, og 34 var alt for lavt — mastene rakk 52 px
+opp. Det gjorde ingen skade, nettopp fordi høyden bare klemmer, men 88 er det
+ærlige tallet nå: jibben ligger 74 px opp, tårnet 78, og nattlyset i jibbhodet
+har glødradius 14.
+
+VANDRINGEN ER REGNET UT FRA HVA DEN SKAL TREFFE
+-----------------------------------------------
+Kassa er 9 px høy og henger i enden av tauet, så underkanten er `JY+len+9` med
+JY = −74. Nederst skal den stå på molodekket (y = −26), som gir len = 39.
+Øverst skal den henge fritt under jibben, og len = 7 gir underkant −58, altså
+5 px klaring til jibbens underkant på −72... korrigert: jibbens underkant er
+−72, kassas OVERKANT ved len = 7 er −67, altså 5 px under jibben.
+Derfor `len = 23 + 16*sin(t*FART)`.
+
+Perioden er 5,5 s, og tallet er valgt for å være TYDELIG ULIKT 7,3 s. Sjekk 2 i
+`test_bevegelse.js` sammenligner nøyaktig t = 0 og t = 7,3. En periode på 7 s
+ville gitt 4,3 px forskjell mellom de to — bestått, men på en tilfeldighet.
+5,5 s gir 14,1 px.
+
+MÅLT PÅ SKJERMEN
+----------------
+Kamerapunkt `--t 0.37`, NATT (`--tod 2`), boks x 55–175 / y 410–530 rundt
+krana. Referansen er den SAMME fila med tauet og kassa fjernet, på det SAMME
+tidspunktet — da er alt annet i bildet likt (bakt kran, båter, HUD, bilens
+lakkering), og differansen er lasta og ingenting annet. Det er samme forsiktig-
+het som i steg D3a punkt 7: en pikseldiff må først bevise at de to bildene er
+sammenlignbare.
+
+tid (s)  len (lokalt)  endrede px   sum   tyngdepunkt    lastas ytterkant (x)
+-------  ------------  ----------  -----  -------------  --------------------
+ 1,375       39,0         190       9,91  (111,4 · 460,2)        121
+ 0,000       23,0         166      10,95  ( 98,8 · 459,9)        105
+ 4,125        7,0         138       9,02  ( 84,2 · 459,8)         89
+ 2,750       23,0         166      10,95  ( 98,8 · 459,9)        105
+
+Landemerket står rotert, så lokal «ned» faller ut som skjermens +x: y-verdien
+i tyngdepunktet står på 460 i alle fire, mens x vandrer. Lastas ytterkant går
+fra 89 til 121 — NØYAKTIG de 32 pikslene vandringen er i lokale koordinater
+(len 7 → 39). Tyngdepunktet flytter seg bare 27,2 px, og det er riktig: tauet
+VOKSER mens kassa synker, så tyngdepunktet av det som er endret henger etter.
+
+Radene på 0,000 og 2,750 er identiske til siste desimal. 2,750 er nøyaktig en
+halv periode, der sinusen er tilbake på null — altså er perioden målt til å
+være de 5,5 s den er skrevet som, og ikke bare påstått.

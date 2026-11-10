@@ -129,9 +129,17 @@ function makeRecorder(){
     // drawGlow tegner glødskiva som et bilde med fire argumenter etter spriten,
     // altså (spr, x-rad, y-rad, rad*2, rad*2). Glødens ytterkant er en del av
     // rekkevidden: en glød som dukker opp er like synlig som en strek.
+    //
+    // SENTERET bokføres også, og det er sjekk 5 som trenger det: en glød er
+    // sentrert i nøyaktig det punktet bakingen la nattlyset i, mens hjørnene
+    // ligger rad*√2 unna og aldri kan treffe det. Uten senteret er rammesjekken
+    // BLIND for gløder — den fant DUNA bare fordi strålen tilfeldigvis har
+    // toppunktet sitt i lykta, og et landemerke der gløden er det eneste
+    // levende som står stille (CAMPAGNAs vindu) kunne ikke måles i det hele
+    // tatt. Hjørnene beholdes ved siden av, for de er det sjekk 4 skal ha.
     drawImage: function(spr,a,b,c,d){
       if(typeof c === 'number' && typeof d === 'number' && arguments.length <= 5){
-        put(a,b); put(a+c,b+d);
+        put(a,b); put(a+c,b+d); put(a+c/2,b+d/2);
       } else if(typeof a === 'number' && typeof b === 'number'){ put(a,b); }
     }
   };

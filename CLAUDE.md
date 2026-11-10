@@ -180,10 +180,12 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | C3 | ferdig | `6fc735f` | Dominobrikkene, FORM-halvdelen: kvartalene tegnes nå som hus sett ovenfra. Taket er den store flaten (0 % → 73–78 % av husets fotavtrykk), fasaden er krympet til et bånd på 6–11 px mot gata, det jevne 5 × 7-vindusrutenettet er erstattet av én uregelmessig rekke i båndet (ingen vinduer på taksiden), og all ny tilfeldighet går gjennom et eget `krnd`-frø | `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `test_bevegelse.js` (PASS), `chrome_harness.py maal` + rnd-fingeravtrykk + før/etter-bilder |
 | D2 | ferdig | `349bb94` | Stillaset for bevegelige detaljer: `scene.beveg` (registreres av LANDEMERKET, maks én per bane, telt i `TR.bevegelseN`) + `drawBevegelse` (kutt mot skjermen, tid som argument). Første detalj er VISTANOTTEs pariserhjul — eiker, kabiner og kabinglød snurrer live, ring/nav/bein er fortsatt bakt | `test_bevegelse.js` (ny, 6 sjekker, 8 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + `shot --tid` |
 | D3a | ferdig | `96dd567` | DUNAs fyrstråle: lykta sveiper én omdreining på 8 s (tårnet bakt, strålen og lampegløden live, gløden blinker én gang per omdreining). `fps` fikk `--t` + en ekte `--tod`, så en synlig detalj kan måles for første gang — begge detaljene koster 0,002–0,006 ms per bilde mot et budsjett på 0,3. `test_bevegelse.js` dekker nå BEGGE sider av banen (ny sjekk 7), og D2-hullet er lukket | `test_bevegelse.js` (7 sjekker, 13 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps --t` + `shot --tid` |
+| D3b | ferdig | — | De to siste detaljene: CAMPAGNAs møllevinger (korset dreier én omdreining på 5 s, og vindusgløden under demper seg med `cos(4*vinkel)`, altså fire pust per omdreining uten én `if`) og SERPENTINAs havnekran (jibben bakt, heisetauet og kassa live, 32 px vandring på 5,5 s). Begge koster 0,0004–0,0014 ms per bilde mot et budsjett på 0,3, altså 222–765x margin. `test_bevegelse.js`-opptakslerretet bokfører nå gløders SENTER, så sjekk 5 leser eksakt 6,00 px på de nye banene | `test_bevegelse.js` (7 sjekker, 14 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps --t` + `shot --tid` |
 
 **Steg D er delt i tre fordi den er to ulike jobber:** D1 nattlysene i byene
 (ferdig), D2 stillaset for bevegelige detaljer (ferdig), D3 selve detaljene på
-de resterende banene (D3a DUNA ferdig).
+de resterende banene (D3a DUNA ferdig, D3b CAMPAGNA + SERPENTINA ferdig —
+altså er D3 i sin helhet ferdig).
 
 **De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
 VISTANOTTE). De trenger både landemerke og bykvartaler, og å skrive landemerket
@@ -1108,6 +1110,136 @@ DUNA melder nå `beveg 1`, og nattlysene er UENDRET (DUNA 4, VISTANOTTE 68).
 svakeste landemerketone 3,15:1 (DESERTO `saltKant`), begge uendret — ingen
 palettverdi er rørt. `test_banegeometri.js --mot geo_laas.json` uendret på
 alle 13.
+
+**Avvik verdt å vite i steg D3b (møllevingene og havnekrana):**
+
+Bestillingen ba om ÉN avgjørelse per bane på hva som er bakt og hva som er
+levende. Begge avgjørelsene falt på samme regel som D2/D3a — **det som ser likt
+ut i alle stillinger bakes** — men de to banene sier noe nytt hver.
+
+1. **CAMPAGNA: korset er levende, møllekroppen er bakt, og dempingen har ikke
+   ÉN gren.** `GLOD_BASE - GLOD_DYP*(1+Math.cos(4*vinkel))/2` gir fire demp per
+   omdreining helt av seg selv, fordi korset har fire armer. En
+   `if (en arm er foran ruta)` ville gitt samme bilde og brutt sjekk 2, som
+   krever at antall tegnekall er IDENTISK over tid innenfor én døgntid. En
+   detalj som gjør ulikt mye arbeid på ulike tidspunkt gir hakk i
+   bildefrekvensen, og det er hele grunnen til at regelen finnes. Gløden er
+   samtidig det ENESTE i dette steget som har en tidsgren i det hele tatt
+   (`if(tod.night)`) — og den grener på DØGNTID, ikke på TIDSPUNKT, som er
+   nettopp det sjekk 2 tillater.
+2. **EN LEVENDE GLØD MÅ VÆRE STØRRE ENN DET BAKTE NATTLYSET DEN LIGGER OPPÅ,
+   ellers finnes det ingen rand å puste i.** Første forsøk satte gløden til
+   alfa 0,34 / radius 15 — samme størrelsesorden som det bakte `s.lys(...,16)`
+   i samme punkt, tegnet med alfa 0,5. Målt løfter den da 0,12 luminans fordelt
+   på 50 piksler, og på skjermen er den i praksis ikke der: det bakte lyset
+   metter midten fullstendig, og nattsløret (`rgba(5,8,20,0.50)`) halverer det
+   som er igjen. Valgt er base 0,75 / dyp 0,55 / **radius 28**, som er over det
+   bakte lysets 16. Det er en REGEL og ikke et enkelttall, og den gjelder hver
+   framtidig glød som skal puste oppå et bakt lys.
+3. **Dempingen flater ut på 83 %, så det finnes et punkt der mer lys ikke
+   kjøper mer puls.** Målt mot den SAMME fila med `GLOD_BASE=0, GLOD_DYP=0` på
+   samme `--tid` (tabellen står i `maalinger/maal_molle_D3b.txt`):
+   0,34/15 → 60 %, 0,55/22 → 71 %, **0,75/28 → 83 %**, 1,00/34 → 83 %. Å gå til
+   1,00 gir bare mer absolutt lys og gjør møllehodet til en lykt.
+4. **Den første målemetoden sammenlignet lysest mot mørkest øyeblikk, og det er
+   å måle feil ting.** Mellom de to stillingene har VINGENE flyttet seg over
+   hele bildet, og vingene er mye større enn gløden — et firedobbelt hopp i
+   glødstyrke flyttet tallet fra 2,6 % til 3,4 %, altså nesten ikke. Riktig
+   referanse er samme fil med bare gløden slått av, på samme tidspunkt, så
+   vingene står piksel for piksel likt i begge bildene. Samme familie som D3a
+   punkt 7: **en pikseldiff må først bevise at de to bildene er
+   sammenlignbare.** Fasene er dessuten regnet ut av formelen og ikke funnet med
+   øyemål (`--tid 0.291` lysest, `0.916` mørkest).
+5. **SERPENTINA: lasta HEISER, jibben svinger ikke — og den andre virkningen er
+   viktigere enn kostnaden.** En svingende jibb ville tvunget tårn, jibb og
+   motvekt ut i det levende laget, og en bjelke ser ut som en bjelke i hver
+   stilling. Men avgjørende er at **en bakt jibb gir et punkt som ALDRI flytter
+   seg**, og det er det ene stedet på krana der et bakt nattlys og en levende
+   strek kan dele koordinat for alltid. Sjekk 5 krever nøyaktig et stillestående
+   levende punkt innen 1 px av et nattlys; her er avstanden **0,00 px**, fordi
+   begge leser `(18,−74)`. Med en svingende jibb måtte lykta enten stått på det
+   bakte tårnet (og da deler de to halvdelene ingen ramme) eller fulgt jibben
+   (og da er den ikke stillestående).
+6. **`hoyde` KLEMMER bare, så 34 var galt-men-harmløst, og 88 flytter ikke
+   havna.** `plasser` regner `tak = pad − hoyde − 14` og `ut = min(avstandUt,
+   tak)`. SERPENTINA har TW 46 → pad 224 og avstandUt 113, så taket er 122 >
+   113 og klemmen slår ikke inn: havna ligger piksel for piksel der den sto
+   (grensa går ved hoyde 97). Tallet sto på 34 mens mastene rakk 52 px opp —
+   det gjorde ingen skade, men det var ikke et ærlig tall. **At en verdi ikke
+   gjorde skade er ikke det samme som at den var riktig**, og det er verdt å
+   sjekke taket FØR man hever den, ikke etterpå.
+7. **Vandringen er regnet ut fra hva den skal TREFFE, ikke valgt.** Kassa er
+   9 px høy og henger i enden av tauet, så underkanten er `JY+len+9`. Nederst
+   skal den stå på molodekket (y −26), som gir len 39; øverst gir len 7 en
+   klaring på 5 px under jibben. Derfor `len = 23 + 16*sin(t*FART)`.
+8. **Perioden 5,5 s er valgt MOT testens målepunkt.** Sjekk 2 sammenligner
+   nøyaktig t = 0 mot t = 7,3 s. En periode på 7 s ville gitt 4,3 px forskjell
+   mellom de to — bestått, men på en tilfeldighet. 5,5 s gir 14,1 px. En detalj
+   skal bestå fordi den beveger seg, ikke fordi tallene ikke gikk opp.
+9. **Opptakslerretet i `test_bevegelse.js` var BLINDT for gløder.**
+   `drawImage`-håndtereren bokførte bare de to hjørnene av glødskiva, og en
+   glød er en skive med senter i det punktet som betyr noe. Den bokfører nå
+   også SENTERET, og følgen er målt: 6 px forskyvning av rammen leser nå eksakt
+   **6,00 px** på SERPENTINA, CAMPAGNA og DUNA (VISTANOTTE står fortsatt på
+   2,50 av den kjente grunnen i `SENERE.md`).
+10. **`test_bevegelse.js` har sin EGEN `tegnLive()`, så en ramme-mutasjon må
+   settes inn der rammen LAGRES.** To mutasjoner (rammen forskjøvet 6 px,
+   rammen rotert 0,2 rad) bet ikke i det hele tatt da de ble satt inn i
+   `drawBevegelse` — testen bruker ikke den funksjonen til sjekk 1, 2, 4, 5, 6
+   og 7. Flyttet inn i `scene.beveg` (`x:p.x-ox+6`, `ang:p.ang+0,2+…`) biter
+   begge. **En mutasjon som ikke biter skal diagnostiseres før den tolkes**
+   (samme lærdom som den inerte mutasjonen i D3a) — her var det mutasjonen som
+   var feilplassert, ikke testen som hadde hull. **14 av 14 biter nå.**
+11. **`fps --runder 6` feiler STILLE på harness-tidsavbruddet.**
+   `kjor_chrome` har `timeout=180`, og seks runder x to døgntider x 300 bilder
+   går over. Feilen kommer ut som en halv Python-traceback, og var kallet
+   skrevet med `2>/dev/null` ville den vært usynlig. Beste-av-ni er i stedet
+   gjort ved å kjøre hele kommandoen TRE ganger med `--runder 3` og ta det
+   laveste blokk-tallet per rad. Lagt i `SENERE.md`.
+12. **En NEGATIV differanse er et nyttig varsel, ikke en feil i målingen.** Den
+   direkte med/uten-differansen ga CAMPAGNA/NATT **−0,0093 ms** — detaljen
+   «sparte» tid. Det er selvsagt ikke sant, og det er nettopp poenget: tallet
+   er mindre enn spredningen mellom to blokker, så fortegnet er støy. Det sier
+   at man måler under oppløsningen sin, og det er grunnen til at x40-leddet fra
+   D3a fortsatt trengs (`/tmp/beveg_x40b.html`, `assert old in s`-vakt,
+   differansen delt på 39).
+
+| bane | tid | per bilde | % av 0,3 ms | margin |
+|---|---|---|---|---|
+| SERPENTINA | DAG | 0,00039 ms | 0,1 % | 765x |
+| SERPENTINA | NATT | 0,00098 ms | 0,3 % | 305x |
+| CAMPAGNA | DAG | 0,00110 ms | 0,4 % | 272x |
+| CAMPAGNA | NATT | 0,00135 ms | 0,5 % | 222x |
+
+**Budsjettet holdes med 222–765x margin — begge detaljene er BILLIGERE enn de
+to fra D3a (0,0024–0,0062 ms), og det er som forventet:** DUNAs stråle er en
+lineær gradient over 4000 piksler og VISTANOTTEs hjul har fire radiale
+gradienter, mens møllekorset er to `fillRect` + én `drawGlow` og kranlasta er
+én strek + én `fillRect`.
+
+**SERPENTINAs natt koster 2,5x dagen enda lasta tegnes HELT likt i alle tre
+døgntidene — det er ingen `tod`-gren i den i det hele tatt.** Forskjellen ligger
+derfor ikke i detaljen, men i hva den tegnes OPPÅ: nattbildet har 45 nattgløder
+i samme område, og alfablanding mot flere lag koster mer per piksel. Samme
+mønster som D3a fant på VISTANOTTE, men med motsatt konklusjon der — der var det
+detaljen selv som hadde nattarbeid. **En detalj uten tidsgren kan altså likevel
+måle ulikt i to døgntider, og da er det bakgrunnen som er svaret.**
+CAMPAGNAs natt koster 1,2x dagen, og der ER gløden den eneste forskjellen, så
+én `drawGlow` er ~0,00025 ms.
+
+**Kostnad, målt i steg D3b:** byggetid sum 203,9 ms, snitt 15,7, verste bane
+TEMPIO 24,2 ms mot budsjettet på 100 — ingen bane over. SERPENTINA 14,8 ms og
+CAMPAGNA 15,6 ms, begge med `beveg 1`. Nattlys UENDRET: SERPENTINA 45,
+CAMPAGNA 1, DUNA 4, VISTANOTTE 68. `test_banetema.js` 198/198 og
+`test_banegeometri.js --mot geo_laas.json` uendret på alle 13 — ingen
+palettverdi og ingen geometri er rørt. Målingene står i
+`maalinger/maal_fps_D3b.txt`, `maalinger/maal_molle_D3b.txt`,
+`maalinger/maal_kran_D3b.txt` og `maalinger/maal_bygg_D3b.txt`, og de åtte
+bevisbildene i `maalinger/bilder/D3b_*.png`.
+
+**Med D3b er ALLE FIRE bevegelige detaljene på plass** (VISTANOTTE pariserhjul,
+DUNA fyrstråle, CAMPAGNA møllevinger, SERPENTINA havnekran), og sjekk 7 har nå
+dekning på begge sider av banen med to detaljer på hver.
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til

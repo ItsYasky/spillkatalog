@@ -1,0 +1,72 @@
+STEG D3b — hva møllevingene og kranlasta koster per bilde
+=========================================================
+
+Budsjett (satt i bestillingen): maks 0,3 ms ekstra per bilde per detalj.
+
+METODEN er den samme tre-leddede som i steg D3a (`maal_fps_D3a.txt`), og alle
+tre leddene trengs fortsatt:
+
+1. `fps --t` pinner kameraet på et rundepunkt hvert bilde, så detaljen er inne
+   i bildet. `tegnekall` og `skjermpos` i utskriften er beviset:
+   SERPENTINA 90 kall / (147,478) ved `--t 0.37`,
+   CAMPAGNA   90 kall / (136,212) ved `--t 0.42`.
+2. 300 bilder tidtatt som ETT stykke, beste av tre. `performance.now()` er
+   klemt til 0,1 ms, så per-bilde-metrikken kan ikke oppløse 0,3 ms.
+3. Den direkte differansen med/uten detalj er UNDER støygulvet, så detaljen er
+   forstørret 40x på RAMMEVERKSNIVÅ (`scene.beveg` pakker `tegn` i en løkke på
+   40 i /tmp/beveg_x40b.html, med `assert old in s`-vakt) og differansen deles
+   på 39. Samme inngrep for begge banene, så tallene er sammenlignbare.
+
+DEN DIREKTE DIFFERANSEN (hvorfor ledd 3 trengs — og det ble verre enn i D3a)
+----------------------------------------------------------------------------
+                      x1 PÅ    x1 AV    differanse
+SERPENTINA DAG        1.6130   1.6027   +0.0103
+SERPENTINA NATT       1.7090   1.6927   +0.0163
+CAMPAGNA DAG          1.6480   1.6287   +0.0193
+CAMPAGNA NATT         1.6977   1.7070   **−0.0093**
+
+CAMPAGNA/NATT kom ut NEGATIV — detaljen «sparte» tid. Det er selvsagt ikke
+sant, og det er nettopp poenget: differansen er mindre enn spredningen mellom
+to blokker, så fortegnet er støy. Et negativt tall her er et nyttig varsel og
+ikke en feil i målingen: det sier at man måler under oppløsningen sin.
+
+EN MÅLEFELLE FUNNET I DETTE STEGET
+----------------------------------
+`--runder 6` feiler stille: `kjor_chrome` har `timeout=180`, og seks runder
+x to døgntider x 300 bilder går over. Feilen kommer ut som en halv
+Python-traceback, og hadde kallet vært skrevet med `2>/dev/null` ville den
+vært usynlig. Beste-av-N er i stedet gjort ved å kjøre hele kommandoen TRE
+ganger med `--runder 3` og ta det laveste blokk-tallet per rad — altså
+beste av ni.
+
+RESULTATET (x40-metoden, beste av ni)
+-------------------------------------
+bane        tid    x1 blokk_ms  x40 blokk_ms  (x40-x1)/39   % av 0,3 ms  margin
+SERPENTINA  DAG      1.6100       1.6253       0.00039        0.1 %      765x
+SERPENTINA  NATT     1.7063       1.7447       0.00098        0.3 %      305x
+CAMPAGNA    DAG      1.6650       1.7080       0.00110        0.4 %      272x
+CAMPAGNA    NATT     1.7340       1.7867       0.00135        0.5 %      222x
+
+Verste tilfelle er CAMPAGNA/NATT på 0,00135 ms = 0,5 % av budsjettet.
+INGENTING trenger å bakes.
+
+TRE TING VERDT Å MERKE SEG
+--------------------------
+- Begge detaljene er BILLIGERE enn de to fra D3a (0,0024–0,0062 ms). Det er
+  som forventet: DUNAs stråle er en lineær gradient over 4000 piksler og
+  VISTANOTTEs hjul har fire radiale gradienter, mens møllekorset er to
+  `fillRect` + én `drawGlow`, og kranlasta er én strek + én `fillRect`.
+- SERPENTINAs natt koster 2,5x dagen (0,00098 mot 0,00039) enda lasta tegnes
+  helt likt i alle tre døgntidene — det er ingen `tod`-gren i det hele tatt.
+  Forskjellen ligger derfor ikke i detaljen, men i hva den tegnes OPPÅ:
+  nattbildet har 45 nattgløder i samme område, og alfablanding mot flere lag
+  koster mer per piksel. Samme mønster som D3a fant på DUNA, bare med motsatt
+  konklusjon der.
+- CAMPAGNAs natt koster 1,2x dagen. Gløden er det eneste som kommer til om
+  natta (`if(tod.night)`), og én `drawGlow` er altså ~0,00025 ms. Det er også
+  det eneste stedet i dette steget det FINNES en tidsgren, og den grener på
+  DØGNTID og ikke på TIDSPUNKT — sjekk 2 krever bare at tegnekallene er like
+  mange gjennom tida innenfor én døgntid.
+
+Kamerapunkt: SERPENTINA `--t 0.37`, CAMPAGNA `--t 0.42` (0,44 klipper mølla
+mot venstre bildekant, 0,46–0,50 er forbi den).

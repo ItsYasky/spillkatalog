@@ -1,0 +1,75 @@
+STEG D3b — CAMPAGNA: hvor sterk vindusgløden må være for å SYNES pulse
+======================================================================
+
+Spørsmålet: møllevingene dreier, og når en vinge går foran den tente ruta
+skal lyset dempes. Hvor stor må dempingen være for at den skal være der i
+bildet og ikke bare i koden?
+
+FØRSTE FORSØK VAR I PRAKSIS IKKE DER
+------------------------------------
+Gløden ble satt til alfa 0,34 med radius 15 — samme størrelsesorden som
+nattlyset den ligger oppå. Målt på skjermen løftet den 0,12 luminans til
+sammen, fordelt på 50 piksler. Til sammenligning løftet fyrstrålen i steg
+D3a 70 luminans over 4000 piksler.
+
+Grunnen er ikke at gløden er svak, men HVOR den står: det bakte nattlyset
+(`s.lys(..., 16)`, tegnet med alfa 0,5) ligger i nøyaktig samme punkt og
+metter midten fullstendig. En glød med mindre radius oppå den kan bare legge
+til i ytterkanten av et felt som alt er hvitt i midten. NATT-sløret
+(rgba(5,8,20,0.50)) legges dessuten OPPÅ etterpå og halverer det som er igjen.
+
+Konklusjonen er en regel og ikke et enkelttall: en levende glød som skal
+puste oppå et bakt nattlys må være STØRRE enn det bakte lyset, ellers finnes
+det ingen rand å puste i.
+
+MÅLEMETODEN — og hvorfor den første var feil
+--------------------------------------------
+Første forsøk sammenlignet det lyseste og det mørkeste øyeblikket med
+hverandre. Det måler feil ting: mellom de to stillingene har VINGENE flyttet
+seg over hele bildet, og vingene er mye større enn gløden. Et firedobbelt
+hopp i glødstyrke flyttet det tallet fra 2,6 % til 3,4 %, altså nesten ikke.
+
+Riktig referanse er den SAMME fila med gløden slått av (GLOD_BASE=0,
+GLOD_DYP=0) på det SAMME tidspunktet. Da står vingene piksel for piksel likt
+i begge bildene, og differansen er gløden og ingenting annet.
+
+Fasene er regnet ut av formelen, ikke funnet med øyemål: dempingen er
+cos(4*vinkel), som er +1 når en arm står rett ned foran ruta (mørkest) og −1
+midt mellom to armer (lysest). Det gir `--tid 0.291` lysest og `--tid 0.916`
+mørkest. Kamerapunkt `--t 0.42`, døgntid NATT (`--tod 2`), boks
+x 60–180 / y 150–270 rundt møllehodet.
+
+TABELLEN
+--------
+base  dyp  radius | LYSEST                | MØRKEST              | pulsen
+------------------+-----------------------+----------------------+------------------
+0,34  0,22   15   | sum 0,12 over   50 px | sum 0,05 over  21 px | 0,07  (60 %)
+0,55  0,40   22   | sum 0,59 over  234 px | sum 0,17 over  72 px | 0,42  (71 %)
+0,75  0,55   28   | sum 1,80 over  640 px | sum 0,30 over 137 px | 1,50  (83 %)
+1,00  0,70   34   | sum 7,36 over 1821 px | sum 1,26 over 482 px | 6,10  (83 %)
+
+«Pulsen» er lysest minus mørkest, og prosenten er hvor stor del av det lyseste
+som FORSVINNER når en vinge legger seg foran ruta.
+
+VALGT: base 0,75 / dyp 0,55 / radius 28
+---------------------------------------
+Tre grunner, i den rekkefølgen:
+
+1. Radius 28 er større enn det bakte nattlysets 16. Det er terskelen over:
+   under den finnes ikke randen som skal puste.
+2. Dempingen flater ut på 83 %. Å gå videre til 1,00/0,70 kjøper ingen mer
+   puls i PROSENT — bare mer absolutt lys — så 0,75 er det punktet der
+   effekten er full uten at møllehodet blir en lykt.
+3. 1,80 mot 0,30 er godt over støygulvet i målemetoden (fyrstrålen i D3a
+   gjorde 70 over 4000 px, men den er en stråle på tvers av halve bildet;
+   en vindusglød på 640 px er en annen størrelsesorden fra starten).
+
+HVORFOR DEMPINGEN IKKE HAR EN ENESTE GREN
+-----------------------------------------
+    GLOD_BASE - GLOD_DYP*(1+Math.cos(4*vinkel))/2
+
+Korset har fire armer, så cos(4*vinkel) gir fire demp per omdreining helt av
+seg selv. En `if (en arm er foran ruta)` ville gitt samme bilde og brutt
+sjekk 2 i `test_bevegelse.js`, som krever at antall tegnekall er IDENTISK
+over tid innenfor én døgntid. En detalj som tegner ulikt mye arbeid på ulike
+tidspunkt gir hakk i bildefrekvensen, og det er derfor regelen finnes.
