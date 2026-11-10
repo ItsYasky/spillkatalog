@@ -282,6 +282,7 @@ function buildTrack(cfg){
     // steder å glemme å endre den.
     bgPad:pad,
     bg:null,standRects:null,flagPoles:null,marshalPosts:null,floodlights:null,nightLights:null,
+    bevegelse:null,bevegelseN:0,
     groundTile:null,groundPat:null};
 }
 
@@ -441,6 +442,32 @@ function buildTrackBg(TR){
     // standRects/floodlights alt følger.
     nightLights.push({x:x-ox,y:y-oy,clr,size});
   }
+
+  // ── bevegelige detaljer ──────────────────────────────────────────────────
+  // Samme todeling som nattlysene, av samme grunn: alt som skal RØRE SEG kan
+  // ikke bakes inn i bakgrunnen, for bakgrunnen males én gang og står resten
+  // av løpet. Den delen av et landemerke som beveger seg må derfor tegnes på
+  // nytt hvert bilde, i verdensrommet, oppå det ferdige bildet.
+  //
+  // MAKS ÉN PER BANE, og det er et budsjett og ikke en smakssak: dette er den
+  // ENESTE delen av kulissene som koster noe per bilde. Bakgrunnen, bakkeflisa
+  // og kvartalene er gratis etter byggingen; en bevegelig detalj betaler på
+  // nytt 60 ganger i sekundet, for alltid. Én gjenkjennelig ting som rører seg
+  // gjør mer for at en bane huskes enn fem små gjør, og fem koster fem ganger
+  // så mye.
+  //
+  // Registreres av LANDEMERKET, ikke av temaet på toppnivå. Grunnen er at
+  // ankeret bare finnes inne i landemerket: `plasser()` kan både KLEMME
+  // avstanden mot lerretskanten og VENDE siden (`allowFlip`), så hvor bygget
+  // faktisk havnet vet ingen andre enn den som nettopp kalte `plasser`. Å la
+  // temaet oppgi punktet på nytt ville vært å regne det ut to steder, og da er
+  // det bare et spørsmål om tid før de to svarene skiller lag.
+  //
+  // Teljaren står ved siden av objektet fordi taket ellers ville vært USYNLIG:
+  // en bane som ved et uhell registrerer to detaljer skal kunne ses utenfra,
+  // og med bare `bevegelse` ville den andre stille blitt kastet uten at noe
+  // målbart endret seg. Samme begrunnelse som `kvartalN` i steg C.
+  let bevegelse=null, bevegelseN=0;
 
   // ── bakken: store myke flekker, ikke 1400 jevne prikker ──────────────────
   // HVORFOR en liten ImageData blåst opp, og ikke hundrevis av store sirkler:
@@ -884,6 +911,38 @@ function buildTrackBg(TR){
       const vend=p.side>0?-1:1;
       const c=Math.cos(p.ang)*vend, s2=Math.sin(p.ang)*vend;
       return {x:p.x+lx*c-ly*s2, y:p.y+lx*s2+ly*c};
+    },
+    // Den delen av landemerket som RØRER SEG. Registrerer ÉN bevegelig detalj
+    // på banen; se «bevegelige detaljer» øverst for hvorfor taket er én.
+    //
+    // `p`      — svaret fra plasser(), altså det samme ankeret den bakte delen
+    //            av landemerket nettopp ble tegnet på.
+    // `rekkevidde` — hvor langt fra ankeret tegningen når, i piksler. Brukes
+    //            BARE til utenfor-skjermen-kutting, og skal være sjenerøs:
+    //            kutter man for tett, popper detaljen inn idet den kommer på
+    //            skjermen i stedet for å gli inn. Ta med glødradien.
+    // `tegn(g,t,natt)` — kalles hvert bilde med `t` i SEKUNDER siden start.
+    //
+    // Den viktigste egenskapen: `tegn` får et lerret som ALT er flyttet og
+    // rotert til nøyaktig samme ramme som den bakte delen ble tegnet i. En
+    // bevegelig eike skrives derfor med de SAMME lokale koordinatene som den
+    // faste ringen den skal sitte inni — ikke med en egen omregning.
+    //
+    // Det er ikke en bekvemmelighet, det er en rettelse av en feil som alt har
+    // skjedd TO ganger: nattgløden ble regnet ut på egen hånd av hvert tema og
+    // havnet både i feil ende av moloen (vendingen) og ved foten av det som
+    // lyser (høyden), se `lokal()` over. En bevegelig detalj ville gått i samme
+    // grøft, bare verre — en glipp i rammen her gir et hjul som snurrer ved
+    // siden av seg selv.
+    //
+    // Rotasjonen lagres FERDIG SAMMENSATT (`p.ang` pluss halvomdreiningen for
+    // `side>0`) og ikke som en vend-faktor, nettopp slik at uttrykket her er
+    // bokstavelig talt det samme som bakingen bruker.
+    beveg(p,rekkevidde,tegn){
+      bevegelseN++;
+      if(bevegelse) return;
+      bevegelse={ x:p.x-ox, y:p.y-oy, ang:p.ang+(p.side>0?Math.PI:0),
+                  rekkevidde, tegn };
     },
     // Verdenspunktet ved rundeposisjon t (0–1) og enhetsnormalen der.
     atT(t){
@@ -1729,6 +1788,11 @@ function buildTrackBg(TR){
   // sammen med landemerkets lys, så uten eget tall kan man ikke se forskjell på
   // «byen er tent» og «landemerket er tent». 0 på en bybane betyr mørk by.
   TR.kvartalLysN=kvartalLysN;
+  // Den bevegelige detaljen hører sammen med bakgrunnen på nøyaktig samme måte
+  // som nattlysene: den halve ringen som er BAKT i bildet og eikene som tegnes
+  // live er to halvdeler av samme landemerke, og settes derfor i samme steg.
+  // Står `TR.bg` der uten `TR.bevegelse`, mangler hjulet eikene sine.
+  TR.bevegelse=bevegelse; TR.bevegelseN=bevegelseN;
 }
 
 // Bare én bakgrunn skal ligge i minnet om gangen: de største er over 20M
@@ -2697,42 +2761,80 @@ const THEMES={
       // omrisset — samme felle som dueslaget på DISCESA (CLAUDE.md steg B2).
       const p=s.plasser(s.TH.landmarkT,s.utside(),70,s.TW+s.GRAVEL_SAFE+36,R*2+FOT);
       const cy=-(R+FOT);
+      // Hvor fort hjulet går rundt, i radianer per SEKUND. 0,22 gir én
+      // omdreining på 28,5 s, og det er ikke tilfeldig valgt: et pariserhjul som
+      // går fort leses som en vifte eller et tannhjul. Det som skal kjennes
+      // igjen er den langsomme dreiningen. Med tolv eiker gjentar bildet seg
+      // likevel hvert 2,4 s, så bevegelsen er godt synlig i løpet av en
+      // forbikjøring selv om en hel runde tar nesten en halv kjørerunde.
+      const FART=0.22;
+      // Hjulet er delt etter ÉN regel: det som dreier seg kan ikke bakes, og
+      // det som står stille skal bakes. Ringen, navet og beina er de samme
+      // pikslene uansett hvor hjulet står — de males inn i bakgrunnen én gang
+      // og koster ingenting. Eikene og kabinene er det som faktisk snurrer.
+      //
+      // Delingen må være EKSAKT, ikke omtrentlig: bakes eikene også «så
+      // oversiktsbildet ser riktig ut», står det et stillestående sett eiker
+      // igjen i bildet mens det levende settet dreier forbi, og hjulet snurrer
+      // da ved siden av seg selv. Alt som dreier, ett sted.
+      //
+      // Ringen og navet tegnes likevel PÅ NYTT i det levende laget, og det er
+      // ikke dobbeltarbeid: det bakte laget ligger under alt som tegnes live,
+      // så uten denne gjentakelsen ville eikene krysset oppå sin egen ring og
+      // eikeendene stukket ut av navet. To strøk per bilde er billigere enn å
+      // flytte hele hjulet ut av bakgrunnen.
+      function ringOgNav(g){
+        g.strokeStyle=P.hjul; g.lineCap='round'; g.lineWidth=4;
+        g.beginPath(); g.arc(0,cy,R,0,Math.PI*2); g.stroke();
+        g.fillStyle=P.hjul;
+        g.beginPath(); g.arc(0,cy,6,0,Math.PI*2); g.fill();
+      }
+      function hjulhode(g,vinkel,natt){
+        // Nattgløden FØRST, så kabinene ligger oppå sitt eget lys og ikke
+        // under det. Samme rekkefølge som flomlysmastene bruker.
+        if(natt) for(let k=0;k<4;k++){
+          const a=vinkel+k*Math.PI/2;
+          // Fire kabiner og ikke alle tolv: nattlysbudsjettet var aldri
+          // begrensningen her (dette er ikke addLight), men tolv glød oppå
+          // hverandre på samme ring leser som én diffus flekk i stedet for et
+          // hjul med lys i. `glod` og ikke `vindu`, selv om de to er samme cyan
+          // på denne banen: en kabinglød er LYS per definisjon, og mørknes
+          // vindustonen en gang til en åpning, skal ikke hjulet slukne med den.
+          drawGlow(g,glowFor(P.glod),Math.cos(a)*R,cy+Math.sin(a)*R,13,.5);
+        }
+        // eikene FØR ringen, så ringen ligger rent oppå dem
+        g.strokeStyle=P.hjul; g.lineCap='round'; g.lineWidth=1.6;
+        for(let k=0;k<12;k++){
+          const a=vinkel+k*Math.PI/6;
+          g.beginPath(); g.moveTo(0,cy); g.lineTo(Math.cos(a)*R,cy+Math.sin(a)*R); g.stroke();
+        }
+        // kabinene i neon, én per eike
+        g.fillStyle=P.kabin;
+        for(let k=0;k<12;k++){
+          const a=vinkel+k*Math.PI/6;
+          g.beginPath(); g.arc(Math.cos(a)*R,cy+Math.sin(a)*R,4.2,0,Math.PI*2); g.fill();
+        }
+        ringOgNav(g);
+      }
       bx.save(); bx.translate(p.x,p.y);
       bx.rotate(p.ang+(p.side>0?Math.PI:0));
       // beina
       bx.strokeStyle=P.hjul; bx.lineWidth=5; bx.lineCap='round';
       bx.beginPath(); bx.moveTo(-24,0); bx.lineTo(0,cy); bx.lineTo(24,0); bx.stroke();
-      // eikene FØR ringen, så ringen ligger rent oppå dem
-      bx.lineWidth=1.6;
-      for(let k=0;k<12;k++){
-        const a=k*Math.PI/6;
-        bx.beginPath(); bx.moveTo(0,cy); bx.lineTo(Math.cos(a)*R,cy+Math.sin(a)*R); bx.stroke();
-      }
-      bx.lineWidth=4;
-      bx.beginPath(); bx.arc(0,cy,R,0,Math.PI*2); bx.stroke();
-      // kabinene i neon, én per eike
-      bx.fillStyle=P.kabin;
-      for(let k=0;k<12;k++){
-        const a=k*Math.PI/6;
-        bx.beginPath(); bx.arc(Math.cos(a)*R,cy+Math.sin(a)*R,4.2,0,Math.PI*2); bx.fill();
-      }
-      // navet
-      bx.fillStyle=P.hjul;
-      bx.beginPath(); bx.arc(0,cy,6,0,Math.PI*2); bx.fill();
+      ringOgNav(bx);
       bx.restore();
-      // Nattlys: navet pluss fire kabiner. Ikke alle tolv — nattlysbudsjettet
-      // er 150 per bane, og tolv glød oppå hverandre på samme ring leser som
-      // én diffus flekk i stedet for et hjul med lys i.
+      // Hjulet er banens ene bevegelige detalj. Rekkevidden er avstanden fra
+      // ankeret (bakken mellom beina) opp til toppen av hjulet, pluss glødens
+      // radius — kuttes det tettere, popper hjulet inn når det kommer på
+      // skjermen i stedet for å gli inn fra kanten.
+      s.beveg(p,R*2+FOT+20,(g,t,natt)=>hjulhode(g,t*FART,natt));
+      // Nattlys på NAVET, og bare der. De fire kabinglødene lå her før, men en
+      // glød i `nightLights` står BOM STILLE i verdenskoordinater — da hadde
+      // kabinene snurret forbi fire faste lyspunkter på ringen, altså lamper
+      // montert på rekkverket. Alt som følger noe som beveger seg må tegnes av
+      // det som beveger seg. Navet står derimot i ro per definisjon.
       const nav=s.lokal(p,0,cy);
       s.lys(nav.x,nav.y,P.kabin,24);
-      for(let k=0;k<4;k++){
-        const a=k*Math.PI/2;
-        const q=s.lokal(p,Math.cos(a)*R,cy+Math.sin(a)*R);
-        // `glod` og ikke `vindu`, selv om de to er samme cyan her: en kabinglød
-        // er LYS per definisjon, så den skal lese fra lys-tonen. Mørknes
-        // vindustonen en gang til en åpning, skal ikke hjulet slukne med den.
-        s.lys(q.x,q.y,P.glod,13);
-      }
       s.sperr(p.x,p.y,R*1.4);
     } }
 };
@@ -5212,6 +5314,35 @@ function worldToScreen(wx,wy){
   return [dx*cs-dy*sn+W/2, dx*sn+dy*cs+CHASE_Y];
 }
 
+// Banens ene bevegelige detalj, tegnet live oppå det ferdige bakgrunnsbildet.
+//
+// Lerretet `g` må ALT stå i verdenstransformen når denne kalles — den gjør
+// ingen kameraomregning selv, den flytter bare videre fra verden til
+// landemerkets egen ramme. Det er samme sted i kjeden som nattlysene og
+// flomlysmastene tegnes.
+//
+// Kuttet er det samme som flomlysene bruker, og av samme grunn: detaljen er
+// ETT sted på en bane som er 3000–4000 px bred, så den er utenfor bildet det
+// aller meste av runden. Uten kuttet ville `tegn` kjørt hvert bilde hele løpet
+// og latt canvas klippe bort hver eneste piksel.
+//
+// `tid` tas som argument og leses ikke fra `raceTime` her inne, av to grunner:
+// testen kan da be om et bestemt tidspunkt uten å rote med løpsklokka, og
+// `chrome_harness.py shot --tid` kan ta det samme bildet to ganger på to ulike
+// tidspunkt — som er den eneste måten å BEVISE på et skjermbilde at noe faktisk
+// rører seg.
+function drawBevegelse(g,tr,tid,natt){
+  const b=tr&&tr.bevegelse;
+  if(!b) return;
+  const sp=worldToScreen(b.x,b.y), m=b.rekkevidde;
+  if(sp[0]<-m||sp[0]>W+m||sp[1]<HY-m||sp[1]>H+m) return;
+  g.save();
+  g.translate(b.x,b.y);
+  g.rotate(b.ang);
+  b.tegn(g,tid,natt);
+  g.restore();
+}
+
 function drawTrackScene(){
   ctx.save();
   ctx.translate(W/2,CHASE_Y);
@@ -5308,6 +5439,12 @@ function drawTrackScene(){
     if(sp[0]<-m||sp[0]>W+m||sp[1]<HY-m||sp[1]>H+m) return;
     drawGlow(ctx,glowFor(l.clr),l.x,l.y,l.size,.5);
   });
+  // Klokka er `raceTime` delt på tidssteget, altså SEKUNDER. En detalj som skal
+  // snurre én gang i halvminuttet skal skrives som nettopp det, ikke som et
+  // tall per bilde — og `raceTime` fryses av pausemenyen (`if(paused) return;`
+  // først i update()), så det bevegelige fryser sammen med løpet uten at noe
+  // ekstra må kobles til.
+  drawBevegelse(ctx,TR,raceTime/60,TOD[todIdx].night);
   if(TR.flagPoles) TR.flagPoles.forEach((f,i)=>{
     ctx.save(); ctx.translate(f.x,f.y);
     ctx.strokeStyle='#cbd5e1'; ctx.lineWidth=1.2;

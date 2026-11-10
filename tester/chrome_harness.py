@@ -5,6 +5,13 @@
 #   python3 chrome_harness.py maal  [--html fil] [--out fil.txt]
 #   python3 chrome_harness.py fps   [--html fil] [--out fil.txt]
 #   python3 chrome_harness.py shot  BANE  [--tod 0] [--modus spill|bg] [--ut fil.png]
+#                                         [--t 0.42] [--tid 0]
+# MERK at BANE er et POSISJONSargument. Skrives det `shot --bane LABIRINTO`,
+# kaster den injiserte JS-en på «ukjent bane» — men Chrome skriver skjermbildet
+# likevel, av hovedmenyen, og harnessen avslutter med kode 0. Et «nattbilde av
+# byen» kan altså i virkeligheten være menyen (se SENERE.md).
+# `--tid` er løpsklokka i SEKUNDER, og trengs fordi update() nulles i shot:
+# uten den står alt som beveger seg i samme stilling i hvert eneste bilde.
 #   python3 chrome_harness.py ark   [--ut fil.png]
 #
 # HVORFOR DENNE FINNES, OG HVORFOR DEN ER PYTHON
@@ -111,8 +118,11 @@ MAAL_JS = r"""
     }
     if(t.bg){ t.bg.width=0; t.bg.height=0; t.bg=null; }
     tider.sort(function(a,b){return a-b;});
+    // `beveg` er antall bevegelige detaljer. Taket er ÉN per bane, og det er
+    // et tall nettopp for at taket skal være synlig utenfra — se kommentaren
+    // over `bevegelse` i buildTrackBg.
     linjer.push(t.name+'\t'+tider[1].toFixed(1)+'\t'+t.bgW+'x'+t.bgH+'\t'+t.bgScale.toFixed(3)
-      +'\t'+(t.nightLights?t.nightLights.length:0));
+      +'\t'+(t.nightLights?t.nightLights.length:0)+'\t'+(t.bevegelseN||0));
   }
   pre.textContent=linjer.join('\n');
 })();
@@ -159,7 +169,7 @@ FPS_JS = r"""
 """
 
 
-def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None):
+def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None, tid=0.0):
     """Måleskript som rigger spillet til ett bilde og tegner det på canvaset.
 
     modus 'spill' = vanlig spillvisning (kamera bak bilen, HUD, 20 biler).
@@ -240,6 +250,12 @@ def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None):
     var rl=TR.raceLine[i];
     player.x=rl[0]; player.y=rl[1]; player.angle=TR.heading[i];
     camX=player.x; camY=player.y; camAngle=player.angle;
+    // --tid: løpsklokka SETTES, i sekunder. Fordi update() er nullet over står
+    // raceTime ellers på 0 i hvert eneste skjermbilde, og alt som beveger seg
+    // (flagg, marshaler, den bevegelige detaljen i steg D2) ville kommet ut i
+    // nøyaktig samme stilling hver gang. To bilder på to tidspunkt er den
+    // eneste måten å BEVISE på et stillbilde at noe faktisk rører seg.
+    raceTime = %s * 60;
     draw();
     naadd = maalT.toFixed(3);
   }
@@ -248,7 +264,7 @@ def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None):
   pre.textContent='OK '+TRACKS[idx].name+' rundepos '+naadd;
 })();
 """ % (json.dumps(bane), tod, json.dumps(modus), "true" if ved_landemerke else "false",
-       "null" if t_overstyr is None else repr(float(t_overstyr)))
+       "null" if t_overstyr is None else repr(float(t_overstyr)), repr(float(tid)))
 
 
 def main():
@@ -267,7 +283,7 @@ def main():
     if cmd == "maal":
         txt = dump(html, MAAL_JS, budget=240000)
         rader = [r.split("\t") for r in txt.strip().split("\n") if r.strip()]
-        linjer = ["BANE\tms\tbg-piksler\tbgScale\tnattlys"]
+        linjer = ["BANE\tms\tbg-piksler\tbgScale\tnattlys\tbeveg"]
         tot = 0.0
         for r in rader:
             linjer.append("\t".join(r))
@@ -305,7 +321,8 @@ def main():
         ut = flagg("ut", "/tmp/gp_%s_%s.png" % (bane.replace(" ", "_"), modus))
         h = 680 if modus == "spill" else 1400
         t_ovr = flagg("t")
-        skjermbilde(html, shot_js(bane, tod, modus, t_overstyr=t_ovr), ut, 520, h)
+        tid = float(flagg("tid", "0"))
+        skjermbilde(html, shot_js(bane, tod, modus, t_overstyr=t_ovr, tid=tid), ut, 520, h)
         print(ut)
 
     else:

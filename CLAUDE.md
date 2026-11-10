@@ -177,10 +177,11 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | C | ferdig | `7626746` | Bykvartaler (`scene.rutenett` + `dBuildingGrid`) og landemerker for LABIRINTO (katedral), SERPENTINA (havn med moloen) og VISTANOTTE (pariserhjul) | `test_banetema.js` (183/183), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + skjermbilder |
 | D1 | ferdig | `55c6e06` | Nattlys i bykvartalene: ett tent vindu per utvalgt kvartal — LABIRINTO 44 lys, SERPENTINA 44, VISTANOTTE 72 (mot 1/1/5 før) | `test_banetema.js` (186/186), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + nattbilder |
 | C2 | ferdig | `f3fc5d3` | Bypalettene målt UNDER døgnoverlegget i alle tre tider: mørke tak og lysere fasader på LABIRINTO, SERPENTINA og VISTANOTTE, nattoverlegget senket 0,58 → 0,50, og et MÅLT nattgulv på 2,5:1 i stedet for 3:1. Tak/fasade om natta 1,78–2,06 → 2,52–2,53:1 | `test_banetema.js` (198/198, sjekk 19–20 bygget om), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + før/etter-bilder |
+| D2 | ferdig | `PLACEHOLDER_D2` | Stillaset for bevegelige detaljer: `scene.beveg` (registreres av LANDEMERKET, maks én per bane, telt i `TR.bevegelseN`) + `drawBevegelse` (kutt mot skjermen, tid som argument). Første detalj er VISTANOTTEs pariserhjul — eiker, kabiner og kabinglød snurrer live, ring/nav/bein er fortsatt bakt | `test_bevegelse.js` (ny, 6 sjekker, 8 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + `shot --tid` |
 
 **Steg D er delt i tre fordi den er to ulike jobber:** D1 nattlysene i byene
-(ferdig), D2 stillaset for bevegelige detaljer (`raceTime`-styrt, culling, én
-per bane), D3 selve detaljene på de resterende banene.
+(ferdig), D2 stillaset for bevegelige detaljer (ferdig), D3 selve detaljene på
+de resterende banene.
 
 **De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
 VISTANOTTE). De trenger både landemerke og bykvartaler, og å skrive landemerket
@@ -721,6 +722,113 @@ samme feilmodus som fikk det harde nattkravet forkastet i punkt 2. I tillegg er
 19,8 ms mot budsjettet på 100 — en ren palettendring koster ingenting.
 Nattlys uendret 44/44/72. `test_banegeometri.js --mot geo_laas.json` uendret på
 alle 13.
+
+**Avvik verdt å vite i steg D2 (stillaset for bevegelige detaljer):**
+
+Bakgrunnen males ÉN gang og står resten av løpet. Alt som skal røre seg må
+derfor tegnes på nytt hvert bilde, i verdensrommet, oppå det ferdige bildet —
+og det er den ENESTE delen av kulissene som koster noe per bilde. Alt annet i
+runde 4 er betalt én gang ved banestart; en bevegelig detalj betaler på nytt 60
+ganger i sekundet, for alltid. Derfor er «maks én per bane» et BUDSJETT og ikke
+en smakssak, og derfor er det en teller (`TR.bevegelseN`) og ikke en regel i
+hodet.
+
+1. **Registreringen går gjennom LANDEMERKET, ikke gjennom et felt på temaet.**
+   Ankeret finnes bare inne i landemerket: `scene.plasser` kan BÅDE klemme
+   avstanden mot lerretskanten (`pad - hoyde - 14`, steg B2) OG vende siden
+   (`allowFlip`), så hvor bygget faktisk havnet vet ingen andre enn den som
+   nettopp kalte `plasser`. Et felt på toppnivå måtte gjettet på det samme
+   tallet en gang til, og det er nøyaktig den dobbeltregningen som ga
+   B4-feilene.
+2. **Rotasjonen lagres FERDIG SATT SAMMEN** (`ang: p.ang + (p.side>0?Math.PI:0)`),
+   altså med bokstavelig talt samme uttrykk som bakingen bruker. Alternativet —
+   å lagre `p.ang` og `p.side` hver for seg og sette dem sammen i tegnekoden —
+   er den samme omregningen skrevet to steder, og den har alt gått galt to
+   ganger (lykta i feil ende av moloen i B3, glød ved FOTEN av det som lyser i
+   B4). `scene.lokal` finnes av samme grunn.
+3. **Det som snurrer kan ikke bakes — og den fella var nesten gått i.** Første
+   versjon bakte hele hjulhodet OG registrerte den samme funksjonen i det
+   levende laget, altså et fast sett eiker i bildet med et roterende sett
+   glidende forbi. Delelinja er ikke «hjul mot bakgrunn», den er
+   **rotasjonsinvariant mot ikke**: bein, ring og nav ser like ut i alle
+   stillinger og er derfor BAKT (så `shot --modus bg` fortsatt viser et
+   gjenkjennelig pariserhjul for plasseringssjekken), mens eiker, kabiner og
+   kabingløden bare finnes live. Ring og nav strekes dessuten opp på nytt i det
+   levende laget, rent for lagdelingens skyld — to streker per bilde er
+   billigere enn å flytte hele hjulet ut av bakgrunnen.
+4. **En glød på noe som BEVEGER seg kan ikke ligge i `nightLights`.** De fire
+   kabinlysene lå der først, og `addLight` lagrer faste VERDENSKOORDINATER —
+   kabinene ville snurret forbi fire stillestående lamper boltet til rekkverket.
+   De tegnes nå med `drawGlow` inne i tegnefunksjonen, i landemerkets egen
+   ramme. Navet beholder sin `s.lys`, for navet står stille. Målt følge:
+   VISTANOTTEs nattlys falt 72 → **68**.
+5. **`shot` trengte `--tid`.** `shot` nuller `update()` (steg B punkt 4, ellers
+   triller bilen vekk fra kamerapunktet), og da står `raceTime` på 0 i hvert
+   eneste skjermbilde — alt som beveger seg kommer ut i nøyaktig samme stilling
+   hver gang. To bilder på to tidspunkt er den eneste måten å BEVISE på et
+   stillbilde at noe faktisk rører seg. `drawBevegelse(g,tr,tid,natt)` tar
+   derfor tiden som ARGUMENT og leser den ikke fra `raceTime` selv; kallstedet i
+   `drawTrackScene` sender `raceTime/60`, altså sekunder, fordi en detalj som
+   skal snurre én gang i halvminuttet skal skrives som nettopp det. At
+   pausemenyen fryser detaljen følger gratis av `if(paused) return;` først i
+   `update()`.
+
+**`test_bevegelse.js` måler med et OPPTAKSLERRET, ikke med en no-op-stubb.**
+Det er forskjellen fra de andre JSC-testene: lerretet fører regnskap med
+transformmatrisen og skriver ned hvor hvert tegnekall havnet. Uten den kan man
+bare se AT noe ble tegnet, ikke HVOR — og «hvor» er hele saken i B4-familien.
+Siden `drawBevegelse` ikke gjør noen kameraomregning selv, er de avleste
+punktene rene verdenskoordinater.
+
+Målt på VISTANOTTE:
+
+| sjekk | hva den måler | tall |
+|---|---|---|
+| 1 | taket på én per bane | 1 av 13 baner, ingen over 1 |
+| 2 | drevet av tid | 102 tegnekall, 60 av 80 punkt flyttet seg mellom t=0 og t=7,3 s |
+| 3 | kuttet begge veier | 114 kall på skjermen, 0 kall 10 000 px unna, grensa går **0,00 px** fra marginkanten |
+| 4 | rekkevidden mot faktisk utstrekning | tegner ut til 137,9 px, rekkevidde 144 px, margin 6,1 px |
+| 5 | felles ramme med bakingen | nærmeste levende punkt **0,00 px** fra navlyset |
+| 6 | ankeret innenfor lerretet | 624 px til nærmeste kant |
+
+**Sjekk 5 er B4-regresjonstesten, og den regner ikke omregningen selv.**
+Bakingen la navlyset ut med `scene.lokal`, altså spillets EGEN omregning fra
+landemerkets ramme til verden. Faller et punkt den levende delen tegner oppå et
+slikt lys, deler de to halvdelene ramme. Ville testen regnet `p.side`-vendingen
+på egen hånd, kunne den hatt samme feil som koden — samme grunn som at
+`test_meny_kontrast.js` kaller spillets egen `contrastRatio()`.
+
+Sjekk 3 har samme forsiktighet: testen sveiper kameraet til detaljen kuttes
+bort og leser av skjermposisjonen i det øyeblikket med spillets egen
+`worldToScreen`. Første forsøk regnet kameraposisjonen selv og var FEIL — med
+`camAngle = 0` roterer `worldToScreen` verden −90°, så skjermens x drives av
+verdens y. En test som utleder kameratransformen på nytt tar feil på samme måte
+som alt annet som utleder den på nytt.
+
+**Åtte mutasjoner, sju biter — og den åttende er lærerik.** To registreringer,
+tid ignorert (`t*FART` → `0`), for kort rekkevidde, kuttet fjernet, rammen
+forskjøvet 6 px (sjekk 5 på 2,50 px), rammen rotert 0,2 rad (sjekk 5 på
+10,14 px) og vendingen SNUDD til `p.side<0` (sjekk 5 på 3,61 px) fanges alle. Å
+SLETTE `(p.side>0?Math.PI:0)` fanges derimot IKKE — fordi VISTANOTTE ligger på
+side −1, så leddet er en no-op akkurat der. Det er nøyaktig mønsteret fra
+B3-tabellen («både vendingen og en asymmetrisk glød må til før feilen er
+synlig»). Siden den SNUDDE varianten biter, er det testens DEKNING på én bane
+som mangler, ikke selve sjekken. **Første bane på side +1 i D3 lukker hullet av
+seg selv** — og til da er det verdt å vite at D2 ikke har bevist vendingen.
+
+En måling til, verdt å merke seg: 6 px forskyvning av rammen gir bare 2,50 px
+på sjekk 5, ikke 6. Eikene feier over et område, så et annet punkt kommer
+nærmere lyset enn det som skulle truffet. Sjekken er altså mindre følsom enn
+forskyvningen — grensa på 1 px er satt deretter, og ikke høyere.
+
+**Kostnad, målt i steg D2:** byggetid sum 180,3 ms, verste bane VISTANOTTE
+20,0 ms mot budsjettet på 100 — stillaset koster ingenting å bygge. Bildetid
+verste VISTANOTTE 1,86 ms (D1: 1,87), altså flat. **MERK at det tallet er
+kostnaden for et KUTTET objekt:** `fps` måler bare startstreken, og hjulet er
+kuttet bort der. Det flate tallet beviser derfor at stillaset koster null når
+detaljen er utenfor skjermen — det sier ingenting om hva den koster når den er
+inne. Den målingen krever `--t` i `fps` og står i `SENERE.md`. Det eneste tallet
+som finnes for synlig tilstand er 114 tegnekall per bilde.
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til
