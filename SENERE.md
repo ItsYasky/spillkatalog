@@ -10,7 +10,7 @@ høyst én linje under som sier hvor i koden det gjelder.
 ## GRAND PRIX (`vintage_f1.html`)
 
 - [GRAND PRIX] Runde 4 steg D3: bevegelige detaljer på de resterende banene – middels – 2026-10-30
-  Stillaset er ferdig i D2 (`scene.beveg` + `drawBevegelse` + `test_bevegelse.js`), og VISTANOTTEs pariserhjul er den første detaljen. Et nytt landemerke registrerer seg selv med `s.beveg(p, rekkevidde, tegn)`; alt som IKKE rører seg skal fortsatt bakes. Aktuelle: havnekrana på SERPENTINA, vindmølla på CAMPAGNA, fyrlyset på DUNA.
+  Stillaset er ferdig i D2 (`scene.beveg` + `drawBevegelse` + `test_bevegelse.js`), VISTANOTTEs pariserhjul er den første detaljen og DUNAs fyrstråle den andre (D3a). Et nytt landemerke registrerer seg selv med `s.beveg(p, rekkevidde, tegn)`; alt som IKKE rører seg skal fortsatt bakes. Aktuelle igjen: havnekrana på SERPENTINA, vindmølla på CAMPAGNA.
 - [GRAND PRIX] Runde 4 steg E: kontaktark med alle 13 baner side om side, og sluttest på geometri, AI-sim, byggetid og bildefrekvens – liten – 2026-10-30
   E1 (minikart i baneutvalget) er bevisst HOPPET OVER — den nye menyen bygger om baneutvalget uansett.
 - [GRAND PRIX] Vanskelighetsgrad-stigen: raskeste AI-bil mot Yasirs beste runde – middels – 2026-10-30
@@ -35,8 +35,10 @@ høyst én linje under som sier hvor i koden det gjelder.
   `roofPal` settes på LABIRINTO (linje ~1937) og DISCESA (~2453) og føres gjennom `makeTheme`, men leses ingen steder. `dBuilding` kalles bare for `terrain==='city'`, så DISCESAs `cityPal` har heller ingen leser. Samme familie som cfg-feltene ryddet i `fc4996f`.
 - [GRAND PRIX] `chrome_harness.py shot` skriver et bilde selv når den injiserte JS-en kaster – liten – 2026-11-10
   Et ukjent banenavn (f.eks. `shot --bane LABIRINTO`, der banen er et POSISJONSargument) gir et skjermbilde av hovedmenyen i stedet for en feil, så et «nattbilde av byen» kan i virkeligheten være menyen. Bør gi exit-kode ulik 0 når injeksjonen kaster.
-- [GRAND PRIX] `chrome_harness.py fps` kan ikke måle de bevegelige detaljene – liten – 2026-11-10
-  `fps` måler bare startstreken, og den bevegelige detaljen er kuttet bort der (det er nettopp poenget med kuttet), så bildetiden i D2 er kostnaden for et KUTTET objekt. `shot` fikk `--t` og `--tid` i steg D1/D2; `fps` trenger det samme for å kunne måle hva detaljen koster når den faktisk er på skjermen.
+- [GRAND PRIX] `chrome_harness.py` har to navn på samme flagg – liten – 2026-11-10
+  `fps` skriver utdata med `--out`, `shot` med `--ut`. Bruker du `--out` på `shot`, tas bildet til standardnavnet uten at noe feiler, og et glob etterpå finner ingenting. Samme familie som punktet over: harnessen tier når kallet er feil.
+- [GRAND PRIX] Sjekk 5 i `test_bevegelse.js` er fortsatt utvannet på VISTANOTTE – liten – 2026-11-10
+  6 px forskyvning av rammen leser 6,00 px på DUNA, men bare 2,50 px på VISTANOTTE: hjulets faste punktsett inneholder hjørnene i boksen til nav-prikken (`arc(0,cy,6)`), som ligger 8,49 px fra dreiepunktet, og `|rotert(±6,±6)+(6,0)|` bunner ut på 8,49−6. Mutasjonen biter uansett, men følsomheten er ikke 1:1. Kan strammes ved å kreve at det faste punktet også ligger nær dreiepunktet.
 
 ## Arkaden (felles)
 

@@ -179,10 +179,11 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | C2 | ferdig | `f3fc5d3` | Bypalettene målt UNDER døgnoverlegget i alle tre tider: mørke tak og lysere fasader på LABIRINTO, SERPENTINA og VISTANOTTE, nattoverlegget senket 0,58 → 0,50, og et MÅLT nattgulv på 2,5:1 i stedet for 3:1. Tak/fasade om natta 1,78–2,06 → 2,52–2,53:1 | `test_banetema.js` (198/198, sjekk 19–20 bygget om), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + før/etter-bilder |
 | C3 | ferdig | `6fc735f` | Dominobrikkene, FORM-halvdelen: kvartalene tegnes nå som hus sett ovenfra. Taket er den store flaten (0 % → 73–78 % av husets fotavtrykk), fasaden er krympet til et bånd på 6–11 px mot gata, det jevne 5 × 7-vindusrutenettet er erstattet av én uregelmessig rekke i båndet (ingen vinduer på taksiden), og all ny tilfeldighet går gjennom et eget `krnd`-frø | `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `test_bevegelse.js` (PASS), `chrome_harness.py maal` + rnd-fingeravtrykk + før/etter-bilder |
 | D2 | ferdig | `349bb94` | Stillaset for bevegelige detaljer: `scene.beveg` (registreres av LANDEMERKET, maks én per bane, telt i `TR.bevegelseN`) + `drawBevegelse` (kutt mot skjermen, tid som argument). Første detalj er VISTANOTTEs pariserhjul — eiker, kabiner og kabinglød snurrer live, ring/nav/bein er fortsatt bakt | `test_bevegelse.js` (ny, 6 sjekker, 8 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + `shot --tid` |
+| D3a | ferdig | — | DUNAs fyrstråle: lykta sveiper én omdreining på 8 s (tårnet bakt, strålen og lampegløden live, gløden blinker én gang per omdreining). `fps` fikk `--t` + en ekte `--tod`, så en synlig detalj kan måles for første gang — begge detaljene koster 0,002–0,006 ms per bilde mot et budsjett på 0,3. `test_bevegelse.js` dekker nå BEGGE sider av banen (ny sjekk 7), og D2-hullet er lukket | `test_bevegelse.js` (7 sjekker, 13 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps --t` + `shot --tid` |
 
 **Steg D er delt i tre fordi den er to ulike jobber:** D1 nattlysene i byene
 (ferdig), D2 stillaset for bevegelige detaljer (ferdig), D3 selve detaljene på
-de resterende banene.
+de resterende banene (D3a DUNA ferdig).
 
 **De tre bybanene ble BEVISST utsatt til steg C** (LABIRINTO, SERPENTINA,
 VISTANOTTE). De trenger både landemerke og bykvartaler, og å skrive landemerket
@@ -931,6 +932,182 @@ ingenting. ARDENNE målte 43,1 ms i én kjøring og 16,0/16,6/18,8 i alle andre;
 banen rører ikke `dBuildingGrid` i det hele tatt, så det er samme GC-støy som
 er målt på VISTANOTTE (steg A) og TEMPIO (steg B5). Ett høyt tall skal måles
 på nytt før det tolkes.
+
+**Avvik verdt å vite i steg D3a (DUNAs fyrstråle):**
+
+Dette steget er det første som har et BUDSJETT per bilde (0,3 ms for en synlig
+detalj), og det første tallet for hva en detalj koster når den faktisk er inne
+i bildet. Målingene står i `maalinger/maal_fps_D3a.txt` og
+`maalinger/maal_straale_D3a.txt`.
+
+1. **`--tod` på `chrome_harness.py fps` hadde ingen virkning — samme feil som
+   `shot` hadde i steg D1, fortsatt levende her.** `todIdx` ble satt FØR
+   `startRace()`, og `startRace()` kaller `resolveTodIdx(TR)`, som leser
+   `SETTINGS.tid` (AUTO = banens egen `naturligTid`) og overskriver alt.
+   **Følge: hvert «DAG/NATT»-par i ALLE tidligere `fps`-tabeller i dette
+   notatet (steg B5, D1, D2) er i virkeligheten samme døgntid målt to ganger.**
+   Det forklarer hvorfor de to kolonnene nesten alltid lå innenfor støyen av
+   hverandre. Rettet samme sted som i `shot`: `todIdx` settes ETTER
+   `startRace()`. Feilen ble rettet INNE i bestillingen og ikke lagt i
+   `SENERE.md`, fordi DUNAs `naturligTid` er DAG — uten rettelsen kunne punkt 3
+   i bestillingen («mål DUNA på NATT») ikke utføres i det hele tatt.
+2. **Kameraet må pinnes PÅ NYTT hvert bilde, ikke bare én gang.** `fps --t`
+   låner kamerasettingen fra `shot`, men `fps` lar rAF-løkka gå gjennom
+   `--virtual-time-budget`, så bilen triller vekk fra punktet mens målingen
+   pågår. En `fest()`-kladd kalles derfor først i hvert bilde. `tegnekall` og
+   `skjermpos` i utskriften er beviset for at detaljen var inne i bildet —
+   uten dem måler man like godt startstreken, og det er nettopp den fella
+   steg D2-tallet gikk i.
+3. **Dataen må legges TILBAKE mellom rundene.** `--uten-beveg` nuller
+   `TR.bevegelse`, men `ensureTrackBg` returnerer tidlig når `TR.bg` alt
+   finnes, så neste `startRace()` bygger den IKKE opp igjen. Uten en
+   stash/restore målte andre døgntid — og alle banene etter den første —
+   uten detalj selv når den skulle vært på, og rapporterte `skjermpos` som «–»
+   fordi dataen var borte. En nullet verdi i en harness må alltid legges
+   tilbake, for harnessen måler flere ting i samme nettleserøkt.
+4. **Den direkte med/uten-differansen er FORTSATT ubrukelig, selv med
+   B5-metoden.** 300 bilder i ett tidtatt stykke, beste av tre, gir
+   differanser på +0,002 til +0,024 ms mot en blokkspredning på 0,056–0,19.
+   Detaljen er derfor forstørret 40x på RAMMEVERKSNIVÅ (`scene.beveg` pakker
+   `tegn` i en løkke på 40 i en midlertidig kopi) og differansen delt på 39.
+   Å forstørre i rammeverket og ikke i den enkelte tegnefunksjonen er poenget:
+   da er inngrepet BOKSTAVELIG TALT det samme for begge banene, og tallene kan
+   sammenlignes.
+
+| bane | tid | per bilde | % av 0,3 ms | margin |
+|---|---|---|---|---|
+| DUNA | DAG | 0,00244 ms | 0,8 % | 123x |
+| DUNA | NATT | 0,00269 ms | 0,9 % | 111x |
+| VISTANOTTE | DAG | 0,00292 ms | 1,0 % | 103x |
+| VISTANOTTE | NATT | 0,00615 ms | 2,0 % | 49x |
+
+**Budsjettet holdes med 49–123x margin. Ingenting trenger å bakes.** Merk at
+VISTANOTTEs natt koster 2,6x dagen (de fire kabingløddene er radiale
+gradienter som bare finnes om natta), mens DUNAs natt koster det SAMME som
+dagen — strålen gjør identisk arbeid i alle tre tidene.
+
+5. **`drawBevegelse` tar nå HELE døgntiden, ikke boolsken `natt`.** Grunnen er
+   målt og ikke en smakssak: SOLNEDGANG har `night:false`, så et boolsk flagg
+   kan ikke skille den fra DAG — og strålen skulle stå ulikt i nettopp de to.
+   Alfaen ligger i `STRAALE_ALFA` navngitt PER DØGNTID, etter `KVART_GULV`-
+   mønsteret fra steg C2, slik at en umålt fjerde døgntid gir en synlig feil
+   og ikke en stille `undefined`.
+6. **Strålen er en TREKANT og ikke en sirkelbue.** Buen ville stukket
+   `SLEN*(1−cos SHALV)` = 1,2 px lenger ut, altså usynlig — men opptakslerretet
+   i `test_bevegelse.js` må bokføre en `arc` som hele sirkelens omskrevne boks,
+   og det ville blåst den oppgitte rekkevidden opp med 97 px uten at noe
+   faktisk tegnes der. Formen er valgt av MÅLBARHET, og det er en gyldig grunn
+   når forskjellen på skjermen er 1,2 px.
+7. **EN PIKSELDIFF AV TO SKJERMBILDER ER IKKE RETTFERDIG, og det ga først feil
+   tall.** Ledertavla og spillerbilens lakkering trekkes på nytt ved hver
+   sidelasting, så to «identiske» bilder av samme bane skiller seg i ~2000
+   piksler som ikke har noe med strålen å gjøre. Første runde med målinger
+   tilskrev strålen nettopp de pikslene og rapporterte et fotavtrykk på
+   3400–5200 px — mens strålen i virkeligheten knapt var på skjermen. Avslørt
+   ved å SE på bildet: tallene sa at det skulle være en tydelig kjegle der, og
+   det var ingenting. Alle tall er nå målt med HUD-en (y<170), spillerbilen
+   (±34 px om skjermsenter) og minikartet maskert bort. **Lærdom i samme
+   familie som «et bilde som skal bevise noe må sjekkes for alder»: en
+   pikseldiff må først bevise at de to bildene er sammenlignbare.**
+8. **Landemerket ligger ALLTID ved høyre bildekant, og det er geometri.**
+   Lykta regnet om til skjermkoordinater for hele runden kommer aldri lenger
+   til venstre enn x=488 på et 520 px bredt lerret — landemerket står i fast
+   sideavstand fra banen, så det havner på samme skjerm-x hver gang du kjører
+   forbi. Bare den delen av sveipet som peker INN i bildet er derfor synlig.
+   Spissen (lykt + 210 px) ved `--t 0.08`, lykt (515,362):
+
+   | tid (s) | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+   |---|---|---|---|---|---|---|---|---|
+   | spiss | 515,572 | 366,511 | **305,362** | 366,214 | 515,152 | 663,214 | 725,362 | 663,511 |
+
+   `--tid 0` og `--tid 4` peker rett ned og rett opp LANGS bildekanten og gir
+   bare en 20 px bred flis — de to første «bevis»-bildene mine var nettopp de
+   to, og beviste ingenting. De vedlagte er nå t=1,0 / 2,0 / 3,0, der
+   tyngdepunktet flytter seg 145 px loddrett og boksen går fra nedre til øvre
+   halvdel av skjermen.
+9. **DAG ER TONET NED, og det er målingen som bestemte det — men først etter at
+   målemetoden ble rettet.** Med ÉN felles alfa (0,26) er det RELATIVE løftet
+   nesten likt i alle tre tider: x1,378 ved DAG, x1,319 ved SOLNEDGANG, x1,341
+   ved NATT. Grunnen er at `lighter` legger til i sRGB, mens nattoverlegget
+   `rgba(5,8,20,0.50)` komponeres ETTER `drawBevegelse` og demper strålen og
+   bakgrunnen dens like mye. **En felles alfa ville altså gjort strålen
+   nøyaktig like påfallende midt på dagen som midt på natta — og da har fyret
+   ingen natt.** Alfaen er derfor `DAG 0,14 / SOLNEDGANG 0,26 / NATT 0,26`,
+   målt som levert til x1,199 / x1,319 / x1,341. DAG står ikke på NULL fordi
+   **DUNAs `naturligTid` ER dag**: slås strålen av der, har banen ingen
+   bevegelig detalj i det løpet standardinnstillingen faktisk kjører.
+10. **Den første alfaen (0,09/0,10/0,10) var i praksis usynlig.** Den målte
+   x1,12, og på skjermen i 1:1 var det ingen kjegle å se i det hele tatt —
+   bare en svak ujevnhet. Tallet var ikke galt, det var bare ikke et tall som
+   svarte på spørsmålet «leser dette som et fyrlys». Samme lærdom som steg C2
+   («alle tallene ble bedre og alle bildene ble verre»), bare med fortegnet
+   snudd: her måtte bildet til for å si at tallet var for lavt. At alfaen gikk
+   fra 0,10 til 0,26 koster ingenting — en gjennomsiktighet er like dyr som en
+   annen, bekreftet ved å måle bildetiden på nytt etterpå (uendret).
+11. **Ærlig observasjon:** fyrtårnet er tegnet som en oppriss lagt flatt
+   (spillets konvensjon for alle landemerker), mens strålen sveiper 360 grader
+   i bakkeplanet, så den krysser sitt eget tårn i deler av omdreiningen.
+   Bildene viser at lesningen holder — de røde båndene blir røde, og det er
+   båndene som sier «fyr» — men det er en egenskap ved konvensjonen.
+
+**D2-HULLET ER LUKKET, og det er bevist med måling.** D2 kunne ikke fange at
+`(p.side>0?Math.PI:0)` ble SLETTET, fordi VISTANOTTE ligger på side −1 og
+leddet er en no-op akkurat der. DUNA ligger på side +1, og mutasjonen gir nå
+`5: DUNA: nærmeste FASTE levende punkt ligger 100,17 px fra nærmeste nattlys`
+→ STRYK. At utslaget er 100,17 og ikke hele speilforskyvningen på 302,6 px er
+verdt å vite: moloens havnelys ligger nærmere den speilede posisjonen enn
+lykta selv gjør. Dekningen er dessuten gjort til et KRAV og ikke en flaks —
+**ny sjekk 7** krever at `TR.bevegelse.side` er 1 eller −1 og at det finnes
+minst én bevegelig detalj på HVER side. `side` er derfor lagt inn i
+`scene.beveg` som REN DATA; tegnekoden bruker den ikke, vendingen ligger alt
+ferdig inne i `ang`. Den er der utelukkende for at testen skal kunne måle
+dekningen sin.
+
+**Sjekk 5 er samtidig gjort ÆRLIG, og det er to ulike tall.** D2 målte at
+6 px forskyvning av rammen bare ga 2,50 px utslag — eikene feier over et
+område, så et annet punkt kommer nærmere lyset enn det som skulle truffet.
+Sjekken ser nå bare på de punktene som står STILLE mens detaljen beveger seg
+(`fastePunkt`, to tidspunkt sammenlignet punkt for punkt), og for noe som
+roterer er de faste punktene nettopp dreiepunktet. På DUNA leser 6 px
+forskyvning nå **eksakt 6,00 px**. VISTANOTTE leser fortsatt 2,50, fordi
+hjulets faste sett inneholder hjørnene i boksen til nav-prikken `arc(0,cy,6)`
+8,49 px ute, og `|rotert(±6,±6)+(6,0)|` bunner ut på 8,49−6. Mutasjonen biter
+uansett. Restfølsomheten er lagt i `SENERE.md`.
+
+**Tretten mutasjoner, tolv biter — og den trettende er INERT, ikke et hull.**
+«Fjern `if(bevegelse) return;`» bet ikke, og diagnosen er at ingen landemerke
+kaller `beveg` to ganger, så koden er EKVIVALENT uten linja. Den er erstattet
+av «DUNA registrerer to ganger» (et ekstra `s.beveg`-kall satt inn), som biter
+på `1: DUNA registrerte 2 bevegelige detaljer (taket er 1)`. **Lærdom: en
+mutasjon som ikke biter skal diagnostiseres før den tolkes** — en inert
+mutasjon og et testhull ser helt like ut i utskriften.
+
+**Et EKTE hull i testen ble funnet av mitt eget mutasjonsbatteri.** «DAG
+mangler i `STRAALE_ALFA`» bet IKKE, enda kommentaren jeg hadde skrevet lovet
+at «en umålt fjerde tid ikke kan gli forbi». Påstanden ble ikke slettet — den
+ble gjort SANN: sjekk 2 går nå over ALLE døgntider og krever at minst ETT
+punkt faktisk FLYTTET seg, ikke bare at tegnekallene endrer seg. Den biter nå
+på `2: DUNA ved DAG: tegnekallene endrer seg, men ikke ETT punkt flyttet seg —
+detaljen blinker, den beveger seg ikke`. En detalj som bare blinker er ikke
+bevegelig, og det skillet fantes ikke i D2.
+
+**Opptakslerretet måtte svare på strengkonvertering.** `createLinearGradient`
+returnerer proxyen selv (slik at `.addColorStop()` virker), og da gjør
+`g.fillStyle = gr` en `String(val)` på den — som spør etter
+`Symbol.toPrimitive`, får en autogenerert funksjon, og kaster «Symbol.
+toPrimitive returned an object». `symbol`/`toString`/`valueOf` svares nå
+eksplisitt med en KONSTANT streng: fargestoppene bokføres av sine egne
+`addColorStop`-kall, så et skiftende navn her ville bare gjort
+op-sammenligningen i sjekk 2 til støy.
+
+**Kostnad, målt i steg D3a:** byggetid sum 178,4 ms (to andre kjøringer samme
+dag ga 175,1 og 186,7 — samme spredning som alltid), verste bane VISTANOTTE
+19,6 ms mot budsjettet på 100 — strålen bygges ikke, den tegnes.
+DUNA melder nå `beveg 1`, og nattlysene er UENDRET (DUNA 4, VISTANOTTE 68).
+`test_banetema.js` 198/198 med svakeste verdi 3,45:1 (CORALIS/DUNA) og
+svakeste landemerketone 3,15:1 (DESERTO `saltKant`), begge uendret — ingen
+palettverdi er rørt. `test_banegeometri.js --mot geo_laas.json` uendret på
+alle 13.
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til

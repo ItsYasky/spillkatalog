@@ -1,0 +1,60 @@
+STEG D3a — hva en SYNLIG bevegelig detalj koster per bilde
+=========================================================
+
+Budsjett (satt i bestillingen): maks 0,3 ms ekstra per bilde per detalj.
+
+METODEN, i tre ledd — og de to første holder ikke mål alene:
+
+1. `chrome_harness.py fps` fikk `--t`, som pinner kameraet på et rundepunkt
+   slik `shot --t` gjør, og pinner det PÅ NYTT hvert bilde (ellers triller
+   bilen vekk gjennom --virtual-time-budget). Uten dette målte `fps` bare
+   startstreken, der detaljen er KUTTET bort — altså kostnaden for et objekt
+   som ikke tegnes. `tegnekall` og `skjermpos` i utskriften er beviset for at
+   detaljen faktisk er inne i bildet.
+2. 300 bilder tidtatt som ETT stykke, beste av tre runder (B5-metoden).
+   `performance.now()` er klemt til 0,1 ms i Chrome, så per-bilde-metrikken
+   `snitt_ms` kan ikke oppløse 0,3 ms i det hele tatt.
+3. Den direkte differansen med/uten detalj er FORTSATT under støygulvet.
+   Detaljen er derfor forstørret 40x på RAMMEVERKSNIVÅ i en midlertidig kopi
+   (/tmp/beveg_x40.html: `scene.beveg` pakker `tegn` i en løkke på 40, med
+   `assert old in s`-vakt), og differansen deles på 39. Samme inngrep for
+   begge banene, så tallene er sammenlignbare.
+
+DEN DIREKTE DIFFERANSEN (hvorfor ledd 3 trengs)
+-----------------------------------------------
+                      x1 PÅ    x1 AV    differanse   blokkspredning
+DUNA DAG              0.2630   0.2610   +0.0020      0.056–0.097
+DUNA NATT             0.3203   0.3060   +0.0143      0.056–0.097
+VISTANOTTE DAG        1.7793   1.7553   +0.0240      0.06–0.19
+VISTANOTTE NATT       1.7827   1.7633   +0.0194      0.06–0.19
+
+Differansen er mindre enn spredningen mellom to blokker. Tallene over kan
+altså ikke brukes til noe annet enn å slå fast at kostnaden er LITEN.
+
+RESULTATET (x40-metoden)
+------------------------
+bane        tid    x1 blokk_ms  x40 blokk_ms  (x40-x1)/39   % av 0,3 ms  margin
+DUNA        DAG      0.2630       0.3580       0.00244         0.8 %      123x
+DUNA        NATT     0.3303       0.4353       0.00269         0.9 %      111x
+VISTANOTTE  DAG      1.7620       1.8757       0.00292         1.0 %      103x
+VISTANOTTE  NATT     1.7840       2.0237       0.00615         2.0 %       49x
+
+Verste tilfelle er VISTANOTTE/NATT på 0,0062 ms = 2,0 % av budsjettet.
+INGENTING trenger å bakes. Hjulet går ikke over, og DUNAs stråle heller ikke.
+
+Kamerapunkt: VISTANOTTE `--t 0.14` (skjermpos 146,478 / 90 tegnekall),
+DUNA `--t 0.08` (skjermpos 418,478 / 90 tegnekall).
+
+TO TING VERDT Å MERKE SEG I TALLENE
+-----------------------------------
+- VISTANOTTEs natt koster 2,6x dagen. De fire kabingløddene er radiale
+  gradienter og kommer bare til om natta.
+- DUNAs natt koster det SAMME som dagen (0,00269 mot 0,00244, altså innenfor
+  metodens egen oppløsning). Strålen tegnes i alle tre døgntider — bare med
+  ulik ALFA, som er gratis — så det er samme arbeid uansett tid: en lineær
+  gradient og en trekant. Lampegløden er ett `drawGlow`-kall i alle tre.
+  NATT-tallet er målt på nytt etter at alfaen ble hevet fra 0,10 til 0,26, og
+  det flyttet seg ikke: en gjennomsiktighet koster det samme som en annen.
+- Grunnivået mellom de to banene (0,26 mot 1,76 ms) er ikke detaljens skyld.
+  Det mønsteret står i «før»-tallene fra runde 3 også: DUNA er en av de fire
+  banene som måler ~0,3 ms mot ~1,8 for resten.

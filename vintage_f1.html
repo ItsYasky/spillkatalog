@@ -949,8 +949,14 @@ function buildTrackBg(TR){
     beveg(p,rekkevidde,tegn){
       bevegelseN++;
       if(bevegelse) return;
+      // `side` lagres som REN DATA og brukes ikke av tegnekoden — vendingen
+      // ligger alt ferdig inne i `ang`. Den er her av samme grunn som
+      // `bevegelseN`: halvomdreiningen for `side>0` er en no-op på side −1, så
+      // en test som bare ser én bane kan ikke vite om vendingen finnes i det
+      // hele tatt (det var nettopp hullet i steg D2). Med sida som et tall kan
+      // testen KREVE at begge sider er dekket i stedet for å håpe på det.
       bevegelse={ x:p.x-ox, y:p.y-oy, ang:p.ang+(p.side>0?Math.PI:0),
-                  rekkevidde, tegn };
+                  side:p.side, rekkevidde, tegn };
     },
     // Verdenspunktet ved rundeposisjon t (0–1) og enhetsnormalen der.
     atT(t){
@@ -2778,18 +2784,84 @@ const THEMES={
       bx.fillStyle=P.fyrRod;
       for(let k=0;k<2;k++) bx.fillRect(fx-fb/2+2,-13-fh*(0.3+k*0.35),fb-4,12);
       // Lykta på toppen, og havnelys langs moloen.
+      const lykY=-13-fh-6;
       bx.fillStyle=P.lys;
-      bx.beginPath(); bx.arc(fx,-13-fh-6,7,0,Math.PI*2); bx.fill();
+      bx.beginPath(); bx.arc(fx,lykY,7,0,Math.PI*2); bx.fill();
       for(let k=1;k<=3;k++) bx.fillRect(-L/2+L*k/4-2.5,-19,5,6);
       bx.restore();
       // Gløden legges på lykta og på havnelysene, i samme lokale punkter som de
       // ble tegnet i — `s.lokal` tar både vendingen og høyden over moloen.
-      const lykt=s.lokal(p,fx,-13-fh-6);
+      const lykt=s.lokal(p,fx,lykY);
       s.lys(lykt.x,lykt.y,P.lys,38);
       for(let k=1;k<=3;k++){
         const h=s.lokal(p,-L/2+L*k/4,-16);
         s.lys(h.x,h.y,P.lys,14);
       }
+      // Banens ene bevegelige detalj: lykta SVEIPER. Delelinja er den samme som
+      // pariserhjulets — rotasjonsinvariant bakes, det som endrer seg med
+      // vinkelen kan ikke bakes. Tårnet, moloen og havnelysene ser like ut i
+      // alle lyktas stillinger og ligger derfor fortsatt i bakgrunnen; strålen
+      // og pulsen i lampegløden finnes bare i det levende laget.
+      const SV=Math.PI*2/8;        // én omdreining på 8 sekunder
+      const SLEN=210, SHALV=0.105; // lengde og halv åpningsvinkel på kjeglen
+      // Tonen LÅNES fra lykta i stedet for å skrives på nytt: en lysstråle har
+      // ikke sin egen farge, den har lampas. Komponentene plukkes ut her, under
+      // bakingen, så tegnefunksjonen ikke tolker en hex-streng 60 ganger i
+      // sekundet.
+      const lysRGB=(()=>{ const v=parseInt(P.lys.slice(1),16);
+        return (v>>16&255)+','+(v>>8&255)+','+(v&255); })();
+      // Alfaen står PER DØGNTID etter KVART_GULV-mønsteret fra steg C2: en
+      // døgntid som ikke er oppført får ingen stråle i det hele tatt, så en
+      // umålt fjerde tid kan ikke gli forbi på de tre som er målt.
+      //
+      // Tallene er målt på SKJERMEN (diff mot en kopi uten stråle, HUD og
+      // spillerbil maskert bort), og målingen sier to ting. For det første:
+      // ÉN alfa gir nesten samme RELATIVE løft i alle tre tider (x1,32-1,38
+      // ved 0,26), fordi `lighter` legger til i sRGB mens nattoverlegget
+      // demper strålen og bakgrunnen dens like mye. En felles alfa ville
+      // altså gjort strålen akkurat like påfallende midt på dagen som midt
+      // på natta — og da har fyret ingen natt. DAG er derfor tonet ned til
+      // under halvparten: x1,20 mot x1,34, altså synlig, men tydelig svakere.
+      // For det andre: den første versjonen lå på 0,09-0,10 og MÅLTE fint,
+      // men var i praksis usynlig på skjermen (x1,12). Det er samme lærdom
+      // som steg C2 — når tallet og bildet er uenige, avgjør bildet.
+      // DAG står ikke på null fordi DUNAs `naturligTid` ER dag: slås strålen
+      // av der, har banen ingen bevegelig detalj i det løpet standard-
+      // innstillingen faktisk kjører.
+      const STRAALE_ALFA={ DAG:0.14, SOLNEDGANG:0.26, NATT:0.26 };
+      s.beveg(p,Math.round(Math.hypot(fx,lykY)+SLEN+22),(g,t,tod)=>{
+        const vinkel=t*SV, a=STRAALE_ALFA[tod.name];
+        if(a){
+          g.save();
+          g.translate(fx,lykY);
+          g.rotate(vinkel);
+          // Additivt: en lyskilde LEGGER TIL lys, den maler ikke over. Derfor
+          // trenger strålen ingen egen tone, og derfor demper den seg selv der
+          // underlaget alt er lyst — som en ekte stråle gjør i dagslys.
+          g.globalCompositeOperation='lighter';
+          const gr=g.createLinearGradient(0,0,SLEN,0);
+          gr.addColorStop(0,'rgba('+lysRGB+','+a+')');
+          gr.addColorStop(0.55,'rgba('+lysRGB+','+(a*0.45)+')');
+          gr.addColorStop(1,'rgba('+lysRGB+',0)');
+          g.fillStyle=gr;
+          // Kjeglen er en TREKANT og ikke en sirkelbue. Buen ville stukket
+          // SLEN*(1-cos SHALV) = 1,2 px lenger ut, altså usynlig — men
+          // opptakslerretet i `test_bevegelse.js` må regne en `arc` som hele
+          // sirkelens omskrevne boks, og det ville blåst den oppgitte
+          // rekkevidden opp med 97 px uten at noe faktisk tegnes der.
+          g.beginPath();
+          g.moveTo(0,0);
+          g.lineTo(Math.cos(-SHALV)*SLEN,Math.sin(-SHALV)*SLEN);
+          g.lineTo(Math.cos(SHALV)*SLEN,Math.sin(SHALV)*SLEN);
+          g.closePath(); g.fill();
+          g.restore();
+        }
+        // Lampegløden BLINKER én gang per omdreining, slik et fyr gjør: den er
+        // sterkest når strålen peker mot deg. Den JEVNE delen av gløden er
+        // bakt (`s.lys(...,38)` over) — samme delelinje som hjulets nav, som
+        // står stille og derfor fikk ligge i `nightLights`.
+        drawGlow(g,glowFor(P.lys),fx,lykY,16,0.18+0.24*(1+Math.cos(vinkel))/2);
+      });
       s.sperr(p.x,p.y,L*0.6);
     } },
   // Neonby i ørkenen: magenta/hvit kerb, og en neonstripe i den asfalterte
@@ -2904,7 +2976,7 @@ const THEMES={
       // ankeret (bakken mellom beina) opp til toppen av hjulet, pluss glødens
       // radius — kuttes det tettere, popper hjulet inn når det kommer på
       // skjermen i stedet for å gli inn fra kanten.
-      s.beveg(p,R*2+FOT+20,(g,t,natt)=>hjulhode(g,t*FART,natt));
+      s.beveg(p,R*2+FOT+20,(g,t,tod)=>hjulhode(g,t*FART,tod.night));
       // Nattlys på NAVET, og bare der. De fire kabinglødene lå her før, men en
       // glød i `nightLights` står BOM STILLE i verdenskoordinater — da hadde
       // kabinene snurret forbi fire faste lyspunkter på ringen, altså lamper
@@ -5408,7 +5480,11 @@ function worldToScreen(wx,wy){
 // `chrome_harness.py shot --tid` kan ta det samme bildet to ganger på to ulike
 // tidspunkt — som er den eneste måten å BEVISE på et skjermbilde at noe faktisk
 // rører seg.
-function drawBevegelse(g,tr,tid,natt){
+// Fjerde argument er HELE døgntiden og ikke lenger boolsken `natt`. Grunnen er
+// målt og ikke en smakssak: SOLNEDGANG har `night:false`, så et boolsk flagg
+// kan ikke skille den fra DAG — og DUNAs fyrstråle skal stå ulikt sterkt i
+// nettopp de to. En detalj som bare trenger natt/dag leser `tod.night` selv.
+function drawBevegelse(g,tr,tid,tod){
   const b=tr&&tr.bevegelse;
   if(!b) return;
   const sp=worldToScreen(b.x,b.y), m=b.rekkevidde;
@@ -5416,7 +5492,7 @@ function drawBevegelse(g,tr,tid,natt){
   g.save();
   g.translate(b.x,b.y);
   g.rotate(b.ang);
-  b.tegn(g,tid,natt);
+  b.tegn(g,tid,tod);
   g.restore();
 }
 
@@ -5521,7 +5597,7 @@ function drawTrackScene(){
   // tall per bilde — og `raceTime` fryses av pausemenyen (`if(paused) return;`
   // først i update()), så det bevegelige fryser sammen med løpet uten at noe
   // ekstra må kobles til.
-  drawBevegelse(ctx,TR,raceTime/60,TOD[todIdx].night);
+  drawBevegelse(ctx,TR,raceTime/60,TOD[todIdx]);
   if(TR.flagPoles) TR.flagPoles.forEach((f,i)=>{
     ctx.save(); ctx.translate(f.x,f.y);
     ctx.strokeStyle='#cbd5e1'; ctx.lineWidth=1.2;

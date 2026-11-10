@@ -1,0 +1,86 @@
+STEG D3a — DUNAs fyrstråle, målt på skjermen
+============================================
+
+Alle tall er lest av spillets EGNE skjermbilder (`chrome_harness.py shot DUNA
+--t 0.08 --tid <t> --tod <n>`), diffet mot en kopi der `STRAALE_ALFA={}`
+(/tmp/duna_uten_straale.html) — altså samme bilde uten strålen og med alt
+annet likt. Luminans regnet med en egen PNG-leser (/tmp/pnglib.py).
+
+METODEFELLE SOM FØRST GA FEIL TALL
+----------------------------------
+To skjermbilder av samme bane er IKKE pikselidentiske utenfor bakgrunnen:
+ledertavla og spillerbilens lakkering trekkes på nytt ved hver sidelasting.
+En rå pikseldiff tilskrev derfor strålen ~2000 piksler den ikke hadde noe med,
+og det var nok til å gjøre en stråle som nesten ikke var på skjermen til et
+«fotavtrykk på 3400-5200 px». Alle tallene under er målt med HUD-en (y<170),
+spillerbilen (±34 px om skjermsenter) og minikartet maskert bort.
+
+HVOR ER STRÅLEN I DET HELE TATT
+-------------------------------
+Lykta regnet om til skjermkoordinater for hele runden: den ligger ALDRI
+lenger til venstre enn x=488 på et 520 px bredt lerret. Det er ingen feil —
+landemerket står i fast sideavstand fra banen, så det havner på samme
+skjerm-x hver gang du kjører forbi. Følgen er at bare den delen av sveipet
+som peker INN i bildet er synlig.
+
+Spissen av strålen (lykt + 210 px) ved kamera `--t 0.08`, lykt (515,362):
+
+tid (s)  0        1        2        3        4        5        6        7
+spiss    515,572  366,511  305,362  366,214  515,152  663,214  725,362  663,511
+          rett     inn      rett     inn      rett     utenfor  utenfor  utenfor
+          ned               inn               opp
+
+`--tid 0` og `--tid 4` peker altså rett ned og rett opp LANGS bildekanten og
+gir bare en 20 px bred flis. De to bildene som skal bevise bevegelse må velges
+blant fasene 1-3. Valgt: t=1,0 / 2,0 / 3,0.
+
+STRÅLEN STÅR BEVISELIG ULIKT (NATT, alfa 0,26)
+----------------------------------------------
+tid (s)  piksler  sum løft  boks på skjermen        tyngdepunkt
+1.0       4004     77.85    x 365-514  y 363-513    (439,437)
+2.0       3971     70.69    x 315-514  y 343-381    (411,362)
+3.0       3510     63.45    x 376-514  y 216-362    (445,292)
+
+Tyngdepunktet flytter seg 145 px loddrett mellom t=1 og t=3, og boksen går fra
+nedre til øvre halvdel. Det er ikke en tolkning av et bilde — det er avlest.
+
+BESLUTNINGEN OM DAG — TONET NED, IKKE SLÅTT AV
+----------------------------------------------
+Første versjon lå på alfa 0,09/0,10/0,10. Den MÅLTE fint, men på skjermen var
+den så vidt synlig (median forhold x1,12). Bildet overstyrte tallet, samme
+mønster som steg C2.
+
+Med ÉN felles alfa 0,26 i alle tre tider:
+
+døgntid       snittløft   median forhold   bakgrunn
+DAG            0.0732        x1.378          0.1015
+SOLNEDGANG     0.0493        x1.319          0.0885
+NATT           0.0178        x1.341          0.0303
+
+Det RELATIVE løftet er altså nesten likt i alle tre. Grunnen er at `lighter`
+legger til i sRGB, mens nattoverlegget `rgba(5,8,20,0.50)` komponeres ETTER
+`drawBevegelse` og demper strålen og bakgrunnen dens like mye. En felles alfa
+ville gjort strålen akkurat like påfallende midt på dagen som midt på natta —
+og da har fyret ingen natt. Det er DENNE målingen som avgjorde DAG, ikke en
+smaksvurdering.
+
+Valgt: DAG 0,14, SOLNEDGANG 0,26, NATT 0,26. Målt som levert:
+
+døgntid       tid   piksler   snittløft   median forhold
+DAG           2.0    4125      0.0442       x1.199
+SOLNEDGANG    2.0    4203      0.0493       x1.319
+NATT          2.0    3971      0.0178       x1.341
+
+DAG er altså under halvparten av nattas relative løft — synlig, men tydelig
+svakere, slik et fyrlys skal være. Den står ikke på NULL fordi DUNAs
+`naturligTid` ER dag: slås strålen av der, har banen ingen bevegelig detalj i
+det løpet standardinnstillingen faktisk kjører, og den ene tingen banen betaler
+for per bilde ville vært usynlig for de fleste.
+
+ÆRLIG OBSERVASJON
+-----------------
+Fyrtårnet er tegnet som en oppriss lagt flatt (spillets konvensjon for alle
+landemerker), mens strålen sveiper 360 grader i bakkeplanet. Den krysser derfor
+sitt eget tårn i deler av omdreiningen. De røde båndene blir fortsatt røde —
+det er båndene som sier «fyr» — men det er en egenskap ved konvensjonen og ikke
+noe strålen kan unngå.

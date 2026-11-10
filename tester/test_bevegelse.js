@@ -143,6 +143,17 @@ function makeRecorder(){
       if(key === '__ops') return ops;
       if(key === '__m') return m;
       if(key in obj) return obj[key];
+      // Ukjente navn blir til tegnekall som RETURNERER lerretet, slik at
+      // `createLinearGradient(...).addColorStop(...)` virker. Men da er et
+      // gradient-objekt det samme proxy-objektet, og `fillStyle = gr` under
+      // gjør `String(val)` på det — som spør etter Symbol.toPrimitive, får en
+      // funksjon som returnerer proxyen, og kaster «Symbol.toPrimitive
+      // returned an object». Strengkonverteringen må derfor svares eksplisitt.
+      // Verdien er konstant med vilje: fargestoppene bokføres av sine egne
+      // `addColorStop`-kall, så et skiftende navn her ville bare gjort
+      // op-sammenligningen i sjekk 2 til støy.
+      if(typeof key === 'symbol' || key === 'toString' || key === 'valueOf')
+        return function(){ return '[opptakslerret]'; };
       const h = handlers[key];
       const fn = function(){
         ops.push(String(key) + '(' + Array.prototype.slice.call(arguments).map(function(v){
@@ -182,6 +193,7 @@ function loadGame(path){
     '  get state(){ return state; }, set state(v){ state = v; },\n' +
     '  get trackSel(){ return trackSel; }, set trackSel(v){ trackSel = v; },\n' +
     '  get todIdx(){ return todIdx; }, set todIdx(v){ todIdx = v; },\n' +
+    '  TOD: TOD,\n' +
     '  setCam: function(x,y,a){ camX = x; camY = y; camAngle = a; },\n' +
     '  worldToScreen: worldToScreen,\n' +
     '  drawBevegelse: drawBevegelse,\n' +
@@ -198,14 +210,32 @@ function padL(s, n){ s = String(s); while(s.length < n) s = ' ' + s; return s; }
 // Tegner den bevegelige detaljen på et opptakslerret i landemerkets egen
 // ramme, uten kamera og uten kutt — altså slik `drawBevegelse` ville gjort det
 // hvis detaljen sto midt på skjermen. Punktene som kommer ut er verdenspunkt.
-function tegnLive(b, t, natt){
+// Fjerde argument er HELE døgntiden, slik `drawBevegelse` nå sender den.
+// Boolsken `natt` holdt ikke: SOLNEDGANG har `night:false`, så den og DAG var
+// ett og samme tilfelle, og DUNAs stråle skal stå ulikt sterkt i nettopp de to.
+function tegnLive(b, t, tod){
   const g = makeRecorder();
   g.save();
   g.translate(b.x, b.y);
   g.rotate(b.ang);
-  b.tegn(g, t, natt);
+  b.tegn(g, t, tod);
   g.restore();
   return g;
+}
+
+// Punktene som står STILLE mens detaljen beveger seg, funnet ved å tegne to
+// ulike tidspunkt og sammenligne tegnekall for tegnekall. For noe som roterer
+// er de faste punktene nettopp dreiepunktet — eikene møtes i navet, strålen har
+// toppunktet sitt i lykta — og det er dreiepunktet som må treffe det bakte
+// lyset. Sjekk 2 krever likt antall tegnekall, så indeksene kan parres direkte.
+function fastePunkt(b, t1, t2, tod){
+  const a = tegnLive(b, t1, tod), c = tegnLive(b, t2, tod);
+  const n = Math.min(a.__pts.length, c.__pts.length), ut = [];
+  for(let k = 0; k < n; k++){
+    const dx = a.__pts[k][0] - c.__pts[k][0], dy = a.__pts[k][1] - c.__pts[k][1];
+    if(Math.sqrt(dx*dx + dy*dy) <= 0.01) ut.push(a.__pts[k]);
+  }
+  return { faste: ut, alle: a.__pts };
 }
 
 function maxAvstand(pts, x, y){
@@ -230,6 +260,12 @@ function run(argv){
 
   const game = loadGame(htmlPath);
   const TRACKS = game.TRACKS;
+  const TOD = game.TOD;
+  // Natta plukkes på `night`-flagget og ikke på indeks: kommer det en fjerde
+  // døgntid, skal testen fortsatt måle den som faktisk er natt.
+  const DAG = TOD.filter(function(d){ return !d.night; })[0];
+  const NATT = TOD.filter(function(d){ return d.night; })[0];
+  if(!DAG || !NATT) fails.push('0: TOD mangler en dag- eller en nattoppføring');
   const TAK = 1;   // maks én bevegelig detalj per bane — se kommentaren i buildTrackBg
 
   // ── 1: taket på én per bane ───────────────────────────────────────────────
@@ -265,31 +301,49 @@ function run(argv){
   // detalj, ellers består alt det under uten å ha målt noe som helst.
   ok(medBevegelse.length >= 1, '1: ingen bane har en bevegelig detalj — da er det ingenting å teste');
 
-  // ── 2: detaljen drives av TID ─────────────────────────────────────────────
+  // ── 2: detaljen drives av TID, i HVER døgntid ─────────────────────────────
   // Et stillbilde kan ikke skille «snurrer» fra «står stille». Samme
   // tegnefunksjon på to tidspunkt må gi to ulike bilder; gjør den ikke det, er
   // detaljen bare pynt som betaler per bilde uten å gi noe tilbake.
+  //
+  // Kravet gjelder ALLE døgntidene og ikke bare dag, etter KVART_GULV-mønsteret
+  // fra steg C2: regninga per bilde løper i hver døgntid, så detaljen må gjøre
+  // seg fortjent til den i hver døgntid. Det er dette kravet som gjør at en
+  // detalj med en tabell PER DØGNTID (DUNAs `STRAALE_ALFA`) ikke kan få en
+  // umålt fjerde tid smuglet inn: en tid som ikke står i tabellen tegner
+  // ingenting som rører seg, og da er det den tiden som navngis i meldinga.
   out.push('');
-  out.push('2  Drevet av tid (samme tegnekall på to tidspunkt må gi ulikt bilde)');
+  out.push('2  Drevet av tid i hver døgntid (to tidspunkt må gi ulikt bilde)');
   medBevegelse.forEach(function(e){
-    const a = tegnLive(e.b, 0, false);
-    const c = tegnLive(e.b, 7.3, false);
-    const aOps = a.__ops.join('|'), cOps = c.__ops.join('|');
-    const ulik = (aOps !== cOps);
-    if(!ulik) fails.push('2: ' + e.name + ': tegningen er bit-identisk på t=0 og t=7,3 s — detaljen rører seg ikke');
-    // Antall tegnekall skal derimot være det SAMME: en detalj som tegner ulikt
-    // mye arbeid på ulike tidspunkt har en gren i seg, og da er kostnaden per
-    // bilde ikke lenger et tall man kan måle én gang.
-    if(a.__ops.length !== c.__ops.length)
-      fails.push('2: ' + e.name + ': ulikt antall tegnekall på t=0 (' + a.__ops.length + ') og t=7,3 (' + c.__ops.length + ')');
-    let flyttet = 0;
-    const n = Math.min(a.__pts.length, c.__pts.length);
-    for(let k = 0; k < n; k++){
-      const dx = a.__pts[k][0] - c.__pts[k][0], dy = a.__pts[k][1] - c.__pts[k][1];
-      if(Math.sqrt(dx*dx + dy*dy) > 0.5) flyttet++;
-    }
-    out.push('   ' + pad(e.name, 14) + a.__ops.length + ' tegnekall, ' + flyttet + ' av ' + n +
-      ' punkt flyttet seg mellom t=0 og t=7,3 s' + (ulik ? '' : '  ← STÅR STILLE'));
+    TOD.forEach(function(tod){
+      const a = tegnLive(e.b, 0, tod);
+      const c = tegnLive(e.b, 7.3, tod);
+      const ulik = (a.__ops.join('|') !== c.__ops.join('|'));
+      if(!ulik) fails.push('2: ' + e.name + ' ved ' + tod.name +
+        ': tegningen er bit-identisk på t=0 og t=7,3 s — detaljen rører seg ikke i denne døgntiden');
+      // Antall tegnekall skal derimot være det SAMME innenfor én døgntid: en
+      // detalj som tegner ulikt mye arbeid på ulike tidspunkt har en gren i
+      // seg, og da er kostnaden per bilde ikke lenger et tall man måler én
+      // gang. (På tvers av døgntider har den lov til å variere — nattgløden
+      // finnes bare om natta.)
+      if(a.__ops.length !== c.__ops.length)
+        fails.push('2: ' + e.name + ' ved ' + tod.name + ': ulikt antall tegnekall på t=0 (' +
+          a.__ops.length + ') og t=7,3 (' + c.__ops.length + ')');
+      let flyttet = 0;
+      const n = Math.min(a.__pts.length, c.__pts.length);
+      for(let k = 0; k < n; k++){
+        const dx = a.__pts[k][0] - c.__pts[k][0], dy = a.__pts[k][1] - c.__pts[k][1];
+        if(Math.sqrt(dx*dx + dy*dy) > 0.5) flyttet++;
+      }
+      // Ops kan skille seg på en ren alfaverdi uten at noe faktisk flytter seg,
+      // så det må MÅLES at et punkt beveger seg og ikke bare at strengen endret
+      // seg. Uten dette ville en detalj som bare blinker bestått som «snurrer».
+      if(ulik && flyttet === 0) fails.push('2: ' + e.name + ' ved ' + tod.name +
+        ': tegnekallene endrer seg, men ikke ETT punkt flyttet seg — detaljen blinker, den beveger seg ikke');
+      out.push('   ' + pad(e.name, 14) + pad(tod.name, 12) + padL(a.__ops.length, 4) + ' tegnekall · ' +
+        padL(flyttet, 3) + ' av ' + padL(n, 3) + ' punkt flyttet seg' +
+        (ulik && flyttet ? '' : '  ← STÅR STILLE'));
+    });
   });
 
   // ── 3: kuttet virker begge veier ──────────────────────────────────────────
@@ -305,13 +359,13 @@ function run(argv){
     // På skjermen: kameraet rett på ankeret.
     game.setCam(b.x, b.y, 0);
     const paa = makeRecorder();
-    game.drawBevegelse(paa, game.TRACKS[e.i], 2.0, true);
+    game.drawBevegelse(paa, game.TRACKS[e.i], 2.0, NATT);
 
     // Langt unna: ti tusen piksler er mer enn den største banen er bred, så
     // ankeret kan umulig være innenfor noen margin.
     game.setCam(b.x + 10000, b.y + 10000, 0);
     const av = makeRecorder();
-    game.drawBevegelse(av, game.TRACKS[e.i], 2.0, true);
+    game.drawBevegelse(av, game.TRACKS[e.i], 2.0, NATT);
 
     // HVOR går grensa? Testen regner ikke kameratransformen om igjen selv —
     // da kunne den hatt samme feil som koden, og `worldToScreen` roterer
@@ -326,7 +380,7 @@ function run(argv){
     function tegnesVed(d){
       game.setCam(b.x, b.y + d, 0);
       const r = makeRecorder();
-      game.drawBevegelse(r, game.TRACKS[e.i], 2.0, true);
+      game.drawBevegelse(r, game.TRACKS[e.i], 2.0, NATT);
       return r.__ops.length > 0;
     }
     if(!tegnesVed(inn) || tegnesVed(ut)){
@@ -366,21 +420,24 @@ function run(argv){
   // detaljen mens en del av den fortsatt er på skjermen, og den forsvinner
   // bitvis i kanten. Målt over en hel omdreining, ikke på ett tidspunkt.
   out.push('');
-  out.push('4  Rekkevidde mot faktisk utstrekning (målt over 24 tidspunkt, natt og dag)');
+  out.push('4  Rekkevidde mot faktisk utstrekning (24 tidspunkt x alle ' + TOD.length + ' døgntider)');
   medBevegelse.forEach(function(e){
     const b = e.b;
-    let verst = 0, verstT = 0;
+    let verst = 0, verstT = 0, verstTid = '';
     for(let k = 0; k < 24; k++){
       const t = k * 1.37;
-      [true,false].forEach(function(natt){
-        const g = tegnLive(b, t, natt);
+      // ALLE døgntidene, ikke bare natt/dag: en detalj kan tegne noe i én tid
+      // som den ikke tegner i de andre (DUNAs stråle har sin egen alfa per
+      // døgntid), og da er utstrekningen et tall per tid og ikke ett tall.
+      TOD.forEach(function(tod){
+        const g = tegnLive(b, t, tod);
         const d = maxAvstand(g.__pts, b.x, b.y);
-        if(d > verst){ verst = d; verstT = t; }
+        if(d > verst){ verst = d; verstT = t; verstTid = tod.name; }
       });
     }
     if(verst > b.rekkevidde)
       fails.push('4: ' + e.name + ': tegner ut til ' + verst.toFixed(1) + ' px fra ankeret (t=' + verstT.toFixed(1) +
-        ' s), men rekkevidden er bare ' + b.rekkevidde + ' px');
+        ' s, ' + verstTid + '), men rekkevidden er bare ' + b.rekkevidde + ' px');
     out.push('   ' + pad(e.name, 14) + 'tegner ut til ' + padL(verst.toFixed(1), 6) + ' px · rekkevidde ' +
       padL(b.rekkevidde, 4) + ' px · margin ' + padL((b.rekkevidde - verst).toFixed(1), 6) + ' px');
   });
@@ -410,9 +467,24 @@ function run(argv){
       return;
     }
     gjaldt++;
-    const g = tegnLive(b, 3.0, true);
+    // Bare de FASTE punktene får være kandidater, og det er en målt
+    // innstramming og ikke en formalitet. Med alle punktene med kunne et
+    // sveipende punkt tilfeldigvis gli innenfor 1 px av et lys det ikke har
+    // noe med å gjøre — steg D2 målte nettopp det: 6 px forskyvning av rammen
+    // ga bare 2,50 px utslag, fordi eikene feier over et område og et annet
+    // punkt rykket inn i stedet. For noe som roterer ER dreiepunktet det
+    // rotasjonsinvariante punktet, og det er dreiepunktet bakingen la lyset
+    // på. Da måler sjekken forskyvningen av RAMMEN og ikke bredden på sveipet.
+    const fp = fastePunkt(b, 3.0, 4.9, NATT);
+    if(!fp.faste.length){
+      fails.push('5: ' + e.name + ': ingen av de ' + fp.alle.length +
+        ' levende punktene står stille mellom to tidspunkt — da finnes det ikke noe ' +
+        'dreiepunkt å måle rammen med');
+      out.push('   ' + pad(e.name, 14) + nære.length + ' lys innenfor rekkevidden · INGEN FASTE PUNKT');
+      return;
+    }
     let best = Infinity, bestLys = null;
-    g.__pts.forEach(function(p){
+    fp.faste.forEach(function(p){
       nære.forEach(function(l){
         const dx = p[0] - l.x, dy = p[1] - l.y;
         const d = Math.sqrt(dx*dx + dy*dy);
@@ -421,11 +493,12 @@ function run(argv){
     });
     const GRENSE = 1.0;
     if(!(best <= GRENSE))
-      fails.push('5: ' + e.name + ': nærmeste levende punkt ligger ' + best.toFixed(2) +
+      fails.push('5: ' + e.name + ': nærmeste FASTE levende punkt ligger ' + best.toFixed(2) +
         ' px fra nærmeste nattlys på samme landemerke (grensa er ' + GRENSE +
         ' px) — den levende delen og den bakte delen står i hver sin ramme');
-    out.push('   ' + pad(e.name, 14) + nære.length + ' lys innenfor rekkevidden · nærmeste treff ' +
-      best.toFixed(2) + ' px' + (best <= GRENSE ? '' : '  ← RAMMENE GLIR FRA HVERANDRE'));
+    out.push('   ' + pad(e.name, 14) + nære.length + ' lys innenfor rekkevidden · ' +
+      padL(fp.faste.length, 3) + ' av ' + padL(fp.alle.length, 3) + ' punkt står stille · ' +
+      'nærmeste treff ' + best.toFixed(2) + ' px' + (best <= GRENSE ? '' : '  ← RAMMENE GLIR FRA HVERANDRE'));
   });
   out.push('   sjekken gjaldt ' + gjaldt + ' av ' + medBevegelse.length + ' bane(r) med bevegelig detalj');
 
@@ -446,6 +519,32 @@ function run(argv){
     out.push('   ' + pad(e.name, 14) + 'bg (' + padL(bx.toFixed(0), 5) + ',' + padL(by.toFixed(0), 5) + ') i ' +
       t.bgW + '×' + t.bgH + ' · nærmeste kant ' +
       padL(Math.min(bx, by, t.bgW - bx, t.bgH - by).toFixed(0), 5) + ' px');
+  });
+
+  // ── 7: begge sider av banen er dekket ────────────────────────────────────
+  // Hullet steg D2 etterlot, skrevet som et krav. Vendingen i `scene.beveg`
+  // (`p.side>0 ? Math.PI : 0`) er en NO-OP på side −1, så en test som bare ser
+  // baner på den sida kan ikke si om leddet finnes i det hele tatt: i D2 var
+  // VISTANOTTE alene, og mutasjonen «slett vendingen» besto testen mens
+  // mutasjonen «snu vendingen» ble fanget. Forskjellen er ren dekning, ikke
+  // noe sjekk 5 mangler. Derfor kreves nå minst én detalj på HVER side, og
+  // `side` ligger på objektet som rent tall for at kravet skal kunne måles i
+  // stedet for å leses ut av koden på nytt.
+  out.push('');
+  out.push('7  Dekning: en bevegelig detalj på hver side av banen');
+  const sider = {};
+  medBevegelse.forEach(function(e){
+    const sd = e.b.side;
+    if(sd !== 1 && sd !== -1) fails.push('7: ' + e.name + ': TR.bevegelse.side er ' + sd + ' (må være 1 eller −1)');
+    sider[sd] = (sider[sd] || []).concat([e.name]);
+    out.push('   ' + pad(e.name, 14) + 'side ' + padL(sd, 2));
+  });
+  [-1, 1].forEach(function(sd){
+    const har = sider[sd] || [];
+    if(!har.length)
+      fails.push('7: ingen bane har en bevegelig detalj på side ' + sd +
+        ' — da er halvomdreiningen for side>0 utestet, og det var nøyaktig hullet i steg D2');
+    out.push('   side ' + padL(sd, 2) + ': ' + (har.length ? har.join(', ') : '– INGEN, VENDINGEN ER UTESTET'));
   });
 
   // ── resultat ──────────────────────────────────────────────────────────────

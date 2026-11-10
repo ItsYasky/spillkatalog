@@ -3,7 +3,9 @@
 # Chrome-harness for RUNDE 4 i vintage_f1.html.
 #
 #   python3 chrome_harness.py maal  [--html fil] [--out fil.txt]
-#   python3 chrome_harness.py fps   [--html fil] [--out fil.txt]
+#   python3 chrome_harness.py fps   [--html fil] [--out fil.txt] [--bane NAVN]
+#                                         [--t 0.08] [--tod 0,2] [--runder 3]
+#                                         [--uten-beveg]
 #   python3 chrome_harness.py shot  BANE  [--tod 0] [--modus spill|bg] [--ut fil.png]
 #                                         [--t 0.42] [--tid 0]
 # MERK at BANE er et POSISJONSargument. Skrives det `shot --bane LABIRINTO`,
@@ -135,38 +137,122 @@ MAAL_JS = r"""
 # er meningsløs der. Tiden ett bilde KOSTER er derimot ekte, og det er den som
 # avgjør om 60 Hz holder. Rapporterer snitt og 95-persentil i ms, pluss hvor
 # mange bilder per sekund det tilsvarer.
-FPS_JS = r"""
+#
+# TO TALL PER RAD, og de måler ulike ting:
+#   snitt_ms   — snittet av 300 enkeltmålinger. `performance.now()` er klemt til
+#                0,1 ms i Chrome, så én enkeltmåling har 0,1 ms oppløsning og
+#                snittet arver kvantiseringsstøyen. Greit til å se at en bane
+#                ligger på 1,8 og ikke 18 ms.
+#   blokk_ms   — HELE stykket på 300 bilder tidtatt som ÉN måling, delt på 300.
+#                Da er 0,1 ms-klemmen fordelt på 300 bilder, altså 0,0003 ms per
+#                bilde, og det er den eneste av de to som kan avgjøre et budsjett
+#                på 0,3 ms. Samme metode som restkostnaden i steg B5 ble målt
+#                med. `--runder N` gjentar stykket og rapporterer det BESTE
+#                (laveste) — ikke snittet, for en treg runde er GC eller en
+#                annen prosess på maskinen, og det er ikke tegnekostnad.
+FPS_JS_MAL = r"""
 (function(){
   var pre=document.createElement('pre'); pre.id='gpout'; document.body.appendChild(pre);
   var linjer=[];
-  var TODS=[0,2]; // DAG og NATT
+  var BANE=%s, OVR=%s, RUNDER=%d, UTEN=%s, TODS=%s;
   for(var i=0;i<TRACKS.length;i++){
+    if(BANE!=null && TRACKS[i].name!==BANE) continue;
     for(var ti=0;ti<TODS.length;ti++){
-      trackSel=i; todIdx=TODS[ti]; lapsIdx=4; LAPS=20;
+      trackSel=i; lapsIdx=4; LAPS=20;
       difficulty=2;
       startRace();
+      // MÅ settes ETTER startRace(), ikke før: startRace() kaller
+      // resolveTodIdx(TR), som leser SETTINGS.tid (standard AUTO = banens egen
+      // naturligTid) og overskriver alt som er satt på forhånd. Sto denne
+      // linja før kallet, målte HVER rad banens egen tid — altså var «DAG» og
+      // «NATT» for samme bane to målinger av nøyaktig samme bilde. Det er den
+      // SAMME fella som ble rettet i `shot` i steg D1, og `fps` hadde den
+      // fortsatt.
+      todIdx=TODS[ti];
       state='playing';
+      // --t: kameraet SETTES på kjørelinja ved rundeposisjon t, samme grep som
+      // `shot --t`. Uten den måles alltid startstreken, og en bevegelig detalj
+      // er KUTTET BORT der (det er nettopp poenget med kuttet) — bildetiden i
+      // steg D2 var derfor prisen for et objekt som ikke ble tegnet.
+      var PX=0,PY=0,PA=0;
+      if(OVR!=null){
+        var pi=Math.round(OVR*TR.PATH.length)%%TR.PATH.length;
+        var rl=TR.raceLine[pi];
+        PX=rl[0]; PY=rl[1]; PA=TR.heading[pi];
+      }
+      // Kameraet FESTES på nytt hvert bilde, og det er ikke pynt. update()
+      // lerper kameraet mot spillerbilen, og en bil som står parkert midt på
+      // banen blir påkjørt av feltet bakfra — da glir kameraposen under
+      // målingen, og «med detalj» og «uten detalj» måler to ulike bilder.
+      // Spillerbilen står stille uansett (update() leser keys['ArrowUp'], og
+      // ingen taster trykkes), så festet endrer ingenting annet enn at posen
+      // er beviselig den samme i alle 300 bildene i begge kjøringene.
+      var fest=function(){
+        if(OVR==null) return;
+        player.x=PX; player.y=PY; player.angle=PA;
+        camX=PX; camY=PY; camAngle=PA;
+      };
+      fest();
+      // Detaljen slås av ved å nulle DATAEN, ikke ved å endre kode: det er
+      // nøyaktig den tilstanden de tolv banene uten bevegelig detalj står i, så
+      // differansen mellom de to kjøringene er detaljen og ingenting annet.
+      var b=TR.bevegelse;
+      if(UTEN) TR.bevegelse=null;
+      // Teljaren står bare på under oppvarmingen og tas av før tidtakingen, så
+      // den ikke måles med. Den svarer på det ene spørsmålet tallene ellers
+      // ikke kan: ble detaljen faktisk TEGNET, eller målte vi kuttet igjen?
+      var tegnKall=0;
+      if(TR.bevegelse){
+        var ekte=TR.bevegelse.tegn;
+        TR.bevegelse.tegn=function(){ tegnKall++; return ekte.apply(this,arguments); };
+      }
       // 90 bilder oppvarming: bilene står tett på grid de første stegene, og
       // slipstream/overtake-logikken er ikke i gang ennå — det er ikke et
       // representativt bilde av et løp.
-      for(var w=0;w<90;w++){ update(); draw(); }
-      var ms=[];
-      for(var f=0;f<300;f++){
-        var t0=performance.now();
-        update(); draw();
-        ms.push(performance.now()-t0);
+      for(var w=0;w<90;w++){ update(); fest(); draw(); }
+      if(TR.bevegelse) TR.bevegelse.tegn=ekte;
+      var sp = b ? worldToScreen(b.x,b.y) : null;
+      var ms=[], beste=Infinity, verst=0;
+      for(var r=0;r<RUNDER;r++){
+        ms=[];
+        var b0=performance.now();
+        for(var f=0;f<300;f++){
+          var t0=performance.now();
+          update(); fest(); draw();
+          ms.push(performance.now()-t0);
+        }
+        var blokk=(performance.now()-b0)/300;
+        if(blokk<beste) beste=blokk;
+        if(blokk>verst) verst=blokk;
       }
+      // DATAEN legges tilbake før neste runde. `ensureTrackBg` returnerer tidlig
+      // når TR.bg alt finnes, så et nullet TR.bevegelse blir IKKE bygget på nytt
+      // av neste startRace() — uten dette målte andre døgntid (og alle banene
+      // etter den første) uten detalj selv om den skulle vært på, og rapporterte
+      // skjermpos som «–» fordi dataen var borte.
+      TR.bevegelse=b;
       var sum=0; for(var k=0;k<ms.length;k++) sum+=ms[k];
       var snitt=sum/ms.length;
-      ms.sort(function(a,b){return a-b;});
+      ms.sort(function(a,b2){return a-b2;});
       var p95=ms[Math.floor(ms.length*0.95)];
       linjer.push(TRACKS[i].name+'\t'+TOD[TODS[ti]].name+'\t'+snitt.toFixed(2)+'\t'+p95.toFixed(2)
-        +'\t'+(1000/snitt).toFixed(0));
+        +'\t'+(1000/snitt).toFixed(0)+'\t'+beste.toFixed(4)+'\t'+(verst-beste).toFixed(4)
+        +'\t'+(UTEN?'av':(b?tegnKall:'–'))
+        +'\t'+(sp?('('+sp[0].toFixed(0)+','+sp[1].toFixed(0)+')'):'–'));
     }
   }
   pre.textContent=linjer.join('\n');
 })();
 """
+
+
+def fps_js(bane=None, t_overstyr=None, runder=1, uten_beveg=False, tods=(0, 2)):
+    return FPS_JS_MAL % (
+        "null" if bane is None else json.dumps(bane),
+        "null" if t_overstyr is None else repr(float(t_overstyr)),
+        int(runder),
+        "true" if uten_beveg else "false",
+        json.dumps(list(tods)))
 
 
 def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None, tid=0.0):
@@ -300,15 +386,22 @@ def main():
             open(flagg("out"), "w", encoding="utf-8").write(ut + "\n")
 
     elif cmd == "fps":
-        txt = dump(html, FPS_JS, budget=600000)
+        t_ovr = flagg("t")
+        runder = int(flagg("runder", "1"))
+        tods = [int(x) for x in flagg("tod", "0,2").split(",")]
+        js = fps_js(flagg("bane"), t_ovr, runder, "--uten-beveg" in args, tods)
+        txt = dump(html, js, budget=600000)
         rader = [r.split("\t") for r in txt.strip().split("\n") if r.strip()]
-        linjer = ["BANE\tTID\tsnitt_ms\tp95_ms\tbilder/s"]
+        linjer = ["BANE\tTID\tsnitt_ms\tp95_ms\tbilder/s\tblokk_ms\tspredning\ttegnekall\tskjermpos"]
         for r in rader:
             linjer.append("\t".join(r))
-        tregeste = sorted(rader, key=lambda r: -float(r[2]))[:3]
+        tregeste = sorted(rader, key=lambda r: -float(r[5]))[:3]
         linjer.append("")
-        linjer.append("tre tregeste: " + ", ".join(
-            "%s/%s %s ms" % (r[0], r[1], r[2]) for r in tregeste))
+        linjer.append("rundepos: " + ("startstreken" if t_ovr is None else "t=" + t_ovr) +
+                      "   runder: %d   detalj: %s" % (
+                          runder, "AV" if "--uten-beveg" in args else "på"))
+        linjer.append("tre tregeste (blokk_ms): " + ", ".join(
+            "%s/%s %s ms" % (r[0], r[1], r[5]) for r in tregeste))
         ut = "\n".join(linjer)
         print(ut)
         if flagg("out"):
