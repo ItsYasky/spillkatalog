@@ -177,6 +177,7 @@ straightZones) mot `geo_laas.json`. Kjør den etter hvert steg:
 | C | ferdig | `7626746` | Bykvartaler (`scene.rutenett` + `dBuildingGrid`) og landemerker for LABIRINTO (katedral), SERPENTINA (havn med moloen) og VISTANOTTE (pariserhjul) | `test_banetema.js` (183/183), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + skjermbilder |
 | D1 | ferdig | `55c6e06` | Nattlys i bykvartalene: ett tent vindu per utvalgt kvartal — LABIRINTO 44 lys, SERPENTINA 44, VISTANOTTE 72 (mot 1/1/5 før) | `test_banetema.js` (186/186), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + nattbilder |
 | C2 | ferdig | `f3fc5d3` | Bypalettene målt UNDER døgnoverlegget i alle tre tider: mørke tak og lysere fasader på LABIRINTO, SERPENTINA og VISTANOTTE, nattoverlegget senket 0,58 → 0,50, og et MÅLT nattgulv på 2,5:1 i stedet for 3:1. Tak/fasade om natta 1,78–2,06 → 2,52–2,53:1 | `test_banetema.js` (198/198, sjekk 19–20 bygget om), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + før/etter-bilder |
+| C3 | ferdig | — | Dominobrikkene, FORM-halvdelen: kvartalene tegnes nå som hus sett ovenfra. Taket er den store flaten (0 % → 73–78 % av husets fotavtrykk), fasaden er krympet til et bånd på 6–11 px mot gata, det jevne 5 × 7-vindusrutenettet er erstattet av én uregelmessig rekke i båndet (ingen vinduer på taksiden), og all ny tilfeldighet går gjennom et eget `krnd`-frø | `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `test_bevegelse.js` (PASS), `chrome_harness.py maal` + rnd-fingeravtrykk + før/etter-bilder |
 | D2 | ferdig | `349bb94` | Stillaset for bevegelige detaljer: `scene.beveg` (registreres av LANDEMERKET, maks én per bane, telt i `TR.bevegelseN`) + `drawBevegelse` (kutt mot skjermen, tid som argument). Første detalj er VISTANOTTEs pariserhjul — eiker, kabiner og kabinglød snurrer live, ring/nav/bein er fortsatt bakt | `test_bevegelse.js` (ny, 6 sjekker, 8 mutasjoner), `test_banetema.js` (198/198), `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` + `fps` + `shot --tid` |
 
 **Steg D er delt i tre fordi den er to ulike jobber:** D1 nattlysene i byene
@@ -703,8 +704,8 @@ kvartalene fortsatt leser som brikker ved DAG, og `dBuildingGrid` forklarer
 hvorfor: takbåndet er 4 px mot en fasade på 20–50 px, og vinduene er et helt
 jevnt 5 × 7-rutenett over hele flaten. En lys flate med regelmessige prikker og
 en hårstrek tak ER en dominobrikke uansett hvilke toner den males i. Punktet
-står derfor igjen i `SENERE.md`, omskrevet til å peke på takareal og variasjon
-i vindusrutenettet.
+sto derfor igjen i `SENERE.md`, omskrevet til å peke på takareal og variasjon
+i vindusrutenettet — og det er nettopp den halvdelen **steg C3** gjorde.
 
 **`cityPal`-punktet viste seg å være tre ulike saker, og ingen av dem er denne.**
 Kvartalene fikk sine egne målte toner i steg C; `cityPal` leses bare av de
@@ -829,6 +830,107 @@ kuttet bort der. Det flate tallet beviser derfor at stillaset koster null når
 detaljen er utenfor skjermen — det sier ingenting om hva den koster når den er
 inne. Den målingen krever `--t` i `fps` og står i `SENERE.md`. Det eneste tallet
 som finnes for synlig tilstand er 114 tegnekall per bilde.
+
+**Avvik verdt å vite i steg C3 (formen på kvartalene):**
+
+Steg C2 løste FARGEN på dominobrikkene og slo fast at formen sto igjen. Dette
+steget er formen, og den ene målingen som styrer alt annet er denne:
+
+1. **«Taket må ta mer av flaten» kan IKKE bety å male flaten i `pal.tak`.**
+   Teglfargen måler **1,07–1,76:1** mot bakketonene — alle tre byer, alle tre
+   døgntider — så et kvartal malt i taktonen forsvinner rett ned i bakken.
+   Taktonen er en LINJEfarge: den er målt mot FASADEN (`lagMot.tak`) nettopp
+   fordi den er mørk, og det var hele poenget i steg C («taket måles mot en lys
+   vegg, og da er det den MØRKE tonen som bærer kontrasten»). Løsningen er
+   derfor å bytte om på BETYDNINGEN av flatene og ikke på tonene: den store
+   lyse flaten ER taket (et soltreft tak ovenfra er det lyseste på et hus), og
+   `pal.tak` tegner takskjegget og gavlkanten. Bærekravet i sjekk 19 ligger på
+   nøyaktig de samme tonene som før. **Ingen palettverdi er rørt i dette
+   steget.**
+2. **Hvilken lys tone som blir den STORE flaten er en måling, ikke et valg.**
+   Målt hver for seg mot den verste bakketonen under overlegget:
+
+   | by | husA DAG/SOLNED/NATT | husB | husC |
+   |---|---|---|---|
+   | LABIRINTO | 3,38 / 2,71 / **1,98** | 3,87 / 3,03 / **2,18** | 4,74 / 3,63 / **2,53** |
+   | SERPENTINA | 4,23 / 3,19 / 2,11 | 5,54 / 4,03 / 2,52 | 7,03 / 4,96 / 2,99 |
+   | VISTANOTTE | 4,67 / 3,41 / 2,20 | 5,68 / 4,05 / 2,49 | 7,24 / 5,01 / 2,96 |
+
+   Bare **husC** holder nattgulvet på 2,5:1 på alle tre byene. Det SOLVENDTE
+   takfallet er derfor alltid husC, og det er bare SKYGGEfallet som varierer
+   (husC 2/3, husB 1/3). Da husB var én fasadetone blant tre var 2,18 greit —
+   sjekk 19b krever bare at ÉN flate bærer bakkekontrasten — men når taket blir
+   den dominerende flaten kan ikke en tredjedel av husene ha den svakeste tonen
+   som sin eneste. **En flate som vokser må måles på nytt**, selv om tonen er
+   den samme og testen var grønn før og etter.
+3. **Fasadebåndet er husA, og det gjør sjekk 20 EKSAKT.** Før sto vinduene i en
+   tilfeldig av de tre fasadetonene, mens `lagMot.vindu` peker på husA — altså
+   var målingen bare verste-fall-riktig. Nå står hvert vindu bokstavelig talt i
+   den tonen det måles mot. At husA (den svakeste) samtidig slutter å være en
+   bærende flate er den samme endringen sett fra den andre siden.
+4. **MØNET SOM STREK VAR FEIL, og det ble funnet på et 8x-utsnitt.** Første
+   utgave tegnet møne + takskjegg + gavlkant på BEGGE sider i `pal.tak`. Det
+   ga fire mørke streker rundt og tvers over hver lille flate, og kvartalet
+   leste som FLISER I EN MØRK FUGE — en annen feil enn dominobrikken, men like
+   mye et mønster og like lite et hus. To rettelser: mønet er ikke lenger en
+   strek, men SKILLET mellom de to takfallene (det hvite 7 %-overlegget flyttet
+   fra en loddrett strimmel til det solvendte fallet, og hevet til 12 % fordi
+   det nå har en jobb å gjøre), og gavlkanten tegnes bare på ÉN side, siden
+   nabohusene deler skillet og to streker kant i kant over et 12 %-smug er
+   nettopp den doble fugen. **Dette er synlig først ved 8x** — et nedskalert
+   520 px-bilde viste det ikke, og 3x viste det bare som «litt mørkt».
+   Samme familie som de tre størrelsesfeilene i steg B2/C: funnet på skjerm,
+   rettet ved å fjerne noe, ikke ved å bytte farge.
+5. **B5-regelen er holdt med et eget frø, og den er VERIFISERT og ikke antatt.**
+   `rnd` beholder nøyaktig de samme tre kallstedene i samme rekkefølge som steg
+   C — husdybden, tonevalget, og ett kall per rute i det ORIGINALE
+   `rader × kol`-rutenettet. Rutenettet tegnes ikke lenger, men kallene gjøres
+   og BRUKES: de samme verdiene under samme 0,4-terskel bestemmer nå hvilke
+   vinduer i fasadebåndet som er hull. All ny tilfeldighet (båndhøyde,
+   mønehøyde, vindusdeling, marg, blindt hus) tas fra `krnd =
+   mulberry32(seedFromName(cfg.name+'|kvartal'))`, som er deklarert ØVERST i
+   `buildTrackBg` ved siden av `LYS_PER_RUTENETT` — en `const` lenger nede
+   ligger i den temporale dødsonen når `groundLayer` kalles (steg D1 punkt 1).
+   Målt med et fingeravtrykk som pakker inn hvert `mulberry32`-kall og bokfører
+   kalltall + FNV-sjekksum per FRØ: alle eksisterende strømmer er
+   BIT-IDENTISKE på alle 13 banene, og diffen er en ren innsetting av den nye
+   strømmen (0 kall på de ti banene uten by, 3180/3980/6680 på de tre byene =
+   nøyaktig 5 trekk × 636/796/1336 hus).
+6. **Det tente vinduet flyttet seg, og det SKULLE det.** Det satt før i øverste
+   etasje av fasaden (lokal `-h+4`); nå sitter det i fasadebåndet mot gata.
+   Gløden følger med gjennom `scene.lokal(r,lx,ly)` — omregningen lokal→bg går
+   nå gjennom spillets ENE sted for den i stedet for å være skrevet ut på nytt
+   inne i tegnefunksjonen, slik B4 slo fast at den skal. Det er mulig fordi
+   tegneren alltid kalles som `s.kvartal(...)`, så `this` ER scene-objektet, og
+   ruta fra `scene.rutenett` har alt både `ang` og `side`. Antall nattlys er
+   uendret **44 / 44 / 68** — vakten `rader>0` er byttet mot `vh>0`, og begge
+   er alltid sanne, så utvalget er det samme kvartal for kvartal.
+
+**Takarealet er målt, ikke anslått.** Flatene males i sentinelfarger i en
+MIDLERTIDIG kopi (med `rnd()`-kallene beholdt i erstatningene, ellers tegner
+kopien en annen by), fordi den gamle eksakt-RGB-tellingen ikke lenger virker:
+det hvite overlegget på det solvendte fallet endrer pikselverdien, så et
+eksakt treff på husB/husC teller bare halve taket.
+
+| by | takflate før | takflate etter | fasade etter | takandel |
+|---|---|---|---|---|
+| LABIRINTO | 0 px | 119 138 px | 44 046 px | **73,0 %** |
+| SERPENTINA | 0 px | 189 996 px | 63 802 px | **74,9 %** |
+| VISTANOTTE | 0 px | 286 547 px | 81 191 px | **77,9 %** |
+
+Før var takandelen null: hele fotavtrykket var fasade, med bare et 4 px
+takbånd lagt OVER huset. Tallene er flatenes INDRE (kantpikslene er
+antialiasert og teller ikke), og siden et 6–11 px bånd taper forholdsmessig
+mer til omkretsen enn en stor flate, er den virkelige takandelen litt HØYERE
+enn tabellen viser. Vindusarealet falt fra 7887/11220/12254 px til omtrent en
+åttendedel — det er det jevne rutenettet som er borte.
+
+**Kostnad, målt i steg C3:** byggetid sum 178,7 ms (steg D2: 180,3), bybanene
+13,6 / 14,4 / 19,6 ms mot et budsjett på 100 — færre og større fyll koster
+ingenting. ARDENNE målte 43,1 ms i én kjøring og 16,0/16,6/18,8 i alle andre;
+banen rører ikke `dBuildingGrid` i det hele tatt, så det er samme GC-støy som
+er målt på VISTANOTTE (steg A) og TEMPIO (steg B5). Ett høyt tall skal måles
+på nytt før det tolkes.
 
 **Git-identitet:** `user.name`/`user.email` var ikke satt noe sted, så git
 utledet dem fra macOS-kontoen. Satt med `--local` i dette repoet til

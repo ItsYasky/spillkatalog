@@ -648,6 +648,14 @@ function buildTrackBg(TR){
   // `pad` i steg B2 — og igjen var alle JSC-testene grønne, fordi de aldri
   // kaller groundLayer. Begrunnelsen for tallet står ved dBuildingGrid.
   const LYS_PER_RUTENETT=40;
+  // EGET FRØ til husformene i kvartalene, av nøyaktig samme grunn som
+  // bakkeflisa fikk sitt i steg B5: alt som tegnes ETTER kvartalene (trær,
+  // busker, steiner, grus, graffiti) leser videre på `rnd`, så ett kall til
+  // eller fra der inne flytter hele resten av banen. Takvinkel, fasadehøyde og
+  // vindusdeling er NY tilfeldighet i steg C3, og den kan derfor ikke tas fra
+  // `rnd`. Den tas herfra i stedet, og `rnd`-sekvensen i dBuildingGrid står
+  // uendret kall for kall — verifisert med sjekksum over hele strømmen.
+  const krnd=mulberry32(seedFromName(cfg.name+'|kvartal'));
   function iSperre(x,y){
     for(let i=0;i<sperrer.length;i++){
       const s=sperrer[i], dx=x-s.x, dy=y-s.y;
@@ -1468,8 +1476,46 @@ function buildTrackBg(TR){
   // tegnes ETTER groundLayer, så en by som spiste hele taket ville gjort
   // klokketårnet og pariserhjulet mørke — addLight slipper stille det som
   // kommer over. Med 60 står det 85+ igjen til landemerket.
+  //
+  // STEG C3 — HVORFOR DEN STORE LYSE FLATEN ER TAKET OG IKKE FASADEN.
+  // Et hus sett ovenfra er mest tak; fasaden er bare en kant mot gata. Men
+  // `pal.tak` kan IKKE males over den flaten, og det er en MÅLING og ikke en
+  // smakssak: teglfargen holder 1,07–1,76:1 mot bakketonene — alle tre byer,
+  // alle tre døgntider — så et kvartal malt i taktonen forsvinner rett ned i
+  // bakken. Taktonen er en LINJEfarge: den er målt mot FASADEN (`lagMot.tak`),
+  // ikke mot bakken, nettopp fordi den er mørk.
+  //
+  // Derfor bytter dette steget om på BETYDNINGEN av flatene og ikke på tonene.
+  // Den store lyse flaten ER taket (et soltreft tak ovenfra er det lyseste på
+  // et hus), og `pal.tak` tegner mønet, takskjegget og gavlkantene — altså
+  // nettopp det som gjør en flate til et tak. Bærekravet mot bakken i sjekk 19
+  // ligger dermed på de samme tonene som før, mens husA — den svakeste av de
+  // tre lyse (verst 1,98:1 om natta) — er krympet til et bånd på 6–11 px og er
+  // ikke lenger en bærende flate.
+  //
+  // Fasadebåndet er husA og ikke en tilfeldig av de tre, fordi sjekk 20 måler
+  // vinduet mot husA (`lagMot.vindu`). Før sto vinduene i en TILFELDIG av de
+  // tre tonene, så målingen var bare verste-fall-riktig; nå står hvert vindu
+  // bokstavelig talt i den tonen det måles mot.
+  //
+  // RND-REGELEN FRA STEG B5 holdes slik: `rnd` beholder nøyaktig de samme tre
+  // kallstedene i samme rekkefølge som i steg C — husdybden, taktonen, og ETT
+  // kall per rute i det ORIGINALE `rader × kol`-rutenettet. Rutenettet tegnes
+  // ikke lenger, men kallene gjøres og brukes: de samme verdiene under samme
+  // 0,4-terskel bestemmer nå hvilke vinduer i fasadebåndet som er HULL. All ny
+  // tilfeldighet (båndhøyde, mønehøyde, vindusdeling, blindt hus) tas fra
+  // `krnd`, som har sitt eget frø. Alt som tegnes etter kvartalene leser derfor
+  // de samme tallene som før — verifisert med kalltelling og sjekksum per
+  // strøm, per bane.
   function dBuildingGrid(ruter,pal){
-    const fasader=[pal.husA,pal.husB,pal.husC];
+    // Det SOLVENDTE takfallet er alltid husC, og det er en måling: husC er den
+    // eneste av de tre lyse tonene som holder nattgulvet på 2,5:1 mot den
+    // verste bakketonen på alle tre byene (2,53 / 2,99 / 2,96), mens husB faller
+    // til 2,18 på LABIRINTO. Da husB var én fasadetone blant tre var det greit —
+    // sjekk 19b krever bare at ÉN flate bærer bakkekontrasten — men nå er taket
+    // den store flaten, og da kan ikke en tredjedel av husene ha den svakeste
+    // tonen som sin eneste. Det er derfor bare SKYGGEfallet som varierer.
+    const skyggeFall=[pal.husC,pal.husB,pal.husC];
     kvartalN+=ruter.length;
     // `glod` er LABIRINTOs varme tone — der er selve vindusflaten mørk med
     // vilje (middelhavsby ved dag), så det tente vinduet må ha en egen tone. På
@@ -1501,54 +1547,85 @@ function buildTrackBg(TR){
       // Midt i, ikke i enden: et lys i ytterste hus leser som en lykt i gata.
       const lysHus=(ri%steg===0)?Math.floor(n/2):-1;
       for(let k=0;k<n;k++){
-        // Husene i ETT kvartal har ulik høyde, men står i samme husrekke med
-        // felles vegger. Det er takhøydene som gir en bygate silhuett; gjør man
-        // dem like, leser raden som en mur.
+        // Husene i ETT kvartal har ulik DYBDE innover kvartalet, men står i
+        // samme husrekke med felles vegger. Ovenfra er det dybden som gir
+        // rekka takter; gjør man dem like, leser raden som ett langt skur.
         const h=r.h*(0.46+rnd()*0.54);
         const x0=-r.w/2+k*w, bredde=w*0.88;       // 12 % luft = smug mellom husene
-        bx.fillStyle=fasader[Math.floor(rnd()*3)];
-        bx.fillRect(x0,-h,bredde,h);
-        // Lyssiden: samme faste, lave opasitet som dBuilding bruker. Ikke en
-        // målt tone — den ligger oppå fasaden og bærer ingen informasjon alene.
-        bx.fillStyle='rgba(255,255,255,.07)'; bx.fillRect(x0,-h,bredde*0.3,h);
-        // Takbåndet er teglfargen, og den måles mot FASADEN og ikke mot bakken
-        // (lagMot): et tak ligger på en vegg. Se den målte fella i CLAUDE.md —
-        // en LYSERE tegl stryker, fordi referansen er en lys vegg.
-        bx.fillStyle=pal.tak; bx.fillRect(x0-1,-h-3,bredde+2,4);
-        // Vinduene har FAST størrelse og fast avstand (2,4 × 3,2 px i et 5 × 7
-        // px rutenett), nøyaktig som dBuilding — ikke en andel av husbredden.
-        // Første utgave skalerte dem med huset (`bredde*0.16`), og på et bredt
-        // hus ble hvert vindu 4–5 px bredt med bare to kolonner: husene leste
-        // som terninger med øyne, ikke som fasader. Et vindu er like stort i
-        // en smal bygård som i en bred, og det er TETTHETEN som sier «by».
-        // FORSØKT OG FORKASTET: å tenne ~12 % av vinduene i bakingen. Det gjorde
-        // nattbildet rikere, men dagbildet feil — og det er ikke en smakssak,
-        // det følger av målingen. Et tent vindu må være LYSERE enn veggen for å
-        // lese som tent, og en åpning ved dag må være MØRKERE enn veggen for å
-        // lese som åpning (steg C: 4,67:1 mot fasaden). Samme bakte flate kan
-        // ikke være begge, og bakgrunnen er felles for alle tre døgntidene.
-        // Derfor blir det med ÉTT tent vindu per utvalgt kvartal, og resten av
-        // nattbyen kommer fra gløden — som nettopp IKKE er en flate.
-        bx.fillStyle=pal.vindu;
+        const skygge=skyggeFall[Math.floor(rnd()*3)];
+        // Fasadebåndet mot gata: 6–11 px mot en husdybde på 19–50, altså
+        // 78–88 % tak. Klemt mot `h*0.42` så et grunt hus ikke blir bare bånd.
+        const fh=Math.min(6+krnd()*5, h*0.42);
+        const H=h-fh;
+        // Mønet ligger ulikt per hus — det er det som hindrer at nabohus med
+        // samme taktone leser som én sammenhengende flate.
+        const mg=0.34+krnd()*0.32;
+        bx.fillStyle=pal.husC;  bx.fillRect(x0,-h,bredde,H*mg);        // solvendt fall
+        bx.fillStyle=skygge;    bx.fillRect(x0,-h+H*mg,bredde,H*(1-mg)); // skyggefall
+        bx.fillStyle=pal.husA;  bx.fillRect(x0,-fh,bredde,fh);         // fasadebåndet
+        // MØNET ER IKKE EN STREK. Første utgave tegnet det som en linje i
+        // pal.tak, og 8x-utsnittet avslørte hva det ga: møne + takskjegg +
+        // gavlkant på hver side er fire mørke streker rundt og tvers over hver
+        // lille flate, og kvartalet leste som FLISER i en mørk fuge — en annen
+        // feil enn dominobrikken, men like mye et mønster og like lite et hus.
+        // Mønet er i stedet SKILLET mellom de to takfallene: samme faste, lave
+        // opasitet som dBuilding bruker (ikke en målt tone — den ligger oppå en
+        // målt flate, bærer ingen informasjon alene, og den LYSNER, så den kan
+        // ikke senke noen måling), lagt på det solvendte fallet. Den er hevet
+        // fra 7 til 12 % fordi den nå har en jobb å gjøre: uten streken er det
+        // verdispranget som ER mønet, og på 7 % var det ikke synlig.
+        bx.fillStyle='rgba(255,255,255,.12)'; bx.fillRect(x0,-h,bredde,H*mg);
+        bx.fillStyle=pal.tak;
+        bx.fillRect(x0-1,-fh-1.6,bredde+2,1.6);   // takskjegget, skygge mot gata
+        // ÉN gavlkant per hus, ikke to: nabohusene deler skillet, og to streker
+        // kant i kant over et 12 %-smug er nettopp den doble fugen over.
+        bx.fillRect(x0,-h,1,H);
+        // Vindusrekka står BARE i fasadebåndet — taksiden har ingen vinduer i
+        // det hele tatt, for det har ikke et tak heller. Det er samtidig det
+        // som river opp det jevne 5 × 7-rutenettet: deling (5–8 px), marg og
+        // «blindt hus» trekkes fra `krnd`, så antallet og mellomrommene skifter
+        // fra hus til hus. Størrelsen er fortsatt FAST (2,4 px bred), av samme
+        // grunn som i steg C: et vindu er like stort i en smal bygård som i en
+        // bred, og skalerte vinduer leste som terningøyne.
+        const deling=5+Math.floor(krnd()*4);
+        const marg=1.4+krnd()*2.2;
+        const blind=krnd()<0.22;
+        const vh=Math.min(3.2,fh-2.4), vy=-fh+(fh-vh)*0.5;
+        const plass=bredde-2*marg;
+        const antall=plass>=2.4 ? 1+Math.floor((plass-2.4)/deling) : 0;
+        // Rutenettets `rnd()`-kall gjøres her, kall for kall og i samme
+        // rekkefølge som i steg C, og med samme 0,4-terskel — se blokka over
+        // funksjonen. De første verdiene sier hvilke vinduer i rekka som er
+        // HULL, resten er lest og forkastet. Det er prisen for å ikke flytte
+        // tilfeldigheten til alt som tegnes etter kvartalene.
         const rader=Math.floor(h/7), kol=Math.max(1,Math.floor(bredde/5));
+        let hull=0, i=0;
         for(let rr=0;rr<rader;rr++) for(let c=0;c<kol;c++){
-          if(rnd()<0.4) continue;
-          bx.fillRect(x0+2.2+c*5, -h+4+rr*7, 2.4, 3.2);
+          if(rnd()<0.4 && i<24) hull|=1<<i;
+          i++;
         }
-        // Det tente vinduet: øverste etasje, ytterste kolonne, tegnet OVER
-        // rutenettet over (så det ikke kan ha blitt sløyfet av 0.4-sjansen) og
-        // meldt inn som nattlys på nøyaktig samme punkt. Flaten bakes, gløden
-        // tegnes bare om natta — samme todeling som resten av nattlysene.
-        if(k===lysHus && rader>0){
-          const vx=x0+2.2, vy=-h+4;
-          bx.fillStyle=tent; bx.fillRect(vx,vy,2.4,3.2);
-          // Lokal→bg med SAMME vending som transformen over (lokal −y peker bort
-          // fra banen), regnet ut her i stedet for via scene.lokal fordi
-          // tegnefunksjonene ikke ser scene-objektet.
-          const vend=r.side>0?-1:1;
-          const cs=Math.cos(r.ang)*vend, sn=Math.sin(r.ang)*vend;
-          const lx=vx+1.2, ly=vy+1.6;
-          addLight(r.x+lx*cs-ly*sn, r.y+lx*sn+ly*cs, tent, 20);
+        if(!blind){
+          bx.fillStyle=pal.vindu;
+          for(let j=0;j<antall;j++){
+            if(hull&(1<<j)) continue;
+            bx.fillRect(x0+marg+j*deling, vy, 2.4, vh);
+          }
+        }
+        // Det tente vinduet sitter i fasadebåndet på huset midt i rekka, tegnet
+        // OVER rekka (så det ikke kan ha blitt et hull) og også på et blindt
+        // hus — en lyskilde kan ikke være avhengig av en terningkast. Flaten
+        // bakes, gløden tegnes bare om natta, som resten av nattlysene.
+        //
+        // Omregningen lokal→bg går gjennom `scene.lokal`, spillets ENE sted for
+        // den (se B4): `this` er scene-objektet, siden tegneren alltid kalles
+        // som `s.kvartal(...)`, og ruta har alt både `ang` og `side`. Før sto
+        // vendingen og rotasjonen skrevet ut på nytt her — nøyaktig den
+        // dobbeltregningen som ga lykta i feil ende av moloen i B3.
+        if(k===lysHus && vh>0){
+          const vx=x0+marg;
+          bx.fillStyle=tent; bx.fillRect(vx,vy,2.4,vh);
+          const p=this.lokal(r, vx+1.2, vy+vh*0.5);
+          addLight(p.x, p.y, tent, 20);
           kvartalLysN++;
         }
       }

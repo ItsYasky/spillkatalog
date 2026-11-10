@@ -25,8 +25,6 @@ høyst én linje under som sier hvor i koden det gjelder.
   Et rotert mønsterfyll koster 2,21 ns/px mot 1,37 i halv oppløsning (−38 %), mot at bakken blir uskarpere; målingene står i `CLAUDE.md` under steg B5.
 - [GRAND PRIX] Den YTRE kvartalsraden på LABIRINTO og SERPENTINA gir bare 4 kvartaler hver – middels – 2026-11-09
   `scene.rutenett`: klaringssjekken mot `CLEAR` kaster nesten hele raden på en trang gatebane, så byen står i praksis bare på innsiden (155 av 159, 195 av 199).
-- [GRAND PRIX] Bykvartalene leser som dominobrikker på grunn av FORMEN, ikke fargen – middels – 2026-11-10
-  Fargedelen er gjort i steg C2: tak mot fasade er nå 2,52–2,53:1 om natta mot 1,78–2,06:1 før, målt under overlegget. Skjermbildene viser at brikkelesningen likevel står. I `dBuildingGrid` er takbåndet 4 px mot en fasade på 20–50 px, og vinduene er et jevnt 5 × 7-rutenett over hele flaten — en lys flate med regelmessige prikker og en hårstrek tak ER en dominobrikke uansett hvilke toner den males i. Det som gjenstår er takareal og variasjon i vindusrutenettet, altså tegning og ikke palett.
 - [GRAND PRIX] VULCANOs lava kaster ikke lys på bakken rundt seg – liten – 2026-11-09
   Temaets `groundLayer` linje ~2164: `s.lys(...,P.lava,26)` henger på kjernen, som ligger inne i en skorpe langt bredere enn 26 px, så spillets eneste selvlysende flate får aldri gløden ut av seg selv.
 - [GRAND PRIX] MONTE SPIRA er den eneste banen uten ett eneste nattlys – liten – 2026-11-09
