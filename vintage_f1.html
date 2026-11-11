@@ -3936,6 +3936,10 @@ let menuSel=0;               // hvilken rad som er markert i hovedmenyen
 // banevalget vet selv ikke om du er på vei til et løp eller en øvingsøkt.
 let menuTarget='race';
 let teamsReturnTo='menu';   // hvor ESC sender deg tilbake fra LAGOVERSIKT
+// LAG-skjermen har to markører: ↑↓ velger lag, ← → blar mellom lagets lakker.
+// Lakk-markøren nullstilles når laget byttes, ellers kunne den pekt forbi enden
+// av et lag med færre lakker enn det forrige (ONYX har tre, de fleste to).
+let teamsSel=0, teamsLakkSel=0;
 // Steg C: pausemenyen fryser løpet HELT — state endres med vilje ikke til
 // noe eget ('playing'/'practice' står urørt), så hele HUD-/banetegningen
 // fortsetter å tegnes som før. `paused` er den ENE nye bryteren update()
@@ -4407,6 +4411,7 @@ const SETTINGS={
   tid:'AUTO',         // 'AUTO' | 'TILFELDIG' | et navn fra TOD
   lag:'TILFELDIG',    // 'TILFELDIG' | et lagnavn fra TEAMS
   skinIdx:0,          // indeks i SKINS
+  spesiallakk:'AUTO', // 'AUTO' = lagene bruker spesiallakk, 'AV' = alltid vanlig
   spokelse:true       // spøkelse på/av i øving
 };
 
@@ -4437,6 +4442,7 @@ function lastInnstillinger(){
   if(typeof d.tid==='string' && (d.tid==='AUTO'||d.tid==='TILFELDIG'||TOD.some(t=>t.name===d.tid))) SETTINGS.tid=d.tid;
   if(typeof d.lag==='string' && (d.lag==='TILFELDIG'||TEAMS.some(t=>t.name===d.lag))) SETTINGS.lag=d.lag;
   if(Number.isInteger(d.skinIdx) && SKINS[d.skinIdx]!==undefined) SETTINGS.skinIdx=d.skinIdx;
+  if(typeof d.spesiallakk==='string' && (d.spesiallakk==='AUTO'||d.spesiallakk==='AV')) SETTINGS.spesiallakk=d.spesiallakk;
   if(typeof d.spokelse==='boolean') SETTINGS.spokelse=d.spokelse;
 }
 
@@ -4478,6 +4484,37 @@ function tidVisning(tr){
   if(SETTINGS.tid==='TILFELDIG') return {text:'TILFELDIG', farge:'#94a3b8', naturlig};
   const td=TOD.find(t=>t.name===SETTINGS.tid)||TOD[0];
   return {text:td.name, farge:td.clr, naturlig};
+}
+
+// Tiden banen FAKTISK kommer til å kjøres i, eller null når det ikke kan vites.
+// TILFELDIG trekkes først i resolveTodIdx, altså når løpet starter, så en meny
+// som gjetter er verre enn en som sier mindre. aktivLakk(...,null,...) hopper av
+// samme grunn over hver lakk som henger på en tid.
+function planlagtTid(tr){
+  if(SETTINGS.tid==='TILFELDIG') return null;
+  if(SETTINGS.tid==='AUTO') return tr.naturligTid||'DAG';
+  return SETTINGS.tid;
+}
+
+// Lagene som kjører spesiallakk på `tr` med dagens innstillinger. Sammenligningen
+// går mot lag.lakk.vanlig og ikke mot et felt på lakken, så ett sted (aktivLakk)
+// avgjør fortsatt hva som gjelder — denne bare spør.
+function spesiallakkerPaa(tr){
+  const tid=planlagtTid(tr), ut=[];
+  TEAMS.forEach(t=>{
+    const lv=aktivLakk(t,tr.name,tid,SETTINGS.spesiallakk);
+    if(lv!==t.lakk.vanlig) ut.push({lag:t,lakk:lv});
+  });
+  return ut;
+}
+
+// Hvor og når en lakk gjelder, som én lesbar linje. Alle fire kombinasjonene av
+// bane/tid må ha en tekst — en manglende gren ville vist «undefined» i menyen.
+function lakkOmfang(lv){
+  if(lv.bane && lv.tid) return lv.bane+' · '+lv.tid;
+  if(lv.bane) return lv.bane;
+  if(lv.tid) return 'Alle baner · '+lv.tid;
+  return 'Alle baner';
 }
 
 // Overfører SETTINGS til de kjøreklare variablene resten av spillet alt leser
@@ -5533,21 +5570,24 @@ function skinLivery(sk){
           base:sk.base, acc:sk.acc, dark:sk.dark, hel:sk.hel, spc:sk.spc||sk.hel, pat:sk.pat};
 }
 // Lakken en bil faktisk kjører med, her og nå: banen og tiden på døgnet avgjør
-// om laget bruker en spesiallakk. SPESIALLAKK-innstillingen kommer i steg C;
-// inntil da er den alltid AUTO.
+// om laget bruker en spesiallakk. Spilleren med SKIN=STANDARD har ingen egne
+// farger og faller derfor ned i samme kall som AI-ene — altså kjører han lagets
+// spesiallakk på samme vilkår, uten en egen gren for det.
 function liveryOf(c){
   const sk=c.isPlayer?skinAt(skinSel):null;
   if(sk && sk.base) return skinLivery(sk);
-  return aktivLakk(c.team,TR.name,TOD[todIdx].name,'AUTO');
+  return aktivLakk(c.team,TR.name,TOD[todIdx].name,SETTINGS.spesiallakk);
 }
 // Lakkeringen som skal vises i menyene. STANDARD har ingen egne farger, så den
 // må vise et lag — og det er hele poenget med STANDARD, at du kjører lagets bil.
-// Her vises lagets VANLIGE lakk: forhåndsvisningen står i baneutvalget og i
-// innstillingene, der banen kan byttes rett etterpå.
-function previewLivery(sk){
+// Banen sendes med fordi forhåndsvisningen ellers LYVER: med DITT LAG=AURUM på
+// LABIRINTO kjører du Rosé, og en fiolett bil i menyen er da ikke «garantert den
+// samme bilen du faktisk kjører».
+function previewLivery(sk,tr){
   if(sk.base) return skinLivery(sk);
   if(!playerIdent) rollPlayerIdent();
-  return playerIdent.team.lakk.vanlig;
+  if(!tr) return playerIdent.team.lakk.vanlig;
+  return aktivLakk(playerIdent.team,tr.name,planlagtTid(tr),SETTINGS.spesiallakk);
 }
 
 // Den FELLES bilfunksjonen: tegner en hel bil med en gitt lakkering til hvilken
@@ -6064,9 +6104,13 @@ function draw(){
   // Egen skjerm fordi sponsorene bare er fargeflater på bilen: i 28 px er det
   // fysisk umulig å lese et navn på en sidepod, så den eneste måten å faktisk
   // presentere lagene og sponsorene deres på er å gi dem plass et sted der de
-  // ikke konkurrerer med selve løpet. To kolonner × fem rader, med den ekte
-  // bilen tegnet i hver celle, slik at lakkeringen i oversikten er den samme
-  // du møter på banen.
+  // ikke konkurrerer med selve løpet.
+  //
+  // Steg C bygget skjermen om fra ti kort til navneliste + detaljpanel, og det
+  // er en MÅLING og ikke en smakssak: et kort på 248 px har 156 px tekstfelt,
+  // mens «Indianapolis, USA» + «Uredd og rask, vinner på mot fremfor penger»
+  // trenger 232 px alene i 9 px Courier. Hjemsted og type fikk altså ikke plass
+  // i rutenettet, og å krympe teksten under 9 px er ikke lov.
   if(state==='teams'){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 18px Courier New';
@@ -6075,36 +6119,91 @@ function draw(){
     // bare ESC lukker nå. #334155 (gammel farge) målte 1,95:1 mot bakgrunnen
     // og strøk; #9aa4b2 er en av de tre faste tekstfargene fra meny-skissen.
     ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
-    ctx.fillText('10 lag · 20 sjåfører · ESC lukker',W/2,54);
-    const colW=248, rowH=112, y0=74;
-    TEAMS.forEach((t,i)=>{
-      const col=i%2, row=(i/2)|0;
-      const cx0=8+col*(colW+8), cy0=y0+row*rowH;
-      const mine=playerIdent&&playerIdent.team===t;
-      // Ditt eget lag markeres med ramme, ikke med farge — fargen er opptatt
-      // av lakkeringen og kan ikke også bety «dette er deg».
-      ctx.fillStyle=mine?'rgba(225,6,0,.10)':'rgba(255,255,255,.03)';
-      ctx.fillRect(cx0,cy0,colW,rowH-8);
-      ctx.strokeStyle=mine?'#e10600':'#1e293b'; ctx.lineWidth=mine?2:1;
-      ctx.strokeRect(cx0,cy0,colW,rowH-8);
-      drawCarShape(ctx,t.lakk.vanlig,{x:cx0+42,y:cy0+(rowH-8)/2,angle:-Math.PI/2,scale:2.2,shadow:false});
-      const tx=cx0+84;
+    ctx.fillText('↑ ↓ lag  ·  ← → lakk  ·  ESC lukker',W/2,54);
+
+    const t=TEAMS[teamsSel]||TEAMS[0];
+    const lakker=lagLakker(t);
+    const valgt=lakker[Math.min(teamsLakkSel,lakker.length-1)];
+
+    // ── venstre: navnelista ──
+    TEAMS.forEach((lt,i)=>{
+      const bx=10, by=82+i*36, bw=140, bh=32;
+      const sel=i===teamsSel, mine=playerIdent&&playerIdent.team===lt;
+      // Markøren er den LYSE tinten, eget lag er den RØDE ramma — to ulike
+      // spørsmål («hvor står jeg» og «hvem er jeg») kan ikke dele ett signal.
+      ctx.fillStyle=sel?'rgba(225,6,0,.12)':(mine?'rgba(225,6,0,.10)':'rgba(255,255,255,.03)');
+      ctx.fillRect(bx,by,bw,bh);
+      if(mine){ ctx.strokeStyle='#e10600'; ctx.lineWidth=2; ctx.strokeRect(bx,by,bw,bh); }
+      // Fargeflekken er DEKORASJON: lagets navn står der i klartekst ved siden
+      // av, så flekken bærer ingen informasjon alene og måles ikke på 4,5:1.
+      ctx.fillStyle=lt.color; ctx.fillRect(bx,by,4,bh);
       ctx.textAlign='left';
-      ctx.font='bold 12px Courier New'; ctx.fillStyle=teamInk(t.color);
-      ctx.fillText(`${t.name} (${t.short})`,tx,cy0+20);
-      ctx.font='9px Courier New'; ctx.fillStyle='#cbd5e1';
-      ctx.fillText(t.sponsor,tx,cy0+36);
-      // #475569/#64748b strøk mot kortets lysnede bakgrunn (1,95:1 og 4,08:1
-      // mot de to korttonene, se test_meny_kontrast.js) — samme dempede grå
-      // som undertekstlinja over («10 lag · ...») i stedet.
-      ctx.fillStyle='#9aa4b2';
-      ctx.fillText('Sponsorer:',tx,cy0+56);
-      ctx.fillText(t.sponsors[0],tx,cy0+70);
-      ctx.fillText(t.sponsors[1],tx,cy0+84);
+      if(sel){
+        ctx.fillStyle='#f1f5f9'; ctx.font='bold 11px Courier New';
+        ctx.fillText('▸'+lt.name,bx+10,by+bh/2);
+      } else {
+        ctx.fillStyle='#9aa4b2'; ctx.font='11px Courier New';
+        ctx.fillText(lt.name,bx+16,by+bh/2);
+      }
       ctx.textAlign='center';
     });
+
+    // ── høyre: detaljpanelet ──
+    // Panelhøyden er satt av innholdet og ikke av lerretet: ONYX har flest
+    // lakker (tre), og tre rader slutter på py+428. 450 gir 22 px under den
+    // siste raden, mens 544 (første forsøk) ga 116 px tom boks.
+    const px=158, pw=348, py=76, ph=450, ix=px+14;
+    ctx.fillStyle='rgba(255,255,255,.03)'; ctx.fillRect(px,py,pw,ph);
+    ctx.strokeStyle='#1e293b'; ctx.lineWidth=1; ctx.strokeRect(px,py,pw,ph);
+    ctx.textAlign='left';
+    ctx.font='bold 16px Courier New'; ctx.fillStyle=teamInk(t.color);
+    ctx.fillText(t.name,ix,py+26);
+    ctx.font='10px Courier New'; ctx.fillStyle='#cbd5e1';
+    ctx.fillText(`(${t.short})  ·  ${t.hjem}`,ix,py+48);
+    // Typen brytes fordi den er fritekst: lengste i dag er 43 tegn (232 px),
+    // men panelet har 320 px og en framtidig lengre tekst skal ikke stikke ut.
+    ctx.font='9px Courier New'; ctx.fillStyle='#cbd5e1';
+    let linje='', ly=py+68;
+    t.type.split(' ').forEach(w=>{
+      const f=linje?linje+' '+w:w;
+      if(linje && ctx.measureText(f).width>pw-28){ ctx.fillText(linje,ix,ly); ly+=11; linje=w; }
+      else linje=f;
+    });
+    if(linje) ctx.fillText(linje,ix,ly);
+    ctx.fillStyle='#9aa4b2';
+    ctx.fillText('Tittelsponsor: '+t.sponsor,ix,py+104);
+    ctx.fillText('Sponsorer: '+t.sponsors.join(' · '),ix,py+120);
+
+    // Bilen i den lakken som er valgt — ikke en håndtegnet etterligning, men
+    // samme drawCarShape resten av spillet bruker.
+    drawCarShape(ctx,valgt,{x:px+pw/2,y:py+210,angle:-Math.PI/2,scale:4,shadow:false});
+
+    ctx.textAlign='center';
+    ctx.font='bold 13px Courier New'; ctx.fillStyle='#f1f5f9';
+    ctx.fillText(valgt.navn,px+pw/2,py+292);
+    ctx.font='9px Courier New'; ctx.fillStyle='#cbd5e1';
+    ctx.fillText(lakkOmfang(valgt),px+pw/2,py+310);
+    ctx.fillStyle='#9aa4b2';
+    ctx.fillText(`LAKK ${lakker.indexOf(valgt)+1} / ${lakker.length}`,px+pw/2,py+326);
+
+    ctx.textAlign='left';
+    ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+    ctx.fillText('ALLE LAKKER',ix,py+362);
+    lakker.forEach((lv,k)=>{
+      const ry=py+384+k*22, pek=lv===valgt;
+      ctx.font=pek?'bold 9px Courier New':'9px Courier New';
+      ctx.fillStyle=pek?'#f1f5f9':'#9aa4b2';
+      ctx.fillText((pek?'▸ ':'  ')+lv.navn,ix,ry);
+      ctx.fillStyle=pek?'#cbd5e1':'#9aa4b2';
+      ctx.font='9px Courier New';
+      ctx.fillText(lakkOmfang(lv),ix+100,ry);
+    });
+
+    ctx.textAlign='center';
     // Bevisst ingen «ESC Katalog» her: på denne skjermen lukker ESC oversikten
     // og går tilbake til baneutvalget, ikke ut av spillet.
+    ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+    ctx.fillText('10 lag · 20 sjåfører',W/2,650);
     ctx.restore(); return;
   }
 
@@ -6185,17 +6284,37 @@ function draw(){
     // selve innholdet i boksen leses fra tekst som MÅLES til 4,5:1 under).
     {
       const D=DIFFICULTIES[difficulty], sk=skinAt(skinSel);
-      const bx=60, by=410, bw=400, bh=76;
+      const bx=60, by=410, bw=400, bh=92;
       ctx.strokeStyle='#232a36'; ctx.lineWidth=1; ctx.strokeRect(bx,by,bw,bh);
       ctx.fillStyle='#c3cad4'; ctx.font='bold 11px Courier New';
       ctx.fillText(`${REALISTIC?'REALISTISK':'CASUAL'} · ${D.name} · ${LAPS} RUNDER · ${tidVisning(TRACKS[trackSel]).text}`,W/2,by+22);
       ctx.fillText(`DITT LAG: ${teamFullName(playerIdent.team)} · SKIN ${sk.name}`,W/2,by+42);
+      // Spesiallakk-linja gjelder ALLE lag og ikke bare spillerens: linja svarer
+      // på «hva kommer jeg til å se på denne banen». Boksen er like høy uansett,
+      // så en bane uten spesiallakk ikke flytter hjelpelinja og KJØR-knappen.
+      const spes=spesiallakkerPaa(TRACKS[trackSel]);
+      if(spes.length){
+        ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
+        // Courier er monospace (0,6 em per tegn), så antall tegn ER bredden.
+        // Linja kuttes med «+N» i stedet for å stikke ut av boksen.
+        const MAKS=Math.floor((bw-24)/(9*0.6));
+        let tekst='', n=0;
+        for(let i=0;i<spes.length;i++){
+          const bit=`${spes[i].lag.name} ${spes[i].lakk.navn}`;
+          const forsok=tekst?tekst+' · '+bit:bit;
+          if(('Spesiallakk: '+forsok).length>MAKS) break;
+          tekst=forsok; n++;
+        }
+        if(!n){ tekst=`${spes.length} lag`; n=spes.length; }
+        const rest=spes.length-n;
+        ctx.fillText('Spesiallakk: '+tekst+(rest>0?` +${rest}`:''),W/2,by+60);
+      }
       ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
-      ctx.fillText('↓ endre innstillinger',W/2,by+60);
+      ctx.fillText('↓ endre innstillinger',W/2,by+78);
     }
     // ── KJØR-knapp ── stor, rød, nederst — matcher teksten i footeren under.
     {
-      const bw=170, bh=44, bx=W/2-bw/2, by=500;
+      const bw=170, bh=44, bx=W/2-bw/2, by=508;
       ctx.fillStyle='#e10600'; ctx.fillRect(bx,by,bw,bh);
       ctx.fillStyle='#f1f5f9'; ctx.font='bold 16px Courier New';
       ctx.fillText(menuTarget==='practice'?'ØVING':'KJØR',W/2,by+bh/2);
@@ -6219,8 +6338,8 @@ function draw(){
 
     // Faste y-posisjoner per rad (ikke stablet dynamisk), slik at en
     // forklaringslinje som vises eller skjules aldri flytter radene under den.
-    const ROW_LABELS=['MODUS','AI-NIVÅ','DISTANSE','TID PÅ DØGNET','DITT LAG','SKIN','SPØKELSE (ØVING)'];
-    const ROW_Y=[112,172,238,296,360,416,486];
+    const ROW_LABELS=['MODUS','AI-NIVÅ','DISTANSE','TID PÅ DØGNET','DITT LAG','SKIN','SPESIALLAKK','SPØKELSE (ØVING)'];
+    const ROW_Y=[104,150,206,252,308,354,410,466];
     const SUB_DY=18;
     const LX=60, RX=W-60;
 
@@ -6293,10 +6412,20 @@ function draw(){
       const sk=skinAt(skinSel);
       ctx.textAlign='right'; ctx.font='bold 12px Courier New';
       ctx.fillStyle='#f1f5f9'; ctx.fillText(sk.name,W-140,y);
-      drawCarShape(ctx,previewLivery(sk),{x:W-78,y,scale:2.2,shadow:false});
+      drawCarShape(ctx,previewLivery(sk,TRACKS[trackSel]),{x:W-78,y,scale:2.2,shadow:false});
     });
 
     settingsRow(6,(sel,y)=>{
+      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
+      ctx.fillStyle=SETTINGS.spesiallakk==='AUTO'?'#38bdf8':'#94a3b8';
+      ctx.fillText(SETTINGS.spesiallakk,RX,y);
+      if(sel){
+        ctx.textAlign='center'; ctx.fillStyle='#94a3b8'; ctx.font='9px Courier New';
+        ctx.fillText('Lagene kjører med egen lakk på enkelte baner.',W/2,y+SUB_DY);
+      }
+    });
+
+    settingsRow(7,(sel,y)=>{
       ctx.textAlign='right'; ctx.font='bold 12px Courier New';
       ctx.fillStyle=ghostOn?GHOST_COL:GHOST_TXT_DIM;
       ctx.fillText(ghostOn?'PÅ':'AV',RX,y);
@@ -6844,6 +6973,14 @@ document.addEventListener('keydown',e=>{
     // nye menyene. teamsReturnTo settes der LAGOVERSIKT åpnes (nå hovedmenyen),
     // slik at ESC går ett nivå tilbake, ikke til et fast sted.
     if(e.key==='Escape'){ state=teamsReturnTo; return; }
+    // ↑↓ velger lag og NULLSTILLER lakk-markøren: lagene har ulikt antall
+    // lakker, så en markør som ble med over kunne pekt forbi enden.
+    if(e.key==='ArrowUp'){ teamsSel=(teamsSel+TEAMS.length-1)%TEAMS.length; teamsLakkSel=0; }
+    if(e.key==='ArrowDown'){ teamsSel=(teamsSel+1)%TEAMS.length; teamsLakkSel=0; }
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+      const n=lagLakker(TEAMS[teamsSel]).length;
+      teamsLakkSel=(teamsLakkSel+(e.key==='ArrowRight'?1:n-1))%n;
+    }
     return; // ingen andre taster gjør noe mens oversikten er oppe
   }
   // INNSTILLINGER bruker samme ↑↓←→-mønster som resten av de nye menyene:
@@ -6852,8 +6989,8 @@ document.addEventListener('keydown',e=>{
   // ikke rett ut til katalogen. Ingen bokstavtaster her.
   if(state==='settings'){
     if(e.key==='Escape'){ state=settingsReturnTo; return; }
-    if(e.key==='ArrowUp') settingsSel=(settingsSel+6)%7;
-    if(e.key==='ArrowDown') settingsSel=(settingsSel+1)%7;
+    if(e.key==='ArrowUp') settingsSel=(settingsSel+7)%8;
+    if(e.key==='ArrowDown') settingsSel=(settingsSel+1)%8;
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
       const dir=e.key==='ArrowRight'?1:-1;
       if(settingsSel===0){
@@ -6883,6 +7020,8 @@ document.addEventListener('keydown',e=>{
         skinSel=(skinSel+dir+SKINS.length)%SKINS.length;
         SETTINGS.skinIdx=skinSel;
       } else if(settingsSel===6){
+        SETTINGS.spesiallakk=SETTINGS.spesiallakk==='AUTO'?'AV':'AUTO';
+      } else if(settingsSel===7){
         ghostOn=!ghostOn;
         SETTINGS.spokelse=ghostOn;
       }
@@ -6905,7 +7044,14 @@ document.addEventListener('keydown',e=>{
       if(menuSel===0){ menuTarget='race'; rollPlayerIdent(); state='trackselect'; }
       else if(menuSel===1){ menuTarget='practice'; rollPlayerIdent(); state='trackselect'; }
       else if(menuSel===2){ settingsReturnTo='menu'; state='settings'; }
-      else if(menuSel===3){ teamsReturnTo='menu'; state='teams'; }
+      else if(menuSel===3){
+        teamsReturnTo='menu'; state='teams';
+        // Åpne på spillerens eget lag: det er det laget man vil se først, og
+        // med ti lag i lista er «rull til ditt eget» en unødvendig jobb.
+        if(!playerIdent) rollPlayerIdent();
+        const i=TEAMS.indexOf(playerIdent.team);
+        teamsSel=i>=0?i:0; teamsLakkSel=0;
+      }
     }
     return;
   }

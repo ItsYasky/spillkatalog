@@ -466,7 +466,8 @@ def sig_js(celler, kol, rad, tid=ARK_TID):
     return SIG_JS_MAL % (json.dumps(celler), kol, rad, repr(float(tid)))
 
 
-def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None, tid=0.0):
+def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None, tid=0.0,
+            spesiallakk="AUTO"):
     """Måleskript som rigger spillet til ett bilde og tegner det på canvaset.
 
     modus 'spill' = vanlig spillvisning (kamera bak bilen, HUD, 20 biler).
@@ -482,11 +483,15 @@ def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None, tid=0.0):
   for(var i=0;i<TRACKS.length;i++) if(TRACKS[i].name===%s) idx=i;
   if(idx<0) throw new Error('ukjent bane');
   trackSel=idx; lapsIdx=4; LAPS=20; difficulty=2;
+  // SETTINGS.tid må settes FØR startRace(), ikke bare todIdx etter: startRace
+  // kaller buildCarSprites(), og en bils lakk velges av aktivLakk(bane,TID),
+  // altså av den tiden som gjaldt DA spritene ble bygget. Med bare todIdx satt
+  // etterpå fikk nattbildet nattlys og dagbiler — en NORDHAV uten Nordlys.
+  SETTINGS.tid=TOD[%d].name;
+  SETTINGS.spesiallakk=%s;
   startRace();
-  // MÅ settes ETTER startRace(): den kaller resolveTodIdx(TR), som leser
-  // SETTINGS.tid (standard AUTO = banens egen naturligTid) og overskriver alt
-  // som er satt på forhånd. Satt før var --tod uten virkning, og hvert
-  // «nattbilde» av en dagbane kom tilbake i fullt dagslys.
+  // Settes også etter, som før: resolveTodIdx kan ikke gi noe annet nå, men
+  // linja gjør bildet uavhengig av om SETTINGS-veien skulle endre seg.
   todIdx=%d;
   state='playing';
   var MODUS=%s, VEDLM=%s, naadd='-';
@@ -560,7 +565,8 @@ def shot_js(bane, tod, modus, ved_landemerke=True, t_overstyr=None, tid=0.0):
   pre.style.display='none';
   pre.textContent='OK '+TRACKS[idx].name+' rundepos '+naadd;
 })();
-""" % (json.dumps(bane), tod, json.dumps(modus), "true" if ved_landemerke else "false",
+""" % (json.dumps(bane), tod, json.dumps(spesiallakk), tod,
+       json.dumps(modus), "true" if ved_landemerke else "false",
        "null" if t_overstyr is None else repr(float(t_overstyr)), repr(float(tid)))
 
 
@@ -620,13 +626,19 @@ def main():
 
     elif cmd == "shot":
         bane = args[0]
+        if bane.startswith("--"):
+            raise SystemExit("shot tar BANE som posisjonsargument: shot LABIRINTO --tod 0")
         tod = int(flagg("tod", "0"))
         modus = flagg("modus", "spill")
+        spes = flagg("spesiallakk", "AUTO")
+        if spes not in ("AUTO", "AV"):
+            raise SystemExit("--spesiallakk må være AUTO eller AV")
         ut = flagg("ut", "/tmp/gp_%s_%s.png" % (bane.replace(" ", "_"), modus))
         h = 680 if modus == "spill" else 1400
         t_ovr = flagg("t")
         tid = float(flagg("tid", "0"))
-        skjermbilde(html, shot_js(bane, tod, modus, t_overstyr=t_ovr, tid=tid), ut, 520, h)
+        skjermbilde(html, shot_js(bane, tod, modus, t_overstyr=t_ovr, tid=tid,
+                                  spesiallakk=spes), ut, 520, h)
         print(ut)
 
     elif cmd == "ark":

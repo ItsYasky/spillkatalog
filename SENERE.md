@@ -49,6 +49,8 @@ høyst én linje under som sier hvor i koden det gjelder.
   Målt tre ganger på en uendret fil: hash `2cc63d99` på første kjøring, `52f83699` på de to neste. De tolv andre banene ble bit-identiske av seedingen, så det finnes en andre kilde til tilfeldighet som bare slår inn her. Må finnes før punktet over kan lukkes helt.
 - [GRAND PRIX] `test_spiller_sving.js` kommer ikke rundt LABIRINTO, så banen måles ikke – liten – 2026-11-11
   Testens autopilot ligger 99,6 % utenfor banen og fullfører aldri en runde, både med og uten boost. Gjelder også før runde 5 (verifisert mot `HEAD`), så det er ikke en regresjon — men steg H-tallene for den trangeste gatebanen er i praksis ikke dekket. Autopiloten trenger trolig smalere linje i de 90-graderssvingene.
+- [GRAND PRIX] `chrome_harness.py fps --tod` måler med lakkene fra feil døgntid – liten – 2026-11-11
+  `fps_js` setter `todIdx` ETTER `startRace()`, og `startRace()` bygger spritene med `buildCarSprites()`, der `aktivLakk(bane,TID)` velger lakk ut fra den tiden som gjaldt DA spritene ble bygget. En «NATT»-måling tegner altså dagbiler i nattlys, så NORDHAVs Nordlys og de andre tidslakkene er ikke med i noen `fps`-tabell. Samme feil som nettopp ble rettet i `shot_js` (`SETTINGS.tid=TOD[tod].name` FØR `startRace()`), bare i nabofunksjonen. Lyset og banen er riktige, så alle eksisterende tall står — det er bare bilenes lakk som er fra feil tid.
 
 ## Arkaden (felles)
 

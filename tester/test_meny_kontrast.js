@@ -102,10 +102,16 @@ function compositeOver(bgHex, overlayStr){
 function isLarge(px,bold){ return bold ? px>=18.66 : px>=24; }
 
 const results = [];
+// MIN_PX er den andre halvdelen av kravet og ikke pynt: en tekst kan ha 20:1
+// kontrast og fortsatt være uleselig fordi den er 7 px. Gulvet håndheves her,
+// så en ny rad ikke kan bestå på kontrast alene.
+const MIN_PX = 9;
 function check(screen, element, fg, bg, px, bold){
   const cr = GAME.contrastRatio(fg,bg);
   const need = isLarge(px,bold)?3:4.5;
-  results.push({ screen, element, fg, bg, px, bold, cr, need, ok: cr>=need });
+  const stor = px>=MIN_PX;
+  results.push({ screen, element, fg, bg, px, bold, cr, need,
+                 ok: cr>=need && stor, forLiten: !stor });
 }
 
 let GAME;
@@ -137,15 +143,28 @@ function main(argv){
   check('HOVEDMENY','kontrollhjelp (navigasjon)','#9aa4b2',BG_MENU,9,false);
 
   // ── LAGOVERSIKT (bg #05070a + korttint) ─────────────────────────────────
+  // Steg C i runde 5 bygget skjermen om fra ti kort til navneliste + panel, så
+  // bakgrunnene er nå tre: markert rad (CARD_SEL), eget lag (CARD_MINE) og alt
+  // annet (CARD_OTHER). Hele detaljpanelet står på CARD_OTHER.
   check('LAGOVERSIKT','tittel','#f1f5f9',BG_MENU,18,true);
   check('LAGOVERSIKT','undertekst','#9aa4b2',BG_MENU,9,false);
-  check('LAGOVERSIKT','sponsornavn (eget lag-kort)','#cbd5e1',CARD_MINE,9,false);
-  check('LAGOVERSIKT','sponsornavn (andre lag-kort)','#cbd5e1',CARD_OTHER,9,false);
-  check('LAGOVERSIKT','"Sponsorer:"-etikett + sponsorlinjer (eget kort)','#9aa4b2',CARD_MINE,9,false);
-  check('LAGOVERSIKT','"Sponsorer:"-etikett + sponsorlinjer (andre kort)','#9aa4b2',CARD_OTHER,9,false);
+  check('LAGOVERSIKT','bunnlinje','#9aa4b2',BG_MENU,9,false);
+  // navnelista til venstre
+  check('LAGOVERSIKT','lagnavn i lista (markert)','#f1f5f9',CARD_SEL,11,true);
+  check('LAGOVERSIKT','lagnavn i lista (eget lag)','#9aa4b2',CARD_MINE,11,false);
+  check('LAGOVERSIKT','lagnavn i lista (umarkert)','#9aa4b2',CARD_OTHER,11,false);
+  // detaljpanelet til høyre
+  check('LAGOVERSIKT','hjemsted-linje','#cbd5e1',CARD_OTHER,10,false);
+  check('LAGOVERSIKT','type-linje','#cbd5e1',CARD_OTHER,9,false);
+  check('LAGOVERSIKT','"Tittelsponsor:" + "Sponsorer:"','#9aa4b2',CARD_OTHER,9,false);
+  check('LAGOVERSIKT','lakknavn (stort)','#f1f5f9',CARD_OTHER,13,true);
+  check('LAGOVERSIKT','lakkens omfang (bane/tid)','#cbd5e1',CARD_OTHER,9,false);
+  check('LAGOVERSIKT','lakkteller "LAKK 1 / 3"','#9aa4b2',CARD_OTHER,9,false);
+  check('LAGOVERSIKT','"ALLE LAKKER"-etikett','#9aa4b2',CARD_OTHER,9,false);
+  check('LAGOVERSIKT','lakkliste-rad (peker)','#f1f5f9',CARD_OTHER,9,true);
+  check('LAGOVERSIKT','lakkliste-rad (øvrige)','#9aa4b2',CARD_OTHER,9,false);
   GAME.TEAMS.forEach(t=>{
-    check('LAGOVERSIKT','lagnavn "'+t.name+'" (eget kort)',GAME.teamInk(t.color),CARD_MINE,12,true);
-    check('LAGOVERSIKT','lagnavn "'+t.name+'" (andre kort)',GAME.teamInk(t.color),CARD_OTHER,12,true);
+    check('LAGOVERSIKT','lagnavn i panelet "'+t.name+'"',GAME.teamInk(t.color),CARD_OTHER,16,true);
   });
 
   // ── BANEVALG (bg #05070a + korttint) ────────────────────────────────────
@@ -156,6 +175,7 @@ function main(argv){
   check('BANEVALG','baneinfo (valgt kort)','#9aa4b2',CARD_SEL,9,false);
   check('BANEVALG','baneinfo (uvalgt kort)','#9aa4b2',CARD_UNSEL,9,false);
   check('BANEVALG','innstillingsboks (sammendrag)','#c3cad4',BG_MENU,11,true);
+  check('BANEVALG','innstillingsboks ("Spesiallakk: ...")','#9aa4b2',BG_MENU,9,false);
   check('BANEVALG','innstillingsboks ("↓ endre")','#9aa4b2',BG_MENU,9,false);
   check('BANEVALG','KJØR-knapp','#f1f5f9',BTN_KJOR,16,true);
   check('BANEVALG','bunnhjelp','#9aa4b2',BG_MENU,9,false);
@@ -175,6 +195,9 @@ function main(argv){
   check('INNSTILLINGER','DITT LAG-verdi (TILFELDIG)','#94a3b8',BG_SETTINGS,12,true);
   GAME.TEAMS.forEach(t=>check('INNSTILLINGER','DITT LAG-verdi ('+t.name+')',GAME.teamInk(t.color),BG_SETTINGS,12,true));
   check('INNSTILLINGER','SKIN-navn','#f1f5f9',BG_SETTINGS,12,true);
+  check('INNSTILLINGER','SPESIALLAKK AUTO','#38bdf8',BG_SETTINGS,12,true);
+  check('INNSTILLINGER','SPESIALLAKK AV','#94a3b8',BG_SETTINGS,12,true);
+  check('INNSTILLINGER','SPESIALLAKK-forklaring','#94a3b8',BG_SETTINGS,9,false);
   check('INNSTILLINGER','SPØKELSE PÅ',GAME.GHOST_COL,BG_SETTINGS,12,true);
   check('INNSTILLINGER','SPØKELSE AV',GAME.GHOST_TXT_DIM,BG_SETTINGS,12,true);
   check('INNSTILLINGER','bunnhjelp ("ESC tilbake")','#94a3b8',BG_SETTINGS,9,false);
@@ -210,7 +233,8 @@ function main(argv){
     bySkjerm[skjerm].forEach(r=>{
       if(!r.ok) feil++;
       console.log('    ' + (r.ok?'OK  ':'FEIL') + '  ' + r.element + '  ' +
-        r.fg + ' mot ' + r.bg + '  →  ' + r.cr.toFixed(2) + ':1 (krav ' + r.need + ':1)');
+        r.fg + ' mot ' + r.bg + '  →  ' + r.cr.toFixed(2) + ':1 (krav ' + r.need + ':1)' +
+        '  ' + r.px + ' px' + (r.forLiten?' ← UNDER 9 px':''));
     });
   });
   console.log('  ' + (results.length - feil) + '/' + results.length + ' sjekker bestått');
