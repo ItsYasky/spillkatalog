@@ -1720,7 +1720,7 @@ D dokumentasjonen, E sluttest.
 
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
-| A | ferdig | — | Ren omstrukturering: lakkene er egne objekter under `lag.lakk.{vanlig,spesial[]}`, `drawPattern` slår opp i `PATTERNS`, `aktivLakk()` er enestes velger av lakk, sprite-cachen nøkles på lakk-`id`, og hvert lag har en tom `profil` + `lagFaktor()` som alltid gir 1 | `test_lag.js` (105/105, ny), `test_banetema.js` (198/198, sjekk 4 bygget om) |
+| A | ferdig | `936db02` | Ren omstrukturering: lakkene er egne objekter under `lag.lakk.{vanlig,spesial[]}`, `drawPattern` slår opp i `PATTERNS`, `aktivLakk()` er enestes velger av lakk, sprite-cachen nøkles på lakk-`id`, og hvert lag har en tom `profil` + `lagFaktor()` som alltid gir 1 | `test_lag.js` (105/105, ny), `test_banetema.js` (198/198, sjekk 4 bygget om) |
 | B | ikke startet | — | De ti nye lagene og de 21 lakkene | — |
 | C | ikke startet | — | SPESIALLAKK-innstillingen, LAG-skjermen og banevalg-linja | — |
 | D | ikke startet | — | «Ny lakk eller nytt lag» i dette notatet | — |
