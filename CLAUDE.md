@@ -196,8 +196,10 @@ nå ville betydd å skrive det om igjen når kvartalene kommer.
 **`test_banetema.js` er ny i steg A.** Den måler det `contrastCheck()` i spillet
 ikke lenger dekker: spillets egen sjekk måler lakkeringene mot ASPHALT_BASE
 alene, men nå har hver bane sin egen asfalt. Testen regner hele krysstabellen —
-atten lakkeringer mot tretten dekker. Svakeste verdi er 3,45:1 (CORALIS mot
-DUNA), altså over 3:1-kravet.
+29 lakkeringer mot tretten dekker. Svakeste verdi er 3,21:1 (FRONTIER Mojave
+mot VISTANOTTE), altså over 3:1-kravet. Tallet var 3,45:1 fram til runde 5 steg
+B byttet ut lagene; en spesiallakk måles bare mot sin EGEN bane, så sammen-
+ligningen mot runde 4 gjelder regelen, ikke verdien.
 
 **Avvik verdt å vite i steg A:**
 
@@ -1721,7 +1723,7 @@ D dokumentasjonen, E sluttest.
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
 | A | ferdig | `936db02` | Ren omstrukturering: lakkene er egne objekter under `lag.lakk.{vanlig,spesial[]}`, `drawPattern` slår opp i `PATTERNS`, `aktivLakk()` er enestes velger av lakk, sprite-cachen nøkles på lakk-`id`, og hvert lag har en tom `profil` + `lagFaktor()` som alltid gir 1 | `test_lag.js` (105/105, ny), `test_banetema.js` (198/198, sjekk 4 bygget om) |
-| B | ikke startet | — | De ti nye lagene og de 21 lakkene | — |
+| B | ferdig | — | De ti nye lagene og de 21 lakkene, `aktivLakk` utvidet med tidslakker, og to latente fargefeil rettet (`teamInk`-referansen og negativ kulør i `rgbToHsl`) | `test_lag.js` (229/229), `test_banetema.js` (208/208), `test_meny_kontrast.js` (117/117) |
 | C | ikke startet | — | SPESIALLAKK-innstillingen, LAG-skjermen og banevalg-linja | — |
 | D | ikke startet | — | «Ny lakk eller nytt lag» i dette notatet | — |
 | E | ikke startet | — | Sluttest, skjermbilder og ventelista | — |
@@ -1774,6 +1776,70 @@ Skjermbilder av griden kunne IKKE brukes som før/etter-bevis: `shot` er ikke
 reproduserbar (står på ventelista). I stedet er hver enkelt lakk tegnet i en
 egen canvas og pikslene hashet — alle 19 lakker × 2 klaffstillinger pluss
 spøkelset ga identisk hash før og etter.
+
+**Laglista i steg B.** CORALIS, AZURA, ROSARIO og GRANITT er borte; MAKO,
+SAHRA, LONGWEI og FRONTIER er nye. Dukker et av de fire gamle navnene opp i
+eldre avsnitt i dette notatet, er det en MÅLING fra runde 4 og ikke en feil —
+tallene er bevart slik de ble målt den gangen. Dagens ti er VULCANA, NORDHAV,
+AURUM, ONYX, KESTREL, VERDANT, MAKO, SAHRA, LONGWEI og FRONTIER.
+
+**Tidslakker.** `aktivLakk` har to omganger etter steg B, fordi en spesiallakk
+nå kan høre til et sted (`bane`), en tid (`tid`) eller begge. NORDHAVs Nordlys
+er den eneste uten `bane`: den gjelder alle tretten banene så lenge det er
+NATT. Når to lakker passer samtidig, vinner den som peker på BANEN — et sted er
+et mer spesifikt valg enn et tidspunkt. Ingen av dagens lag har begge slagene,
+så regelen er dekket av et oppdiktet lag i `test_lag.js` i stedet for av
+dataene, slik at den er bevist før et lag får bruk for den.
+
+**To latente fargefeil kom fram i steg B** — begge lå i koden fra før, og begge
+ble først SYNLIGE fordi de nye lagfargene traff dem:
+
+1. `teamInk` lysnet lagfargen til 4,5:1 mot `UI_BG` (`#0b0b0e`), men lagnavnet
+   males på kort-tonene i LAGOVERSIKT (`#1b0709` og `#0d0e11`), som er lysere.
+   Garantien lovet altså mer enn den holdt. Hvilken bakgrunn som er verst
+   avhenger av KULØREN og ikke bare av lysheten — AURUMs fiolett står svakest
+   mot den nøytrale tinten, VULCANAs rødt mot den røde — så `inkFor` tar nå en
+   LISTE med bakgrunner og lysner til fargen klarer kravet mot alle. AURUM var
+   det eneste laget som falt i sprekken (4,46:1), og det eneste som flyttet seg
+   av denne rettelsen (`#8766d1` → `#8d6ed3`, 4,46 → 4,87:1).
+2. `rgbToHsl` ga NEGATIV kulør når rødt er sterkest og grønt svakere enn blått
+   (karmosin, rosa, magenta) — −28° for LONGWEIs `#b0185f`. `hslToHex` tok da
+   `h<60`-grenen med en negativ `x`, og ett kanal havnet under null:
+   `teamInk('#b0185f')` ga **`#e4-1b36`**, en hex med minustegn. Canvas
+   forkaster en slik verdi STILLE og beholder forrige `fillStyle`, så LONGWEIs
+   navn ville dukket opp i en vilkårlig annen farge. Verre: `test_meny_kontrast`
+   fanget det ikke, for `contrastRatio` tolket «-1» som et tall og rapporterte
+   pene 4,55:1. Kuløren dreies nå inn i [0,360) ved kilden, og `test_lag.js`
+   måler FORMEN på det `teamInk`/`podiumInk` gir ut, før noen måler kontrasten.
+   ROSARIO (`#b5367e`, −34°) hadde samme negative kulør i runde 4 uten å gi
+   ugyldig hex — feilen har altså ligget der lenge og bare ikke slått ut.
+   `rgbToHsl`/`hslToHex` brukes BARE av `inkFor`, så rettelsen rører ingen
+   banefarger.
+
+Av de ti lagene flyttet tre seg til sammen: VULCANA og LONGWEI av kulør-
+rettelsen, AURUM av bakgrunnsrettelsen. De sju andre har nøyaktig samme ink som
+før.
+
+**Verifisert i steg B:** `test_lag.js` 229/229 (10 lag, 21 lakker — 10 vanlige
+og 11 spesial, 20 biler på griden), `test_banetema.js` 208/208,
+`test_meny_kontrast.js` 117/117, resten av suiten grønn,
+`test_banegeometri.js --mot geo_laas.json` uendret på alle 13,
+`chrome_harness.py maal` bygger alle 13 (sum 181,6 ms, verste VISTANOTTE
+21,6 ms). Svakeste asfaltkontrast er nå 3,21:1 (FRONTIER Mojave mot
+VISTANOTTE), fortsatt over 3:1-kravet. Kontaktark over alle 21 lakkene på
+banens egen asfalt: `maalinger/lakk_ark_B.png`. Startgrid med alle 20 bilene:
+`maalinger/grid_B_dag.png`.
+
+**AI-en er BIT-IDENTISK med steg A**, og det er målt felt for felt og ikke bare
+på sammendraget: `maalinger/ai_baseline_lag_B.json` mot `..._lag_A.json` gir
+NULL ulike felt over alle 52 konfigurasjoner × 13 målte størrelser. Det eneste
+som skiller filene er `seconds` (705,2 mot 713,8), altså testens egen
+klokketid. Snittspredning 0,679 → 0,679, største 0,996 (DUNA/CASUAL/ULTRA).
+Det er som det skal være — feltet er fortsatt 20 biler, og ingenting i AI-en
+henger på lagets plass i `TEAMS`. Merk at `test_ai_compare.js` alene ikke er
+nok til å si «bit-identisk»: den skriver ut spredning/vegg/utenfor/brudd, men
+ikke `besteLap`, `medLap`, `steps`, `finished` eller `otFrac`. Sammenligningen
+må gå over ALLE feltene.
 
 ### ASTEROIDER (`asteroids.html`)
 

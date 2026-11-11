@@ -90,7 +90,7 @@ function loadGame(path){
     ' get NUM_CARS(){ return NUM_CARS; }, get DRIVERS_PER_TEAM(){ return DRIVERS_PER_TEAM; },' +
     ' get COCKPIT_BG(){ return COCKPIT_BG; },' +
     ' lagLakker: lagLakker, aktivLakk: aktivLakk, lagFaktor: lagFaktor,' +
-    ' contrastRatio: contrastRatio };\n})');
+    ' contrastRatio: contrastRatio, teamInk: teamInk, podiumInk: podiumInk };\n})');
   return factory(documentStub, windowStub, function(){}, { now: function(){ return 0; } }, localStorageStub);
 }
 
@@ -126,11 +126,13 @@ function kjør(game){
   // ── 1. laget selv ─────────────────────────────────────────────────────────
   TEAMS.forEach(function(t){
     const ok = erTekst(t.name) && erTekst(t.short) && t.short.length === 3 &&
+               erTekst(t.hjem) && erTekst(t.type) &&
                erTekst(t.sponsor) && Array.isArray(t.sponsors) && t.sponsors.length >= 1 &&
                t.sponsors.every(erTekst);
     sjekk('lagfelt: ' + t.name, ok,
-      'name/short(3 tegn)/sponsor/sponsors må alle finnes — fikk ' +
-      JSON.stringify({ short: t.short, sponsor: t.sponsor, sponsors: t.sponsors }));
+      'name/short(3 tegn)/hjem/type/sponsor/sponsors må alle finnes — fikk ' +
+      JSON.stringify({ short: t.short, hjem: t.hjem, type: t.type,
+                       sponsor: t.sponsor, sponsors: t.sponsors }));
   });
 
   // Lagnavn og tre-bokstavskode må være unike: koden er det ENESTE som skiller
@@ -154,6 +156,21 @@ function kjør(game){
       t.color === v.base && t.accent === v.acc && t.dark === v.dark,
       'color/accent/dark (' + t.color + '/' + t.accent + '/' + t.dark +
       ') skal speile den vanlige lakken (' + v.base + '/' + v.acc + '/' + v.dark + ')');
+  });
+
+  // teamInk/podiumInk lysner lagfargen for menyene ved å regne om via HSL, og
+  // regnestykket kan produsere en UGYLDIG hex (et kanal under null gir f.eks.
+  // «#e4-1b36»). Canvas forkaster en slik verdi STILLE og beholder forrige
+  // fillStyle, så lagnavnet dukker opp i en vilkårlig annen farge — det ser ut
+  // som et designvalg, ikke som en feil. Kontrastmålingen fanger det ikke
+  // engang: den tolker «-1» som et tall og rapporterer en pen verdi. Derfor
+  // måles FORMEN her, før noen måler kontrasten.
+  TEAMS.forEach(function(t){
+    [['teamInk', game.teamInk(t.color)], ['podiumInk', game.podiumInk(t.color)]].forEach(function(p){
+      sjekk(p[0] + ' gir gyldig hex: ' + t.name, erHex(p[1]),
+        p[0] + '(' + t.color + ') ga ' + JSON.stringify(p[1]) +
+        ' — ikke #rrggbb, så canvas ignorerer den uten å si fra');
+    });
   });
 
   // ── 3. profilen (plassen til egenskapene, ikke i bruk) ────────────────────
@@ -316,6 +333,50 @@ function kjør(game){
       game.aktivLakk(t, '(ingen bane)', todNavn[0], 'AUTO') === t.lakk.vanlig,
       'fikk ' + game.aktivLakk(t, '(ingen bane)', todNavn[0], 'AUTO').navn);
   });
+
+  // En lakk uten `bane` hører til en TID og ikke et sted, så den skal gjelde på
+  // ALLE baner den tiden — og på ingen av de andre tidene. Måles på hver enkelt
+  // bane, ikke bare én, for det er nettopp «alle baner» som er regelen.
+  alle.forEach(function(l){
+    if(l.rolle !== 'spesial' || l.lv.bane !== undefined) return;
+    const feilPaa = [], feilTid = [];
+    baneNavn.forEach(function(bn){
+      if(game.aktivLakk(l.lag, bn, l.lv.tid, 'AUTO') !== l.lv) feilPaa.push(bn);
+      todNavn.forEach(function(td){
+        if(td === l.lv.tid) return;
+        if(game.aktivLakk(l.lag, bn, td, 'AUTO') === l.lv) feilTid.push(bn + '/' + td);
+      });
+    });
+    sjekk('tidslakk gjelder alle baner: ' + l.navn, feilPaa.length === 0,
+      'ble ikke valgt på ' + feilPaa.length + ' av ' + baneNavn.length + ' baner: ' + feilPaa.join(', '));
+    sjekk('tidslakk bare på sin egen tid: ' + l.navn, feilTid.length === 0,
+      'ble valgt på ' + feilTid.length + ' feil tidspunkt: ' + feilTid.join(', '));
+  });
+
+  // Når to lakker passer samtidig, skal den som peker på BANEN vinne over den
+  // som bare peker på tida. Ingen av de ti lagene har begge i dag, så regelen
+  // ville vært udekket av dataene — den måles derfor på et oppdiktet lag, slik
+  // at den er bevist FØR et lag får bruk for den.
+  (function(){
+    const stedslakk = { id:'X-sted', navn:'Sted', bane:baneNavn[0], tid:todNavn[0],
+                        base:'#ffffff', acc:'#000000', dark:'#000000', hel:'#ffffff', spc:'#ffffff', pat:'spine' };
+    const tidslakk  = { id:'X-tid', navn:'Tid', tid:todNavn[0],
+                        base:'#ffffff', acc:'#000000', dark:'#000000', hel:'#ffffff', spc:'#ffffff', pat:'spine' };
+    const vanlig    = { id:'X-vanlig', navn:'Vanlig',
+                        base:'#ffffff', acc:'#000000', dark:'#000000', hel:'#ffffff', spc:'#ffffff', pat:'spine' };
+    // Tidslakken står FØRST i lista, så rekkefølgen kan ikke være grunnen til at
+    // stedslakken vinner — bare regelen kan.
+    const lag = { name:'TESTLAG', lakk:{ vanlig:vanlig, spesial:[tidslakk, stedslakk] } };
+    sjekk('bane slår tid på sin egen bane',
+      game.aktivLakk(lag, baneNavn[0], todNavn[0], 'AUTO') === stedslakk,
+      'fikk ' + game.aktivLakk(lag, baneNavn[0], todNavn[0], 'AUTO').navn);
+    sjekk('tid gjelder på de andre banene',
+      game.aktivLakk(lag, baneNavn[1], todNavn[0], 'AUTO') === tidslakk,
+      'fikk ' + game.aktivLakk(lag, baneNavn[1], todNavn[0], 'AUTO').navn);
+    sjekk('ingen av dem på feil tid',
+      game.aktivLakk(lag, baneNavn[0], todNavn[1], 'AUTO') === vanlig,
+      'fikk ' + game.aktivLakk(lag, baneNavn[0], todNavn[1], 'AUTO').navn);
+  })();
 
   // ── 9. griden ─────────────────────────────────────────────────────────────
   // Antall lag × sjåfører per lag ER antall biler. Legges det til et ellevte lag

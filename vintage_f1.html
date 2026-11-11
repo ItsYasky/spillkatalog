@@ -3438,6 +3438,8 @@ const TRACKS=[
 // sponsorene er fri fantasi, ikke ekte merker. Fargene er kontrastsjekket mot
 // hver banes asfalt (se test_lag.js).
 //   short    tre bokstaver, brukes bare i den trange resultatlista (108 px)
+//   hjem     hjemsted, vises på LAG-skjermen
+//   type     hva slags lag det er, én setning, vises på LAG-skjermen
 //   sponsor  tittelsponsor; sponsor+name er fullt lagnavn (podiet, resultat-
 //            lista, baneutvalget)
 //   lakk     { vanlig, spesial:[] } — se LAKK-avsnittet under
@@ -3458,41 +3460,85 @@ const TRACKS=[
 // `bevisstLavKontrast` fritar en lakk fra acc-mot-base-kravet i test_lag.js —
 // for en lakk som MED VILJE bruker to farger med samme lyshet.
 const TEAMS=[
-  {name:'VULCANA', short:'VUL', sponsor:'Ignaro',            sponsors:['Tessera Ur','Ventoli Kaffe'],
-   lakk:{vanlig:{id:'VUL-vanlig', navn:'Vanlig', base:'#9e1b32', acc:'#e8b04a', dark:'#3d0a14', hel:'#f4ecd8', spc:'#f4ecd8', pat:'split'},
-         spesial:[]}},
-  {name:'NORDHAV', short:'NDH', sponsor:'Isvind Energi',     sponsors:['Skjærgård Forsikring','Nordlys Mobil'],
-   lakk:{vanlig:{id:'NDH-vanlig', navn:'Vanlig', base:'#1b2e4a', acc:'#bfe3f2', dark:'#0b1424', hel:'#f8fafc', spc:'#f8fafc', pat:'spine'},
-         spesial:[]}},
-  {name:'AURUM',   short:'AUR', sponsor:'Kairon Logistikk',  sponsors:['Solvei Bank','Taurex Dekk'],
-   lakk:{vanlig:{id:'AUR-vanlig', navn:'Vanlig', base:'#e3b23c', acc:'#1a1a1a', dark:'#5a4110', hel:'#f5efe0', spc:'#1a1a1a', pat:'chevron'},
-         spesial:[]}},
-  {name:'KESTREL', short:'KES', sponsor:'Veltra Mobil',      sponsors:['Arkivo Software','Quillon Klokker'],
-   lakk:{vanlig:{id:'KES-vanlig', navn:'Vanlig', base:'#f2f0e8', acc:'#c2410c', dark:'#57534e', hel:'#c2410c', spc:'#1f2937', pat:'sash'},
-         spesial:[]}},
-  {name:'VERDANT', short:'VRD', sponsor:'Mosslund Bank',     sponsors:['Grønnbro Kraft','Tavik Byggevarer'],
-   lakk:{vanlig:{id:'VRD-vanlig', navn:'Vanlig', base:'#556b2f', acc:'#f5f0e1', dark:'#263014', hel:'#f5f0e1', spc:'#e9c46a', pat:'spine'},
-         spesial:[]}},
-  {name:'CORALIS', short:'COR', sponsor:'Havbris Sjømat',    sponsors:['Marello Reiser','Pinto Sport'],
-   lakk:{vanlig:{id:'COR-vanlig', navn:'Vanlig', base:'#e2725b', acc:'#1f2a44', dark:'#6e2a1c', hel:'#f8fafc', spc:'#f8fafc', pat:'tail'},
-         spesial:[]}},
+  {name:'VULCANA', short:'VUL', hjem:'Modena, Italia',          type:'Gammel storhet som har falt litt',
+   sponsor:'Ignaro',          sponsors:['Tessera Ur','Ventoli Kaffe'],
+   lakk:{vanlig:{id:'VUL-vanlig', navn:'Vanlig', base:'#5a0f17', acc:'#e8b04a', dark:'#2a0509', hel:'#f4ecd8', spc:'#e8b04a', pat:'edges'},
+         spesial:[
+           {id:'VUL-bianco', navn:'Bianco', bane:'TEMPIO',
+            base:'#f4f1ec', acc:'#5a0f17', dark:'#3a0a0c', hel:'#d23a42', spc:'#5a0f17', pat:'spine'}
+         ]}},
+  {name:'NORDHAV', short:'NDH', hjem:'Stavanger, Norge',        type:'Liten underdog med sterk ingeniørkultur',
+   sponsor:'Isvind Energi',   sponsors:['Skjærgård Forsikring','Nordlys Mobil'],
+   lakk:{vanlig:{id:'NDH-vanlig', navn:'Vanlig', base:'#2a4a78', acc:'#bfe3f2', dark:'#0f1d33', hel:'#f8fafc', spc:'#f8fafc', pat:'spine'},
+         spesial:[
+           // Den ENESTE lakken uten `bane`: nordlys hører til natta, ikke til et
+           // sted, så den gjelder alle tretten banene når det er mørkt.
+           {id:'NDH-nordlys', navn:'Nordlys', tid:'NATT',
+            base:'#0b1424', acc:'#3ee6a8', dark:'#050a14', hel:'#f8fafc', spc:'#b8a6ff', pat:'sash'}
+         ]}},
+  {name:'AURUM',   short:'AUR', hjem:'Monaco',                  type:'Ny rikdom, glatt og dyr',
+   sponsor:'Kairon Logistikk',sponsors:['Solvei Bank','Taurex Dekk'],
+   lakk:{vanlig:{id:'AUR-vanlig', navn:'Vanlig', base:'#5b35b0', acc:'#e8d3a2', dark:'#23123f', hel:'#f2e6c8', spc:'#f2e6c8', pat:'chevron'},
+         spesial:[
+           {id:'AUR-rose', navn:'Rosé', bane:'LABIRINTO',
+            base:'#d79a7b', acc:'#4c2a92', dark:'#6b3f2a', hel:'#f8fafc', spc:'#4c2a92', pat:'chevron'}
+         ]}},
   // ONYX' grunnfarge har et fiolett stikk i stedet for å være nøytralt
-  // kullsvart. På banen er forskjellen knapt synlig (begge er «svart»), men
-  // teamInk lysner lagfargen for menyene, og nøytralt svart lysnet til nøyaktig
-  // samme grå som GRANITT. Stikket gir ONYX sin egen fiolett der, uten å endre
-  // bilen.
-  {name:'ONYX',    short:'ONX', sponsor:'Paxel Cloud',       sponsors:['Nyxa Lyd','Obsidia Gaming'],
-   lakk:{vanlig:{id:'ONX-vanlig', navn:'Vanlig', base:'#281e38', acc:'#a78bfa', dark:'#100b18', hel:'#a78bfa', spc:'#e5e7eb', pat:'edges'},
-         spesial:[]}},
-  {name:'AZURA',   short:'AZU', sponsor:'Brisa Telekom',     sponsors:['Solenna Juice','Fartsbud Frakt'],
-   lakk:{vanlig:{id:'AZU-vanlig', navn:'Vanlig', base:'#2a74c8', acc:'#ffd23f', dark:'#1d4f80', hel:'#ffd23f', spc:'#ffffff', pat:'sash'},
-         spesial:[]}},
-  {name:'ROSARIO', short:'ROS', sponsor:'Lilje Kosmetikk',   sponsors:['Fiorenza Mote','Cielo Fly'],
-   lakk:{vanlig:{id:'ROS-vanlig', navn:'Vanlig', base:'#b5367e', acc:'#f6d6e4', dark:'#4a1031', hel:'#f8fafc', spc:'#ffffff', pat:'split'},
-         spesial:[]}},
-  {name:'GRANITT', short:'GRA', sponsor:'Fjellbor Industri', sponsors:['Bratt Klatring','Stålvik Verk'],
-   lakk:{vanlig:{id:'GRA-vanlig', navn:'Vanlig', base:'#6b7280', acc:'#c6f432', dark:'#2a2e35', hel:'#c6f432', spc:'#111827', pat:'chevron'},
-         spesial:[]}}
+  // kullsvart. På banen er forskjellen knapt synlig (begge leses som «svart»),
+  // men teamInk lysner lagfargen for menyene, og nøytralt svart lysner til en
+  // helt nøytral grå som ikke sier hvilket lag det er. Stikket gir ONYX sin egen
+  // fiolett der, uten å endre bilen.
+  {name:'ONYX',    short:'ONX', hjem:'Osaka, Japan',            type:'Aggressivt fabrikklag',
+   sponsor:'Paxel Cloud',     sponsors:['Nyxa Lyd','Obsidia Gaming'],
+   lakk:{vanlig:{id:'ONX-vanlig', navn:'Vanlig', base:'#281e38', acc:'#a78bfa', dark:'#100b18', hel:'#a78bfa', spc:'#e5e7eb', pat:'tail'},
+         spesial:[
+           {id:'ONX-sakura', navn:'Sakura', bane:'ESSE',
+            base:'#281e38', acc:'#f4a6c8', dark:'#100b18', hel:'#f4a6c8', spc:'#f4a6c8', pat:'edges'},
+           {id:'ONX-neon2099', navn:'Neon 2099', bane:'VISTANOTTE', tid:'NATT',
+            base:'#0a0a0d', acc:'#7f8590', dark:'#050507', hel:'#ff2a3c', spc:'#1c1c22', pat:'edges'}
+         ]}},
+  {name:'KESTREL', short:'KES', hjem:'Oxfordshire, England',    type:'Tradisjonsrikt britisk privatlag',
+   sponsor:'Veltra Mobil',    sponsors:['Arkivo Software','Quillon Klokker'],
+   lakk:{vanlig:{id:'KES-vanlig', navn:'Vanlig', base:'#f2f0e8', acc:'#3a4a68', dark:'#2c3850', hel:'#e0571a', spc:'#e0571a', pat:'sash'},
+         spesial:[
+           {id:'KES-heritage', navn:'Heritage', bane:'CAMPAGNA',
+            base:'#1f4d36', acc:'#f2f0e8', dark:'#0e2419', hel:'#c2410c', spc:'#f2f0e8', pat:'sash'}
+         ]}},
+  {name:'VERDANT', short:'VRD', hjem:'Zürich, Sveits',          type:'Rikt og forsiktig',
+   sponsor:'Mosslund Bank',   sponsors:['Grønnbro Kraft','Tavik Byggevarer'],
+   lakk:{vanlig:{id:'VRD-vanlig', navn:'Vanlig', base:'#556b2f', acc:'#f5f0e1', dark:'#263014', hel:'#f5f0e1', spc:'#e9c46a', pat:'spine'},
+         spesial:[
+           {id:'VRD-alpin', navn:'Alpin', bane:'ALPEN',
+            base:'#f5f0e1', acc:'#556b2f', dark:'#8a8f7a', hel:'#e63946', spc:'#556b2f', pat:'spine'}
+         ]}},
+  {name:'MAKO',    short:'MAK', hjem:'Gold Coast, Australia',   type:'Uredd og rask, vinner på mot fremfor penger',
+   sponsor:'Riptide Surf',    sponsors:['Southern Mining','Koru Air'],
+   lakk:{vanlig:{id:'MAK-vanlig', navn:'Vanlig', base:'#ffd400', acc:'#16181c', dark:'#16181c', hel:'#f8fafc', spc:'#16181c', pat:'chevron'},
+         spesial:[
+           {id:'MAK-outback', navn:'Outback', bane:'DISCESA',
+            base:'#a8461f', acc:'#ffd400', dark:'#4a1d0c', hel:'#ffd400', spc:'#16181c', pat:'chevron'}
+         ]}},
+  {name:'SAHRA',   short:'SAH', hjem:'Riyadh, Saudi-Arabia',    type:'Statsfinansiert, nesten ubegrenset budsjett',
+   sponsor:'Rimal Petroleum', sponsors:['Qamar Fly','Nakheel Bygg'],
+   lakk:{vanlig:{id:'SAH-vanlig', navn:'Vanlig', base:'#0b7a7a', acc:'#e8d5a8', dark:'#053a39', hel:'#f4ecd8', spc:'#f4ecd8', pat:'tail'},
+         spesial:[
+           {id:'SAH-orkennatt', navn:'Ørkennatt', bane:'DESERTO',
+            base:'#0a0f14', acc:'#22d3c5', dark:'#000000', hel:'#e8d5a8', spc:'#e8d5a8', pat:'edges'}
+         ]}},
+  {name:'LONGWEI', short:'LWE', hjem:'Shanghai, Kina',          type:'Elbilprodusent som bygger alt selv',
+   sponsor:'Longwei Auto',    sponsors:['Jinlu Batteri','Huasheng Telekom'],
+   lakk:{vanlig:{id:'LWE-vanlig', navn:'Vanlig', base:'#b0185f', acc:'#ffd84a', dark:'#4a0627', hel:'#ffd84a', spc:'#ffffff', pat:'split'},
+         spesial:[
+           {id:'LWE-jade', navn:'Jade', bane:'ESSE',
+            base:'#1c7f58', acc:'#f2d16b', dark:'#0c3a28', hel:'#e23b3b', spc:'#f8fafc', pat:'tail'}
+         ]}},
+  {name:'FRONTIER',short:'FRO', hjem:'Indianapolis, USA',       type:'Nykommer med en bilprodusent i ryggen',
+   sponsor:'Ironwood Motors', sponsors:['Liberty Lane Forsikring','Summit Outdoor'],
+   lakk:{vanlig:{id:'FRO-vanlig', navn:'Vanlig', base:'#c9cdd2', acc:'#9b1c2c', dark:'#5b616a', hel:'#f8fafc', spc:'#1b2a4a', pat:'split'},
+         spesial:[
+           {id:'FRO-mojave', navn:'Mojave', bane:'VISTANOTTE',
+            base:'#c26a30', acc:'#14161c', dark:'#5a2c10', hel:'#f8fafc', spc:'#14161c', pat:'spine'}
+         ]}}
 ];
 // Aliasene og den nøytrale profilen settes her i stedet for å skrives av for
 // hånd ti ganger, så det er umulig at en alias og sitt felt kommer i utakt.
@@ -3511,22 +3557,29 @@ function lagLakker(t){ return [t.lakk.vanlig].concat(t.lakk.spesial); }
 
 // Hvilken lakk en bil fra `lag` skal kjøre med på `bane` til `tid`.
 // `innstilling` er SPESIALLAKK-raden i INNSTILLINGER: 'AV' tvinger den vanlige
-// lakken overalt. Ellers vinner den FØRSTE spesiallakken i lista som passer
-// banen (og tiden, hvis lakken har en) — rekkefølgen i `spesial` er altså
-// prioriteten, og et lag med to lakker på samme bane trenger ingen ny regel.
+// lakken overalt.
+//
+// En spesiallakk kan høre til et STED (`bane`), en TID (`tid`) eller begge.
+// Mangler den `bane`, gjelder den alle baner — slik NORDHAVs Nordlys gjelder
+// hele kalenderen så lenge det er natt. Da kan to lakker passe samtidig, og
+// regelen er at den som peker på BANEN vinner over den som bare peker på tida:
+// en lakk laget for ett sted er et mer spesifikt valg enn en lakk laget for
+// natta. Derfor to omganger i stedet for én — rekkefølgen i `spesial` avgjør
+// bare mellom lakker som er like spesifikke.
+//
 // All biltegning går gjennom denne, så en lakk kan ikke snike seg inn ett sted
 // og mangle et annet.
 function aktivLakk(lag,bane,tid,innstilling){
-  if(innstilling!=='AV'){
-    const sp=lag.lakk.spesial;
-    for(let i=0;i<sp.length;i++){
-      const s=sp[i];
-      if(s.bane!==bane) continue;
-      if(s.tid && s.tid!==tid) continue;
-      return s;
-    }
+  if(innstilling==='AV') return lag.lakk.vanlig;
+  const sp=lag.lakk.spesial;
+  let utenBane=null;
+  for(let i=0;i<sp.length;i++){
+    const s=sp[i];
+    if(s.tid && s.tid!==tid) continue;
+    if(s.bane){ if(s.bane===bane) return s; continue; }
+    if(!utenBane) utenBane=s;
   }
-  return lag.lakk.vanlig;
+  return utenBane || lag.lakk.vanlig;
 }
 
 // PLASS TIL LAGEGENSKAPER — IKKE I BRUK. Returnerer alltid 1, uansett hva som
@@ -3612,6 +3665,13 @@ function rgbToHsl(r,g,b){
   if(mx===r)      h=((g-b)/d)%6;
   else if(mx===g) h=(b-r)/d+2;
   else            h=(r-g)/d+4;
+  // Er rødt sterkest OG grønt svakere enn blått (karmosin, rosa, magenta), blir
+  // leddet over negativt — f.eks. −28° for LONGWEIs #b0185f. hslToHex tar da
+  // h<60-grenen med en negativ `x`, og ett av kanalene havner under null:
+  // resultatet er en hex med minustegn («#e4-1b36»), som canvas forkaster
+  // STILLE og beholder forrige fillStyle. Derfor dreies kuløren inn i [0,360)
+  // her ved kilden, ikke i hver leser.
+  h=(h%6+6)%6;
   return [h*60,s,l];
 }
 function hslToHex(h,s,l){
@@ -3625,19 +3685,32 @@ function hslToHex(h,s,l){
   else           [r,g,b]=[c,0,x];
   return '#'+[r,g,b].map(v=>Math.round((v+m)*255).toString(16).padStart(2,'0')).join('');
 }
+// `bg` kan være én bakgrunn eller flere. Med flere lysnes fargen til den klarer
+// kravet mot ALLE — se TEAM_BGS for hvorfor det ikke holder å velge den lyseste.
 function inkFor(hex,bg,cache){
   if(cache[hex]) return cache[hex];
+  const bger=Array.isArray(bg)?bg:[bg];
   const [h,s,l0]=rgbToHsl(...hex.replace('#','').match(/../g).map(v=>parseInt(v,16)));
   let l=l0, out=hex;
+  const holder=()=>bger.every(b=>contrastRatio(out,b)>=4.5);
   // 2 % lysere om gangen. Taket på L=0,92 hindrer at en farge som aldri når
   // kravet (finnes ikke blant dagens lag, men kan legges til) løper til hvitt.
-  while(contrastRatio(out,bg)<4.5 && l<0.92){
+  while(!holder() && l<0.92){
     l=Math.min(0.92,l+0.02);
     out=hslToHex(h,s,l);
   }
   return cache[hex]=out;
 }
-function teamInk(hex){ return inkFor(hex,UI_BG,inkCache); }
+// Lagnavnet males IKKE bare på UI_BG. På LAGOVERSIKT står det på kort-tonene —
+// en rgba-tint over menybunnen #05070a — og de er lysere enn UI_BG. Hvilken av
+// dem som er verst avhenger av KULØREN, ikke bare av lysheten: AURUMs fiolett
+// måler svakest mot den nøytrale tinten (#0d0e11) og VULCANAs rødt mot den røde
+// (#1b0709). Derfor måles det mot alle tre i stedet for å plukke den lyseste.
+// Dette var en latent feil: garantien i teamInk ble målt mot en bakgrunn som er
+// mørkere enn den teksten faktisk ligger på, så den lovet mer enn den holdt.
+// Ingen av de gamle lagfargene falt i sprekken, AURUMs fiolett gjorde (4,46:1).
+const TEAM_BGS=[UI_BG,'#1b0709','#0d0e11'];
+function teamInk(hex){ return inkFor(hex,TEAM_BGS,inkCache); }
 // Resultatskjermen og pausemenyen ligger på et halvtransparent overlegg
 // (rgba(5,7,10,.88)) over selve løpsscenen, ikke på UI_BG. Komponert mot
 // hvitt — den lyseste bakgrunnen som faktisk kan ligge bak teksten der,
@@ -6615,7 +6688,7 @@ function draw(){
       // driver name under the block
       // Under selve blokka står bare lagnavn + bilnummer. Podieblokkene står
       // 74 px fra senter til senter, og det FULLE navnet får ikke plass der:
-      // «Fjellbor Industri» alene er 92 px på 9 px Courier, så to naboer ville
+      // «Kairon Logistikk» alene er 86 px på 9 px Courier, så to naboer ville
       // lagt seg oppå hverandre. Mindre skrift er ikke et alternativ (9 px er
       // gulvet). Det fulle navnet vises i stedet på egen linje under podiet,
       // der det er 520 px å ta av.
@@ -6663,7 +6736,7 @@ function draw(){
         const c=row.c;
         ctx.fillStyle=podiumInk(c.team.color);
         // Fullt navn her — lista er sentrert over hele bredden, så det er god
-        // plass til «Fjellbor Industri GRANITT 2» (162 px på 9 px Courier).
+        // plass til «1. Ironwood Motors FRONTIER 2» (157 px på 9 px Courier).
         ctx.fillText(`${row.rank}. ${c.isPlayer?'DU':teamFullName(c.team)+' '+c.num}${penaltyLabel(c)}`,W/2,ry);
       });
       const listRows=rows.length;
