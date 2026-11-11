@@ -1724,7 +1724,7 @@ D dokumentasjonen, E sluttest.
 |---|---|---|---|---|
 | A | ferdig | `936db02` | Ren omstrukturering: lakkene er egne objekter under `lag.lakk.{vanlig,spesial[]}`, `drawPattern` slår opp i `PATTERNS`, `aktivLakk()` er enestes velger av lakk, sprite-cachen nøkles på lakk-`id`, og hvert lag har en tom `profil` + `lagFaktor()` som alltid gir 1 | `test_lag.js` (105/105, ny), `test_banetema.js` (198/198, sjekk 4 bygget om) |
 | B | ferdig | `b862db3` | De ti nye lagene og de 21 lakkene, `aktivLakk` utvidet med tidslakker, og to latente fargefeil rettet (`teamInk`-referansen og negativ kulør i `rgbToHsl`) | `test_lag.js` (229/229), `test_banetema.js` (208/208), `test_meny_kontrast.js` (117/117), `test_ai_compare.js` |
-| C | ikke startet | — | SPESIALLAKK-innstillingen, LAG-skjermen og banevalg-linja | — |
+| C | ferdig | `89e4898` | SPESIALLAKK-innstillingen, LAG-skjermen bygget om til liste + detaljpanel med ← → mellom lakkene, spesiallakk-linja i banevalget, banebevisst bilforhåndsvisning, og `shot --tod`-feilen rettet | `test_meny_kontrast.js` (120/120, nå med 9 px-gulv), `test_lag.js` (229/229), `maalinger/lakk_grid_C.txt` |
 | D | ikke startet | — | «Ny lakk eller nytt lag» i dette notatet | — |
 | E | ikke startet | — | Sluttest, skjermbilder og ventelista | — |
 
@@ -1840,6 +1840,90 @@ henger på lagets plass i `TEAMS`. Merk at `test_ai_compare.js` alene ikke er
 nok til å si «bit-identisk»: den skriver ut spredning/vegg/utenfor/brudd, men
 ikke `besteLap`, `medLap`, `steps`, `finished` eller `otFrac`. Sammenligningen
 må gå over ALLE feltene.
+
+**Avvik verdt å vite i steg C (spesiallakk i menyene):**
+
+1. **`shot --tod` målte med lakkene fra FEIL DØGNTID, og det er en ekte
+   målefeil og ikke en kosmetisk.** `shot_js` satte `todIdx` ETTER
+   `startRace()` (riktig for LYSET, det var rettelsen i runde 4 steg D1), men
+   `startRace()` kaller `buildCarSprites()`, og en bils lakk velges av
+   `aktivLakk(bane, TOD[todIdx].name, …)` PÅ BYGGETIDSPUNKTET. Et «VISTANOTTE
+   på NATT»-bilde kom derfor med nattlys og DAGBILER — altså en NORDHAV uten
+   Nordlys, som er nøyaktig det bildet skulle bevise. Rettet ved å sette
+   `SETTINGS.tid = TOD[tod].name` FØR `startRace()`, slik at spillets egen
+   `resolveTodIdx` løser den; tilordningen etterpå står igjen som belte og
+   bukseseler. **Samme feil lever fortsatt i `fps_js`** og er lagt i
+   `SENERE.md` (lyset og banen er riktige der, så alle eksisterende
+   `fps`-tall står — det er bare bilenes lakk som er fra feil tid).
+2. **`test_meny_kontrast.js` MÅLTE ALDRI TEKSTSTØRRELSE.** Bestillingen krever
+   «minst 9 px og minst 4,5:1» i hvert steg, men testen regnet bare
+   kontrastbrøken; `px` ble sendt inn utelukkende for å avgjøre `isLarge()`.
+   Et `MIN_PX = 9`-gulv er lagt inn i `check()`, og det er mutasjonstestet (én
+   sjekk endret til 8 px gir `FEIL … 8 px ← UNDER 9 px`, 119/120). **En test
+   som skal håndheve et krav må faktisk håndheve det** — ellers er den grønne
+   utskriften en påstand og ikke et bevis. Sjekktallet gikk 117 → 120.
+3. **LAG-skjermen måtte BYGGES OM, og det var en måling som bestemte det.** De
+   gamle kortene er 248 px brede med 156 px tekstområde. «Indianapolis, USA»
+   pluss en 43 tegn lang type-linje krever 232 px ved 9 px Courier (0,6 ×
+   px per tegn), altså 1,5x det som finnes — og 9 px er gulvet, så det kan
+   ikke løses med mindre skrift. Skjermen er derfor en navneliste til venstre
+   (140 px) og ett detaljpanel til høyre (348 px), som er det eneste oppsettet
+   der all teksten bestillingen ber om faktisk får plass.
+4. **Første panelutgave hadde 116 px TOMT i bunnen**, og det ble funnet på
+   skjermbildet og ikke i koden: `ph=544` mens siste lakkrad slutter på
+   `py+428`. Panelet er klemt til 450 og bilen hevet fra `scale` 3,4 til 4.
+   Samme familie som størrelsesfeilene i runde 4 — et tall som ser rimelig ut
+   i kildekoden kan være åpenbart galt i bildet.
+5. **`planlagtTid(tr)` returnerer `null` på TILFELDIG, og det er med vilje.**
+   Døgntiden trekkes i `resolveTodIdx` når LØPET STARTER, så en meny som
+   gjetter lyver i halvparten av tilfellene. `aktivLakk(…, null, …)` hopper av
+   samme grunn over hver lakk som henger på en tid: det er bedre at menyen sier
+   mindre enn at den sier noe galt. AUTO slår opp banens `naturligTid`, som er
+   kjent.
+6. **`previewLivery` måtte bli BANEBEVISST.** Den gamle viste `lakk.vanlig`,
+   altså AURUM i fiolett, mens bilen på LABIRINTO faktisk er Rosé — og
+   forhåndsvisningen har siden meny-steg A lovet å være «den samme bilen du
+   faktisk kjører». Den leser nå
+   `aktivLakk(playerIdent.team, tr.name, planlagtTid(tr), SETTINGS.spesiallakk)`
+   med fallback til `lakk.vanlig` når ingen bane er valgt.
+7. **To punkter i bestillingen trengte INGEN kodeendring, og det er verifisert
+   og ikke antatt.** «Spilleren kjører med spesiallakken til laget sitt» følger
+   alt av at `liveryOf` faller gjennom til `aktivLakk` når SKIN er STANDARD, og
+   «DITT LAG får de nye lagene» av at raden bygges fra `TEAMS.map`. Begge er
+   målt i `maalinger/lakk_grid_C.txt` (STANDARD + AUTO på LABIRINTO gir Rosé i
+   både bil og meny; ROSSO overstyrer som før).
+8. **«Spesiallakk: …»-linja i banevalget viser ALLE lagene med spesiallakk på
+   banen, ikke bare spillerens.** Den svarer på «hva kommer jeg til å se», og
+   da er ti lag relevante. Den kuttes etter TEGNTELLING mot bokstavbredden
+   (`(bw-24)/(9*0,6)`) med `+N` på resten — Courier er fast bredde, så
+   avkuttingen er et regnestykke og ikke en gjetning.
+9. **Et skjermbilde av griden kan IKKE avgjøre hvem som har hvilken lakk.**
+   Bilene er noen få piksler på et 520×680-lerret. I stedet er alle åtte
+   kombinasjonene av bane × døgntid × innstilling MÅLT og skrevet ut med navn
+   (`maalinger/lakk_grid_C.txt`): AURUM Rosé på LABIRINTO, ONYX Neon 2099 +
+   NORDHAV Nordlys + FRONTIER Mojave på VISTANOTTE/NATT, og alle 20 på vanlig
+   lakk med SPESIALLAKK AV. Samme lærdom som D3a punkt 7 — et bilde må først
+   bevise at det kan svare på spørsmålet.
+10. **`shot` tok et bilde av HOVEDMENYEN når banen ble skrevet som flagg**
+   (`shot --help`, `shot --bane X`), og avsluttet med kode 0. Punktet står i
+   `SENERE.md`; her er den delen som gjelder posisjonsargumentet lukket med en
+   vakt (`if bane.startswith("--"): raise SystemExit(...)`), siden jeg gikk i
+   fella selv mens jeg målte. Resten av punktet (injeksjon som kaster skal gi
+   exit ≠ 0) står igjen.
+11. **`SETTINGS_VER` er IKKE hevet for `spesiallakk`.** `lastInnstillinger()`
+   validerer hvert felt for seg, så et manglende felt i et gammelt lagret
+   objekt faller tilbake til standardverdien AUTO uten å dra resten med seg.
+   En versjonsheving ville derimot kastet ALLE lagrede innstillinger.
+
+**Verifisert i steg C:** `test_meny_kontrast.js` 120/120 (117 før),
+`test_lag.js` 229/229 med svakeste asfaltkontrast UENDRET 3,21:1 (FRONTIER
+Mojave mot VISTANOTTE), `test_innstillinger.js`, `test_hovedmeny.js`,
+`test_pause.js`, `test_banetema.js` 208/208, `test_bevegelse.js` PASS,
+`test_boost.js`, `test_cooldown.js`, `test_ghost.js`, `test_gap.js`,
+`test_track_limits.js` alle grønne, `test_banegeometri.js --mot
+geo_laas.json` uendret på alle 13, og `chrome_harness.py maal` bygger alle 13
+(sum 175,6 ms, snitt 13,5, verste VISTANOTTE 19,2 ms). Målingene står i
+`maalinger/lakk_grid_C.txt` og bildene i `maalinger/bilder/C_*.png`.
 
 ### ASTEROIDER (`asteroids.html`)
 
