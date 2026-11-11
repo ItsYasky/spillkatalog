@@ -3436,42 +3436,106 @@ const TRACKS=[
 // ══════════════════════════════════════════════════════════════════
 // 10 oppdiktede konstruktører × 2 biler = full startgrid på 20. Lagene og
 // sponsorene er fri fantasi, ikke ekte merker. Fargene er kontrastsjekket mot
-// asfalten (se contrastReport nedenfor).
+// hver banes asfalt (se test_lag.js).
 //   short    tre bokstaver, brukes bare i den trange resultatlista (108 px)
 //   sponsor  tittelsponsor; sponsor+name er fullt lagnavn (podiet, resultat-
 //            lista, baneutvalget)
-//   base/acc/dark/hel/pat/spc  lakkering, samme sett som SKINS
-// color/dark/accent (satt av .forEach under) er aliaser for base/dark/acc og
-// IKKE dødkode — minimap, HUD-stripa og resultatlistas fargeruter leser dem.
+//   lakk     { vanlig, spesial:[] } — se LAKK-avsnittet under
+//   profil   plass til lagegenskaper, ikke i bruk ennå (se lagFaktor)
+// color/dark/accent (satt av .forEach under) er aliaser for den VANLIGE lakkens
+// base/dark/acc og IKKE dødkode — minimap, HUD-stripa, menyene og
+// resultatlistas fargeruter leser dem.
+//
+// ── LAKK ────────────────────────────────────────────────────────────────
+// Én lakk er alt som trengs for å tegne bilen, samlet i ett objekt:
+//   { id, navn, base, acc, dark, hel, spc, pat, bane?, tid?, bevisstLavKontrast? }
+// Fargene lå før rett på laget, altså hadde et lag per definisjon ÉN lakk.
+// Nå ligger de i `lakk.vanlig`, og `lakk.spesial` er en LISTE, så et lag kan ha
+// null, én eller flere spesiallakker uten at noen annen kode trenger å vite
+// hvor mange. `bane` er banen en spesiallakk hører til og `tid` tiden på døgnet
+// (se aktivLakk for utvelgelsen). `id` er unik og er nøkkelen sprite-bufferet
+// slår opp på, slik at to lakker på samme lag aldri kan dele sprite.
+// `bevisstLavKontrast` fritar en lakk fra acc-mot-base-kravet i test_lag.js —
+// for en lakk som MED VILJE bruker to farger med samme lyshet.
 const TEAMS=[
   {name:'VULCANA', short:'VUL', sponsor:'Ignaro',            sponsors:['Tessera Ur','Ventoli Kaffe'],
-   base:'#9e1b32', acc:'#e8b04a', dark:'#3d0a14', hel:'#f4ecd8', pat:'split',   spc:'#f4ecd8'},
+   lakk:{vanlig:{id:'VUL-vanlig', navn:'Vanlig', base:'#9e1b32', acc:'#e8b04a', dark:'#3d0a14', hel:'#f4ecd8', spc:'#f4ecd8', pat:'split'},
+         spesial:[]}},
   {name:'NORDHAV', short:'NDH', sponsor:'Isvind Energi',     sponsors:['Skjærgård Forsikring','Nordlys Mobil'],
-   base:'#1b2e4a', acc:'#bfe3f2', dark:'#0b1424', hel:'#f8fafc', pat:'spine',   spc:'#f8fafc'},
+   lakk:{vanlig:{id:'NDH-vanlig', navn:'Vanlig', base:'#1b2e4a', acc:'#bfe3f2', dark:'#0b1424', hel:'#f8fafc', spc:'#f8fafc', pat:'spine'},
+         spesial:[]}},
   {name:'AURUM',   short:'AUR', sponsor:'Kairon Logistikk',  sponsors:['Solvei Bank','Taurex Dekk'],
-   base:'#e3b23c', acc:'#1a1a1a', dark:'#5a4110', hel:'#f5efe0', pat:'chevron', spc:'#1a1a1a'},
+   lakk:{vanlig:{id:'AUR-vanlig', navn:'Vanlig', base:'#e3b23c', acc:'#1a1a1a', dark:'#5a4110', hel:'#f5efe0', spc:'#1a1a1a', pat:'chevron'},
+         spesial:[]}},
   {name:'KESTREL', short:'KES', sponsor:'Veltra Mobil',      sponsors:['Arkivo Software','Quillon Klokker'],
-   base:'#f2f0e8', acc:'#c2410c', dark:'#57534e', hel:'#c2410c', pat:'sash',    spc:'#1f2937'},
+   lakk:{vanlig:{id:'KES-vanlig', navn:'Vanlig', base:'#f2f0e8', acc:'#c2410c', dark:'#57534e', hel:'#c2410c', spc:'#1f2937', pat:'sash'},
+         spesial:[]}},
   {name:'VERDANT', short:'VRD', sponsor:'Mosslund Bank',     sponsors:['Grønnbro Kraft','Tavik Byggevarer'],
-   base:'#556b2f', acc:'#f5f0e1', dark:'#263014', hel:'#f5f0e1', pat:'spine',   spc:'#e9c46a'},
+   lakk:{vanlig:{id:'VRD-vanlig', navn:'Vanlig', base:'#556b2f', acc:'#f5f0e1', dark:'#263014', hel:'#f5f0e1', spc:'#e9c46a', pat:'spine'},
+         spesial:[]}},
   {name:'CORALIS', short:'COR', sponsor:'Havbris Sjømat',    sponsors:['Marello Reiser','Pinto Sport'],
-   base:'#e2725b', acc:'#1f2a44', dark:'#6e2a1c', hel:'#f8fafc', pat:'tail',    spc:'#f8fafc'},
+   lakk:{vanlig:{id:'COR-vanlig', navn:'Vanlig', base:'#e2725b', acc:'#1f2a44', dark:'#6e2a1c', hel:'#f8fafc', spc:'#f8fafc', pat:'tail'},
+         spesial:[]}},
+  // ONYX' grunnfarge har et fiolett stikk i stedet for å være nøytralt
+  // kullsvart. På banen er forskjellen knapt synlig (begge er «svart»), men
+  // teamInk lysner lagfargen for menyene, og nøytralt svart lysnet til nøyaktig
+  // samme grå som GRANITT. Stikket gir ONYX sin egen fiolett der, uten å endre
+  // bilen.
   {name:'ONYX',    short:'ONX', sponsor:'Paxel Cloud',       sponsors:['Nyxa Lyd','Obsidia Gaming'],
-  // Grunnfargen har et fiolett stikk i stedet for å være nøytralt kullsvart.
-  // På banen er forskjellen knapt synlig (begge er «svart»), men teamInk lysner
-  // lagfargen for menyene, og nøytralt svart lysnet til nøyaktig samme grå som
-  // GRANITT. Stikket gir ONYX sin egen fiolett der, uten å endre bilen.
-   base:'#281e38', acc:'#a78bfa', dark:'#100b18', hel:'#a78bfa', pat:'edges',   spc:'#e5e7eb'},
+   lakk:{vanlig:{id:'ONX-vanlig', navn:'Vanlig', base:'#281e38', acc:'#a78bfa', dark:'#100b18', hel:'#a78bfa', spc:'#e5e7eb', pat:'edges'},
+         spesial:[]}},
   {name:'AZURA',   short:'AZU', sponsor:'Brisa Telekom',     sponsors:['Solenna Juice','Fartsbud Frakt'],
-   base:'#2a74c8', acc:'#ffd23f', dark:'#1d4f80', hel:'#ffd23f', pat:'sash',    spc:'#ffffff'},
+   lakk:{vanlig:{id:'AZU-vanlig', navn:'Vanlig', base:'#2a74c8', acc:'#ffd23f', dark:'#1d4f80', hel:'#ffd23f', spc:'#ffffff', pat:'sash'},
+         spesial:[]}},
   {name:'ROSARIO', short:'ROS', sponsor:'Lilje Kosmetikk',   sponsors:['Fiorenza Mote','Cielo Fly'],
-   base:'#b5367e', acc:'#f6d6e4', dark:'#4a1031', hel:'#f8fafc', pat:'split',   spc:'#ffffff'},
+   lakk:{vanlig:{id:'ROS-vanlig', navn:'Vanlig', base:'#b5367e', acc:'#f6d6e4', dark:'#4a1031', hel:'#f8fafc', spc:'#ffffff', pat:'split'},
+         spesial:[]}},
   {name:'GRANITT', short:'GRA', sponsor:'Fjellbor Industri', sponsors:['Bratt Klatring','Stålvik Verk'],
-   base:'#6b7280', acc:'#c6f432', dark:'#2a2e35', hel:'#c6f432', pat:'chevron', spc:'#111827'}
+   lakk:{vanlig:{id:'GRA-vanlig', navn:'Vanlig', base:'#6b7280', acc:'#c6f432', dark:'#2a2e35', hel:'#c6f432', spc:'#111827', pat:'chevron'},
+         spesial:[]}}
 ];
-// Aliasene settes her i stedet for å skrives av for hånd ti ganger, så det er
-// umulig at en alias og sitt felt kommer i utakt.
-TEAMS.forEach(t=>{ t.color=t.base; t.accent=t.acc; });
+// Aliasene og den nøytrale profilen settes her i stedet for å skrives av for
+// hånd ti ganger, så det er umulig at en alias og sitt felt kommer i utakt.
+TEAMS.forEach(t=>{
+  const v=t.lakk.vanlig;
+  t.color=v.base; t.accent=v.acc; t.dark=v.dark;
+  // Nøytral profil på alle lag: ingen egenskaper er i bruk i denne runden.
+  // Verdiene står her og ikke på hvert lag fordi de ALLE er 1 — den dagen de
+  // skal skille seg, flyttes de inn i laget selv (se lagFaktor).
+  t.profil={toppfart:1, sving:1, akselerasjon:1, aggresjon:1};
+});
+
+// Alle lakker et lag kan kjøre med, vanlig først. Ett sted å spørre, så
+// menyene, kontrastrapporten og testen aldri kan gå glipp av en spesiallakk.
+function lagLakker(t){ return [t.lakk.vanlig].concat(t.lakk.spesial); }
+
+// Hvilken lakk en bil fra `lag` skal kjøre med på `bane` til `tid`.
+// `innstilling` er SPESIALLAKK-raden i INNSTILLINGER: 'AV' tvinger den vanlige
+// lakken overalt. Ellers vinner den FØRSTE spesiallakken i lista som passer
+// banen (og tiden, hvis lakken har en) — rekkefølgen i `spesial` er altså
+// prioriteten, og et lag med to lakker på samme bane trenger ingen ny regel.
+// All biltegning går gjennom denne, så en lakk kan ikke snike seg inn ett sted
+// og mangle et annet.
+function aktivLakk(lag,bane,tid,innstilling){
+  if(innstilling!=='AV'){
+    const sp=lag.lakk.spesial;
+    for(let i=0;i<sp.length;i++){
+      const s=sp[i];
+      if(s.bane!==bane) continue;
+      if(s.tid && s.tid!==tid) continue;
+      return s;
+    }
+  }
+  return lag.lakk.vanlig;
+}
+
+// PLASS TIL LAGEGENSKAPER — IKKE I BRUK. Returnerer alltid 1, uansett hva som
+// står i lagets `profil`, og kalles ingen steder ennå. Grunnen til at den
+// finnes nå er at `profil` ellers er data uten en avtalt leser, og da ville
+// hvert kallsted senere funnet sin egen måte å lese den på.
+// Hvor de fire nøklene skal kobles inn, og hvorfor de må balanseres mot
+// vanskelighetsgradene først, står i CLAUDE.md under «Lagenes egenskaper».
+function lagFaktor(lag,nokkel){ return 1; }
 // Fullt lagnavn: tittelsponsor + lag, f.eks. «Isvind Energi NORDHAV».
 function teamFullName(t){ return t.sponsor+' '+t.name; }
 
@@ -3510,7 +3574,10 @@ function contrastCheck(lv){
 function contrastReport(){
   const rows=[];
   SKINS.forEach(s=>{ if(s.base) rows.push({type:'LAKK', navn:s.name, lv:skinLivery(s)}); });
-  TEAMS.forEach(t=>  rows.push({type:'LAG',  navn:t.name, lv:skinLivery(t)}));
+  // Alle lagets lakker, ikke bare den vanlige: en spesiallakk som bare kjøres
+  // på én bane er like usynlig mot asfalten der om den ikke måles.
+  TEAMS.forEach(t=> lagLakker(t).forEach(lv=>
+    rows.push({type:'LAG', navn:t.name+' '+lv.navn, lv:lv})));
   const out=rows.map(r=>{
     const c=contrastCheck(r.lv);
     return {
@@ -4233,7 +4300,7 @@ const GHOST_ALPHA=0.36;
 // oppå hverandre — og det er nettopp DER du leser av hvem som kjører best
 // linje. Formen er den samme bilformen som alt annet bruker (drawCarStatic),
 // slik at det er LINJA og ikke silhuetten som skiller dem.
-const GHOST_LIVERY={base:'#ffffff',acc:'#ffffff',dark:'#ffffff',hel:'#ffffff',spc:'#ffffff',pat:'solid'};
+const GHOST_LIVERY={id:'GHOST',navn:'Spøkelse',base:'#ffffff',acc:'#ffffff',dark:'#ffffff',hel:'#ffffff',spc:'#ffffff',pat:'solid'};
 const GHOST_COL='#f8fafc';       // spøkelsets farge i HUD-en og i toastene
 // Teksten i spøkelsespanelet. HVORFOR ikke ledertavlas egne toner: panelet har
 // samme bakgrunn som ledertavla — rgba(5,7,10,.78) oppå asfalten, altså #0f1115
@@ -5230,27 +5297,38 @@ function rrectFill(g,x,y,w,h,r){
   g.fill();
 }
 
-// Lakkeringsmønstrene. Alle tegnes i aksentfargen og klippet til karosseri-
-// polygonet, slik at et mønster aldri kan lekke utenfor bilen uansett hvor
-// grovt rektangelet eller streken er lagt opp.
-function drawPattern(g,pat,acc){
-  if(!pat||pat==='solid') return;
-  g.save(); bodyPath(g); g.clip();
-  g.fillStyle=acc; g.strokeStyle=acc;
-  if(pat==='split')       g.fillRect(1.5,-6,14,12);          // front halv i aksent
-  else if(pat==='spine')  g.fillRect(-13,-1.1,28,2.2);       // stripe langs midten
-  else if(pat==='tail')   g.fillRect(-14,-6,9,12);           // bakre del i aksent
-  else if(pat==='sash'){                                     // diagonal over sidepodene
+// Lakkeringsmønstrene, ett oppslag. Hver funksjon tegner i en kontekst der
+// fyll- og strekfargen ALT er satt til aksentfargen og klippet til karosseri-
+// polygonet er lagt, slik at et mønster aldri kan lekke utenfor bilen uansett
+// hvor grovt rektangelet eller streken er lagt opp.
+// Et nytt mønster er én ny funksjon her og ingenting annet: `pat` på en lakk er
+// nøkkelen inn i dette objektet, og test_lag.js krever at nøkkelen finnes.
+const PATTERNS={
+  split(g,acc){   g.fillRect(1.5,-6,14,12); },        // front halv i aksent
+  spine(g,acc){   g.fillRect(-13,-1.1,28,2.2); },     // stripe langs midten
+  tail(g,acc){    g.fillRect(-14,-6,9,12); },         // bakre del i aksent
+  sash(g,acc){                                        // diagonal over sidepodene
     g.beginPath(); g.moveTo(1,-6); g.lineTo(4.2,-6); g.lineTo(-3.4,6); g.lineTo(-6.6,6);
     g.closePath(); g.fill();
-  } else if(pat==='chevron'){                                // to piler bakover
+  },
+  chevron(g,acc){                                     // to piler bakover
     g.lineWidth=1.6; g.lineCap='butt'; g.lineJoin='miter';
     [-9.5,-5].forEach(cx=>{
       g.beginPath(); g.moveTo(cx-2,-3.2); g.lineTo(cx+1.2,0); g.lineTo(cx-2,3.2); g.stroke();
     });
-  } else if(pat==='edges'){                                  // kant rundt hele bilen
+  },
+  edges(g,acc){                                       // kant rundt hele bilen
     g.lineWidth=1.6; bodyPath(g); g.stroke();
   }
+};
+function drawPattern(g,pat,acc){
+  const tegn=PATTERNS[pat];
+  // Ingen oppføring = ingenting å tegne. Dekker både null/'solid' (spøkelses-
+  // bilen) og en skrivefeil, som da gir en ensfarget bil i stedet for å kaste.
+  if(!tegn) return;
+  g.save(); bodyPath(g); g.clip();
+  g.fillStyle=acc; g.strokeStyle=acc;
+  tegn(g,acc);
   g.restore();
 }
 
@@ -5371,24 +5449,32 @@ function steerAngle(c){
   return Math.max(-STEER_VIS_MAX,Math.min(STEER_VIS_MAX,c.steerVel*STEER_VIS_GAIN));
 }
 
-// Lakkering = ett farge-/mønstersett; SKINS og TEAMS leverer det samme
-// settet direkte, så tegnekoden aldri trenger å vite hvor fargene kom fra.
-// Spillerlakkeringer har ingen egen sponsorfarge (`spc`) — de bruker
-// hjelmfargen, alltid den lyseste i settet, som dekal uansett grunnfarge.
+// Lakkering = ett farge-/mønstersett. Lagenes lakker ER alt dette settet
+// (se LAKK-avsnittet over TEAMS); SKINS er spillerens egne og mangler både
+// `id` og `spc`, så de pakkes om her. `id` må finnes fordi sprite-bufferet
+// slår opp på den, og den har SKIN-prefiks så en spillerlakk aldri kan kollidere
+// med en lag-lakk. Spillerlakkeringer bruker hjelmfargen, alltid den lyseste i
+// settet, som dekal uansett grunnfarge.
 function skinLivery(sk){
-  return {base:sk.base, acc:sk.acc, dark:sk.dark, hel:sk.hel, spc:sk.spc||sk.hel, pat:sk.pat};
+  return {id:'SKIN-'+sk.name, navn:sk.name,
+          base:sk.base, acc:sk.acc, dark:sk.dark, hel:sk.hel, spc:sk.spc||sk.hel, pat:sk.pat};
 }
+// Lakken en bil faktisk kjører med, her og nå: banen og tiden på døgnet avgjør
+// om laget bruker en spesiallakk. SPESIALLAKK-innstillingen kommer i steg C;
+// inntil da er den alltid AUTO.
 function liveryOf(c){
   const sk=c.isPlayer?skinAt(skinSel):null;
   if(sk && sk.base) return skinLivery(sk);
-  return skinLivery(c.team);
+  return aktivLakk(c.team,TR.name,TOD[todIdx].name,'AUTO');
 }
 // Lakkeringen som skal vises i menyene. STANDARD har ingen egne farger, så den
 // må vise et lag — og det er hele poenget med STANDARD, at du kjører lagets bil.
+// Her vises lagets VANLIGE lakk: forhåndsvisningen står i baneutvalget og i
+// innstillingene, der banen kan byttes rett etterpå.
 function previewLivery(sk){
   if(sk.base) return skinLivery(sk);
   if(!playerIdent) rollPlayerIdent();
-  return skinLivery(playerIdent.team);
+  return playerIdent.team.lakk.vanlig;
 }
 
 // Den FELLES bilfunksjonen: tegner en hel bil med en gitt lakkering til hvilken
@@ -5418,11 +5504,16 @@ function drawCarShape(g,lv,o){
 // statiske delen under løpet.
 const CAR_SPR_HW=16, CAR_SPR_HH=9, CAR_SPR_RES=3;
 let carSprites=[];
+// Bufferet er nøklet på LAKKENS id, ikke på laget: to biler med samme lakk
+// (lagkameratene) deler én sprite, mens to lakker på samme lag aldri kan
+// havne i samme nøkkel. Tømmes sammen med sprite-ene, ellers ville oppslaget
+// returnert et 0×0-lerret etter neste frigjøring.
+let carSprCache={};
 // WebKit frigjør først minnet bak en canvas når den krympes til 0×0 — å bare
 // slippe referansen er ikke nok. Samme grep som for banebakgrunnen.
 function freeCarSprites(){
   carSprites.forEach(s=>{ s.width=0; s.height=0; });
-  carSprites=[];
+  carSprites=[]; carSprCache={};
 }
 function makeCarSprite(lv,flapOpen){
   const s=document.createElement('canvas');
@@ -5434,11 +5525,15 @@ function makeCarSprite(lv,flapOpen){
   carSprites.push(s);
   return s;
 }
+function spriteFor(lv,flapOpen){
+  const k=lv.id+(flapOpen?'|klaff':'|lukket');
+  return carSprCache[k] || (carSprCache[k]=makeCarSprite(lv,flapOpen));
+}
 function buildCarSprites(){
   freeCarSprites(); // sprite-ene fra forrige løp skal ikke bli liggende
   cars.forEach(c=>{
     const lv=liveryOf(c);
-    c.spr=[makeCarSprite(lv,false),makeCarSprite(lv,true)];
+    c.spr=[spriteFor(lv,false),spriteFor(lv,true)];
   });
 }
 
@@ -5919,7 +6014,7 @@ function draw(){
       ctx.fillRect(cx0,cy0,colW,rowH-8);
       ctx.strokeStyle=mine?'#e10600':'#1e293b'; ctx.lineWidth=mine?2:1;
       ctx.strokeRect(cx0,cy0,colW,rowH-8);
-      drawCarShape(ctx,skinLivery(t),{x:cx0+42,y:cy0+(rowH-8)/2,angle:-Math.PI/2,scale:2.2,shadow:false});
+      drawCarShape(ctx,t.lakk.vanlig,{x:cx0+42,y:cy0+(rowH-8)/2,angle:-Math.PI/2,scale:2.2,shadow:false});
       const tx=cx0+84;
       ctx.textAlign='left';
       ctx.font='bold 12px Courier New'; ctx.fillStyle=teamInk(t.color);

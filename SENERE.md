@@ -43,6 +43,12 @@ høyst én linje under som sier hvor i koden det gjelder.
   Steg E målte at et landemerke er inne i bildet i bare 4–9 av 100 rundeposisjoner, men bare CAMPAGNA og VISTANOTTE har fått et målt kamerapunkt. De elleve andre står på temaets `landmarkT`, og for VULCANO er det beviselig et dårlig valg (punktet over). `maalinger/maal_ark_kamera_E.txt` har allerede tallene for hele runden på alle 13.
 - [GRAND PRIX] ESSE/CASUAL/ULTRA-spredningen er ikke stabil nok til å måles med ett tall – liten – 2026-11-10
   Punktet over sier 0,9857, men sluttmålingen i steg E gir 0,744 for samme konfigurasjon. To kjøringer av `test_ai_sim.js` spriker altså med 25 %, så terskelen «under én runde» kan ikke avgjøres av én kjøring. Trenger beste-av-N eller flere forsøk per konfigurasjon før punktet kan lukkes.
+- [GRAND PRIX] `chrome_harness.py shot` kan ikke brukes til før/etter-bevis: griden er ikke reproduserbar – liten – 2026-11-11
+  `buildCars()` stokker identitetspotten og `rollPlayerIdent()` velger lag med useedet `Math.random()`, som harnessen aldri seeder. To kjøringer av SAMME fil gir ulike bilder. Harnessen bør seede `Math.random` slik `test_ai_sim.js` gjør (`mulberry32`), eller ta et valgfritt `--seed`.
+- [GRAND PRIX] MONTE SPIRA gir to ulike skjermbilder selv med seedet `Math.random` – liten – 2026-11-11
+  Målt tre ganger på en uendret fil: hash `2cc63d99` på første kjøring, `52f83699` på de to neste. De tolv andre banene ble bit-identiske av seedingen, så det finnes en andre kilde til tilfeldighet som bare slår inn her. Må finnes før punktet over kan lukkes helt.
+- [GRAND PRIX] `test_spiller_sving.js` kommer ikke rundt LABIRINTO, så banen måles ikke – liten – 2026-11-11
+  Testens autopilot ligger 99,6 % utenfor banen og fullfører aldri en runde, både med og uten boost. Gjelder også før runde 5 (verifisert mot `HEAD`), så det er ikke en regresjon — men steg H-tallene for den trangeste gatebanen er i praksis ikke dekket. Autopiloten trenger trolig smalere linje i de 90-graderssvingene.
 
 ## Arkaden (felles)
 

@@ -88,7 +88,7 @@ function loadGame(path){
     'return { get TRACKS(){ return TRACKS; }, get THEMES(){ return THEMES; },' +
     ' get SKINS(){ return SKINS; }, get TEAMS(){ return TEAMS; },' +
     ' get ASPHALT_BASE(){ return ASPHALT_BASE; }, get TOD(){ return TOD; },' +
-    ' makeTheme: makeTheme, skinLivery: skinLivery,' +
+    ' makeTheme: makeTheme, skinLivery: skinLivery, lagLakker: lagLakker,' +
     ' contrastRatio: contrastRatio, relLuminance: relLuminance };\n})');
   return factory(documentStub, windowStub, function(){}, { now: function(){ return 0; } }, localStorageStub);
 }
@@ -171,13 +171,26 @@ function kjør(game){
       a + ' har L=' + L.toFixed(4) + ', utenfor [' + lo.toFixed(4) + ', ' + hi.toFixed(4) + ']');
   });
 
-  // 4. DEN SOM FAKTISK BETYR NOE: hver lakkering mot HVER banes asfalt.
-  //    Kravet er det samme som contrastCheck bruker — base ELLER acc må nå
-  //    3:1 — men her måles det mot alle tretten dekkene, ikke bare mot
-  //    ASPHALT_BASE.
+  // 4. DEN SOM FAKTISK BETYR NOE: hver lakkering mot asfalten på de banene den
+  //    FAKTISK kan kjøre på. Kravet er det samme som contrastCheck bruker —
+  //    base ELLER acc må nå 3:1 — men her måles det mot de ekte dekkene, ikke
+  //    bare mot ASPHALT_BASE.
+  //
+  //    Hvilke baner som er relevante avgjøres av lakken selv, samme regel som
+  //    test_lag.js bruker: en spesiallakk med `bane` måles BARE mot den banen,
+  //    for den kjøres aldri noe annet sted. Målte vi den mot alle tretten ville
+  //    testen krevd kontrast på baner lakken per definisjon ikke kan vises på,
+  //    og en hjemmelakk valgt for sin egen bane ville strøket på en fremmed.
+  //    Spillerlakkene fra SKINS har ingen bane og måles mot alle tretten, som før.
   const lakk = [];
-  game.SKINS.forEach(function(s){ if(s.base) lakk.push({ navn: 'LAKK ' + s.name, lv: game.skinLivery(s) }); });
-  game.TEAMS.forEach(function(t){ lakk.push({ navn: 'LAG ' + t.name, lv: game.skinLivery(t) }); });
+  game.SKINS.forEach(function(s){
+    if(s.base) lakk.push({ navn: 'LAKK ' + s.name, lv: game.skinLivery(s), bane: null });
+  });
+  game.TEAMS.forEach(function(t){
+    game.lagLakker(t).forEach(function(lv){
+      lakk.push({ navn: 'LAG ' + t.name + ' ' + lv.navn, lv: lv, bane: lv.bane || null });
+    });
+  });
 
   let verste = { v: Infinity, hvor: '' };
   TRACKS.forEach(function(t){
@@ -185,12 +198,21 @@ function kjør(game){
     if(!erHex(asf)) return;
     const stryker = [];
     lakk.forEach(function(l){
+      if(l.bane && l.bane !== t.name) return;   // lakken kjøres ikke her
       const v = Math.max(game.contrastRatio(l.lv.base, asf), game.contrastRatio(l.lv.acc, asf));
       if(v < verste.v){ verste = { v: v, hvor: l.navn + ' mot ' + t.name }; }
       if(v < 3) stryker.push(l.navn + ' (' + v.toFixed(2) + ':1)');
     });
     sjekk('lakkontrast mot ' + t.name, stryker.length === 0,
       stryker.length + ' lakkering(er) under 3:1 — ' + stryker.join(', '));
+  });
+  // En spesiallakk med en bane som ikke finnes blir ALDRI målt av løkka over —
+  // den ville stille falt ut av hele sjekken. test_lag.js eier den regelen, men
+  // en vakt her holder sjekk 4 ærlig om noen skriver banenavnet feil.
+  lakk.forEach(function(l){
+    if(!l.bane) return;
+    sjekk('spesiallakkens bane finnes: ' + l.navn, baneNavn.indexOf(l.bane) >= 0,
+      l.bane + ' er ikke et banenavn — lakken blir aldri målt');
   });
 
   // 5. Bakketonene: 2–3 gyldige hex. Antallet er ikke pirk — flekkene blandes

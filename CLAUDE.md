@@ -1712,6 +1712,69 @@ FØR/ETTER-par for ALPEN (samme kamerapunkt, treeHi fjernet i en midlertidig
 kopi for FØR-bildet) viser krona gå fra nesten usynlig mot den mørke
 fjellbakken til tydelig synlig med lys topp og skygge.
 
+### GRAND PRIX — nye lag og lakker (`vintage_f1.html`)
+
+Oppdraget står i sin helhet i [`prompter/grand-prix-lag.md`](prompter/grand-prix-lag.md).
+Fem steg: A rydding uten synlig endring, B de ti nye lagene, C menyene,
+D dokumentasjonen, E sluttest.
+
+| Steg | Status | Commit | Innhold | Test |
+|---|---|---|---|---|
+| A | ferdig | — | Ren omstrukturering: lakkene er egne objekter under `lag.lakk.{vanlig,spesial[]}`, `drawPattern` slår opp i `PATTERNS`, `aktivLakk()` er enestes velger av lakk, sprite-cachen nøkles på lakk-`id`, og hvert lag har en tom `profil` + `lagFaktor()` som alltid gir 1 | `test_lag.js` (105/105, ny), `test_banetema.js` (198/198, sjekk 4 bygget om) |
+| B | ikke startet | — | De ti nye lagene og de 21 lakkene | — |
+| C | ikke startet | — | SPESIALLAKK-innstillingen, LAG-skjermen og banevalg-linja | — |
+| D | ikke startet | — | «Ny lakk eller nytt lag» i dette notatet | — |
+| E | ikke startet | — | Sluttest, skjermbilder og ventelista | — |
+
+**Lakk-kontrakten.** En lakk er `{id,navn,base,acc,dark,hel,spc,pat}` pluss
+valgfritt `bane`, `tid` og `bevisstLavKontrast`. `id` må være unik på tvers av
+ALLE lag, fordi sprite-cachen (`carSprCache`) nøkles på den — to lakker med
+samme `id` ville delt bilde. `lag.color`/`accent`/`dark` finnes fortsatt, men
+er bare aliaser satt fra `lakk.vanlig` i løkka rett under `TEAMS`; de leses av
+HUD-stripa, `teamInk()` og `podiumInk()`. Rør aldri aliasene direkte — endre
+`lakk.vanlig` og la løkka sette dem.
+
+**Bivirkning verdt å vite:** `buildCarSprites()` deler nå sprite mellom
+lagkameratene, siden nøkkelen er lakken og ikke bilen. Antall sprites falt fra
+40 til 20 uten synlig forskjell. `ghostSpr` i `startPractice()` lages utenom
+cachen og må derfor fortsatt bygges ETTER `buildCarSprites()`.
+
+**Lagenes egenskaper (`profil` + `lagFaktor`).** Plassen er laget, selve
+egenskapene er det ikke. Hvert lag har
+`profil:{toppfart:1, sving:1, akselerasjon:1, aggresjon:1}`, og
+`lagFaktor(lag,nokkel)` returnerer alltid `1`. Funksjonen kalles ingen steder
+ennå — den finnes for at kallstedene skal kunne tas i bruk ett om gangen
+senere, uten at feltnavnene må finnes opp på nytt. Når den dagen kommer hører
+nøklene hjemme slik:
+
+- `toppfart` → bilens fartstak: `aiSpd` for AI-ene og `maxspeed` for spilleren
+- `sving` → `corner`, altså hvor fort bilen kan ta en kurve
+- `akselerasjon` → akselerasjonsleddet i `update()`
+- `aggresjon` → hvor tett AI-en legger seg før den forsøker forbikjøring
+
+Dette MÅ balanseres mot vanskelighetsnivåene, ikke legges oppå dem: nivåene
+skrur allerede på de samme tallene, så en lagfaktor på 1,05 oppå ULTRA er en
+helt annen endring enn den samme faktoren oppå ENKEL. Og det må avgjøres om
+spillerens bil skal få lagets profil i det hele tatt — det bør bli en egen
+innstilling, ellers er lagvalget i praksis et skjult vanskelighetsvalg.
+
+**Verifisert i steg A:** `test_lag.js` 105/105 og `test_banetema.js` 198/198
+med UENDRET svakeste verdi 3,45:1 (CORALIS Vanlig mot DUNA), hele den øvrige
+suiten grønn, `test_banegeometri.js --mot geo_laas.json` uendret på alle 13
+baner, `chrome_harness.py maal` bygger alle 13 (sum 176,8 ms, verste
+VISTANOTTE 19,4 ms), og AI-simuleringen
+(`maalinger/ai_baseline_lag_A.json`) bit-identisk med
+`maalinger/ai_baseline_etter_runde4.json` på alle 52 konfigurasjoner —
+snittspredning 0,679 → 0,679, største 0,996 (DUNA/CASUAL/ULTRA), ingen nye
+veggtreff og ingen mer tid utenfor banen. Det ENESTE feltet som skiller de to
+filene er `seconds` (724,6 mot 705,2), som er testens egen klokketid og ikke
+et spilltall.
+
+Skjermbilder av griden kunne IKKE brukes som før/etter-bevis: `shot` er ikke
+reproduserbar (står på ventelista). I stedet er hver enkelt lakk tegnet i en
+egen canvas og pikslene hashet — alle 19 lakker × 2 klaffstillinger pluss
+spøkelset ga identisk hash før og etter.
+
 ### ASTEROIDER (`asteroids.html`)
 
 | Steg | Status | Commit | Innhold |
