@@ -1723,7 +1723,7 @@ D dokumentasjonen, E sluttest.
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
 | A | ferdig | `936db02` | Ren omstrukturering: lakkene er egne objekter under `lag.lakk.{vanlig,spesial[]}`, `drawPattern` slår opp i `PATTERNS`, `aktivLakk()` er enestes velger av lakk, sprite-cachen nøkles på lakk-`id`, og hvert lag har en tom `profil` + `lagFaktor()` som alltid gir 1 | `test_lag.js` (105/105, ny), `test_banetema.js` (198/198, sjekk 4 bygget om) |
-| B | ferdig | — | De ti nye lagene og de 21 lakkene, `aktivLakk` utvidet med tidslakker, og to latente fargefeil rettet (`teamInk`-referansen og negativ kulør i `rgbToHsl`) | `test_lag.js` (229/229), `test_banetema.js` (208/208), `test_meny_kontrast.js` (117/117) |
+| B | ferdig | `b862db3` | De ti nye lagene og de 21 lakkene, `aktivLakk` utvidet med tidslakker, og to latente fargefeil rettet (`teamInk`-referansen og negativ kulør i `rgbToHsl`) | `test_lag.js` (229/229), `test_banetema.js` (208/208), `test_meny_kontrast.js` (117/117), `test_ai_compare.js` |
 | C | ikke startet | — | SPESIALLAKK-innstillingen, LAG-skjermen og banevalg-linja | — |
 | D | ikke startet | — | «Ny lakk eller nytt lag» i dette notatet | — |
 | E | ikke startet | — | Sluttest, skjermbilder og ventelista | — |
