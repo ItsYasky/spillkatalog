@@ -1801,7 +1801,7 @@ D dokumentasjonen, E sluttest.
 | B | ferdig | `b862db3` | De ti nye lagene og de 21 lakkene, `aktivLakk` utvidet med tidslakker, og to latente fargefeil rettet (`teamInk`-referansen og negativ kulør i `rgbToHsl`) | `test_lag.js` (229/229), `test_banetema.js` (208/208), `test_meny_kontrast.js` (117/117), `test_ai_compare.js` |
 | C | ferdig | `89e4898` | SPESIALLAKK-innstillingen, LAG-skjermen bygget om til liste + detaljpanel med ← → mellom lakkene, spesiallakk-linja i banevalget, banebevisst bilforhåndsvisning, og `shot --tod`-feilen rettet | `test_meny_kontrast.js` (120/120, nå med 9 px-gulv), `test_lag.js` (229/229), `maalinger/lakk_grid_C.txt` |
 | D | ferdig | `1d18641` | «Ny lakk eller nytt lag» øverst i dette notatet: feltene og de tre kontrastkravene på en spesiallakk, nytt mønster i `PATTERNS`, nytt lag, og hvilke tester som er porten. Avsnittet er PRØVD UT, ikke bare skrevet | `test_lag.js` (229/229 etter at prøvelakken ble fjernet), `test_banetema.js` (208/208), `test_meny_kontrast.js` |
-| E | ferdig | — | Sluttest: hele suiten, geometrilåsen, byggeporten, startgrid-bilder på DAG og NATT, og de tre oppfølgingspunktene i `SENERE.md` | 19 JSC-tester grønne, `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` (sum 180,4 ms), `test_ai_compare.js` |
+| E | ferdig | `a811ec2` | Sluttest: hele suiten, geometrilåsen, byggeporten, startgrid-bilder på DAG og NATT, og de tre oppfølgingspunktene i `SENERE.md` | 19 JSC-tester grønne, `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` (sum 180,4 ms), `test_ai_compare.js` |
 
 **Lakk-kontrakten.** En lakk er `{id,navn,base,acc,dark,hel,spc,pat}` pluss
 valgfritt `bane`, `tid` og `bevisstLavKontrast`. `id` må være unik på tvers av
