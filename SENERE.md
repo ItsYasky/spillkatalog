@@ -51,6 +51,12 @@ høyst én linje under som sier hvor i koden det gjelder.
   Testens autopilot ligger 99,6 % utenfor banen og fullfører aldri en runde, både med og uten boost. Gjelder også før runde 5 (verifisert mot `HEAD`), så det er ikke en regresjon — men steg H-tallene for den trangeste gatebanen er i praksis ikke dekket. Autopiloten trenger trolig smalere linje i de 90-graderssvingene.
 - [GRAND PRIX] `chrome_harness.py fps --tod` måler med lakkene fra feil døgntid – liten – 2026-11-11
   `fps_js` setter `todIdx` ETTER `startRace()`, og `startRace()` bygger spritene med `buildCarSprites()`, der `aktivLakk(bane,TID)` velger lakk ut fra den tiden som gjaldt DA spritene ble bygget. En «NATT»-måling tegner altså dagbiler i nattlys, så NORDHAVs Nordlys og de andre tidslakkene er ikke med i noen `fps`-tabell. Samme feil som nettopp ble rettet i `shot_js` (`SETTINGS.tid=TOD[tod].name` FØR `startRace()`), bare i nabofunksjonen. Lyset og banen er riktige, så alle eksisterende tall står — det er bare bilenes lakk som er fra feil tid.
+- [GRAND PRIX] Lagenes egenskaper: ta `profil` og `lagFaktor` i bruk – stor – 2026-11-12
+  Plassen er bygget i runde 5 steg A og er fortsatt nøytral: `lagFaktor()` returnerer alltid 1 og kalles ingen steder. Nøklene hører hjemme på `aiSpd`/`maxspeed` (toppfart), `corner` (sving), akselerasjonsleddet i `update()` og AI-ens forbikjøringsavstand (aggresjon). MÅ balanseres mot vanskelighetsgradene og ikke legges oppå dem — nivåene skrur alt på de samme tallene, så 1,05 oppå ULTRA er noe helt annet enn 1,05 oppå ENKEL. Det må også avgjøres om spillerens bil skal få lagets profil i det hele tatt; blir den det uten en egen innstilling, er lagvalget i praksis et skjult vanskelighetsvalg.
+- [GRAND PRIX] Glød på kanten til `edges`-spesiallakkene i nattløp – middels – 2026-11-12
+  ONYX' Neon 2099 er tegnet for å lyse, men `edges` er i dag en vanlig strek i aksentfargen og gløder ikke. Gjenbruk glød-spriten fra runde 2 (den forhåndstegnede, ikke `shadowBlur` per bilde) på kantstreken når `TOD[todIdx].night` er sann. Gjelder også SAHRAs Ørkennatt og VULCANAs vanlige lakk, som begge bruker `edges`.
+- [GRAND PRIX] Hjemmelakk for NORDHAV på FJORD og FRONTIER på OVALE – liten – 2026-11-12
+  Kan ikke gjøres før de to banene finnes: `test_lag.js` krever at `bane` er et navn som står i `TRACKS`, så lakkene ville strøket i dag. Begge lagene er bygget for det — NORDHAV er fra Stavanger og FRONTIER fra Indianapolis.
 
 ## Arkaden (felles)
 

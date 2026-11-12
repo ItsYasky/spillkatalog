@@ -1801,7 +1801,7 @@ D dokumentasjonen, E sluttest.
 | B | ferdig | `b862db3` | De ti nye lagene og de 21 lakkene, `aktivLakk` utvidet med tidslakker, og to latente fargefeil rettet (`teamInk`-referansen og negativ kulør i `rgbToHsl`) | `test_lag.js` (229/229), `test_banetema.js` (208/208), `test_meny_kontrast.js` (117/117), `test_ai_compare.js` |
 | C | ferdig | `89e4898` | SPESIALLAKK-innstillingen, LAG-skjermen bygget om til liste + detaljpanel med ← → mellom lakkene, spesiallakk-linja i banevalget, banebevisst bilforhåndsvisning, og `shot --tod`-feilen rettet | `test_meny_kontrast.js` (120/120, nå med 9 px-gulv), `test_lag.js` (229/229), `maalinger/lakk_grid_C.txt` |
 | D | ferdig | `1d18641` | «Ny lakk eller nytt lag» øverst i dette notatet: feltene og de tre kontrastkravene på en spesiallakk, nytt mønster i `PATTERNS`, nytt lag, og hvilke tester som er porten. Avsnittet er PRØVD UT, ikke bare skrevet | `test_lag.js` (229/229 etter at prøvelakken ble fjernet), `test_banetema.js` (208/208), `test_meny_kontrast.js` |
-| E | ikke startet | — | Sluttest, skjermbilder og ventelista | — |
+| E | ferdig | — | Sluttest: hele suiten, geometrilåsen, byggeporten, startgrid-bilder på DAG og NATT, og de tre oppfølgingspunktene i `SENERE.md` | 19 JSC-tester grønne, `test_banegeometri.js` (13/13 uendret), `chrome_harness.py maal` (sum 180,4 ms), `test_ai_compare.js` |
 
 **Lakk-kontrakten.** En lakk er `{id,navn,base,acc,dark,hel,spc,pat}` pluss
 valgfritt `bane`, `tid` og `bevisstLavKontrast`. `id` må være unik på tvers av
@@ -2013,6 +2013,45 @@ kallstedene går gjennom `lagLakker()`/`aktivLakk()` (kontrastrapporten,
 banevalgets spesiallakk-linje, `liveryOf`, `previewLivery`, LAG-skjermens
 detaljpanel og ←→-grensen), så en ny lakk blir plukket opp av menyene uten at
 én linje i dem endres.
+
+**Verifisert i steg E (sluttest):** alle testene som HAR en dom er grønne —
+`test_lag.js` 229/229, `test_banetema.js` 208/208, `test_meny_kontrast.js`,
+`test_boost`, `test_cooldown`, `test_gap`, `test_ghost`, `test_track_limits`,
+`test_hovedmeny`, `test_innstillinger`, `test_pause`, `test_bevegelse`,
+`test_fixed_timestep`, `test_lazy_track_bg` og de fire ASTEROIDER-testene.
+`test_banegeometri.js --mot geo_laas.json` melder UENDRET på alle 13 baner, og
+`chrome_harness.py maal` bygger alle 13 (sum 180,4 ms, snitt 13,9, verste
+VISTANOTTE 20,4 ms, ingen over budsjettet på 100).
+
+**`test_spiller_sving.js` har ingen dom** og skal ikke telles som en grønn test:
+den skriver ut en tabell med tider og prosenter og har verken terskel eller
+FEIL-utskrift. Det er et MÅLEVERKTØY — det var slik den fant `physSafe`-feilen i
+del 3 steg H — og «alle testene grønne» betyr derfor de nitten som faktisk
+dømmer.
+
+**Spillfila er bit-identisk med steg C** (`git diff 89e4898 HEAD --
+vintage_f1.html` er tom; steg D rørte bare notatet). Derfor er
+`maalinger/lakk_grid_C.txt` fortsatt gyldig som lakk-fasit og er ikke målt opp
+igjen — den sier hvilket lag som har hvilken lakk i alle åtte kombinasjonene av
+bane × døgntid × innstilling.
+
+**AI-en er BIT-IDENTISK helt tilbake til steg A**, og det er målt felt for felt:
+`maalinger/ai_baseline_lag_E.json` mot `..._lag_B.json` gir NULL ulike felt over
+alle 52 konfigurasjoner, og det eneste som skiller filene er `seconds` (714,8 mot
+713,8), altså testens egen klokketid. Snittspredning 0,679 → 0,679, største
+0,996 (DUNA/CASUAL/ULTRA), ingen nye veggtreff og ingen mer tid utenfor banen.
+**Det var verdt å kjøre:** steg C endret faktisk spillfila (menyer,
+`previewLivery`, `liveryOf`-veien) og ble ALDRI AI-verifisert — steg B var siste
+måling. Denne kjøringen lukker det hullet og viser at lakkvalget ikke lekker inn
+i fysikken.
+
+Startgrid-bildene ligger i `maalinger/bilder/lag_E_grid_*.png` (LABIRINTO/DAG og
+VISTANOTTE/NATT, 1:1 i 520×680). **Merk at `shot` tar bildet ved LANDEMERKET som
+standard**, ikke på startstreken — første forsøk ga tretten biler som knapt
+synlige prikker langt unna griden. `--t 0.0` setter kameraet på startstreken der
+feltet faktisk står. Bildene underbygger og beviser ikke: som steg C punkt 9
+slo fast, kan et 520 px-bilde ikke avgjøre HVEM som har hvilken lakk, og det er
+nettopp derfor tekstmålingen finnes.
 
 **Verifisert i steg C:** `test_meny_kontrast.js` 120/120 (117 før),
 `test_lag.js` 229/229 med svakeste asfaltkontrast UENDRET 3,21:1 (FRONTIER
