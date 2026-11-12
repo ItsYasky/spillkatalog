@@ -59,6 +59,81 @@ Sammenlign dem med:
 
     osascript -l JavaScript tester/test_ai_compare.js maalinger/ai_baseline_before.json maalinger/ai_baseline_after_A.json
 
+## Ny lakk eller nytt lag
+
+Gjelder `vintage_f1.html`. Alt som har med lakk å gjøre ligger samlet i `TEAMS`
+og i `PATTERNS`, og resten av spillet spør `lagLakker()` og `aktivLakk()` i
+stedet for å lete seg fram selv. Derfor er en ny lakk ETT objekt og ingenting
+annet: LAG-skjermen, «Spesiallakk: …»-linja i banevalget, sprite-bufferet og
+kontrastrapporten plukker den opp uten å endres.
+
+### En ny spesiallakk
+
+Legg ett objekt i `lakk.spesial`-lista til laget i `TEAMS`. Feltene:
+
+| Felt | Må være |
+|---|---|
+| `id` | unik på tvers av ALLE lag, ikke bare innad i laget — sprite-bufferet (`carSprCache`) er nøklet på den, så to like id-er ville delt ett bilde |
+| `navn` | kort; det er dette LAG-skjermen og banevalget skriver ut |
+| `base` `acc` `dark` `hel` `spc` | gyldig hex, alle fem skrevet ut — ingen av dem arver fra den vanlige lakken |
+| `pat` | en nøkkel som finnes i `PATTERNS` |
+| `bane` og/eller `tid` | minst ÉN av dem. Uten begge er lakken aldri nåbar: den vanlige lakken er allerede fallbacken som gjelder overalt |
+| `bevisstLavKontrast` | valgfri, `true` fritar lakken fra `acc`-mot-`base`-kravet — bare for en tone-i-tone-lakk som er ment slik |
+
+`bane` er et banenavn fra `TRACKS` og `tid` et navn fra `TOD` (`DAG`,
+`SOLNEDGANG`, `NATT`). Settes bare `tid`, gjelder lakken alle tretten banene på
+den tiden (slik NORDHAVs Nordlys gjør). Passer to lakker samtidig, vinner den
+som peker på BANEN — et sted er et mer spesifikt valg enn et tidspunkt, og
+rekkefølgen i lista avgjør bare mellom lakker som er like spesifikke.
+
+Tre kontrastkrav, alle målt av `test_lag.js` og ingen av dem til å vurdere med
+øyemål (en bil er 28 px uten kontur):
+
+- `base` ELLER `acc` ≥ 3:1 mot asfalten. En lakk med `bane` måles bare mot DEN
+  banens asfalt; en vanlig lakk og en ren tidslakk måles mot alle tretten.
+- `hel` ≥ 3:1 mot cockpiten (`COCKPIT_BG`).
+- `acc` ≥ 3:1 mot `base`, med mindre `bevisstLavKontrast` er satt.
+
+### Et nytt mønster
+
+Én funksjon i `PATTERNS`, og ingenting annet — `pat` på en lakk er nøkkelen inn
+i det oppslaget. Funksjonen tegner i en kontekst der fyll- og strekfargen ALT er
+satt til aksentfargen og klippet til karosseriet er lagt, så et grovt rektangel
+kan ikke lekke utenfor bilen. Koordinatene er bilens egne: omtrent −14…+14 i x
+og −6…+6 i y. Står `pat` tomt eller feil, tegnes ingenting (ensfarget bil) i
+stedet for at det kastes — derfor fanges skrivefeil av testen og ikke av spillet.
+
+### Et nytt lag
+
+`NUM_CARS` regnes av `TEAMS.length`, så griden vokser av seg selv, og
+`.forEach`-løkka rett under `TEAMS` setter både `color`/`accent`/`dark`-aliasene
+og den nøytrale `profil`-en. Et nytt lag trenger derfor `name`, `short`, `hjem`,
+`type`, `sponsor`, `sponsors` og `lakk.vanlig`. Husk at lagfargen også skal
+leses som TEKST i menyene: den går gjennom `teamInk()`/`podiumInk()`, og kravet
+på 4,5:1 der måles av `test_meny_kontrast.js`, ikke av `test_lag.js`.
+
+### Før det committes
+
+`test_lag.js` skal være grønn — den er porten for alt dette, og den finnes
+nettopp fordi en lakk er DATA: ingen kompilator sier fra om en glemt `dark`,
+en `pat` som ikke finnes eller et banenavn med skrivefeil.
+
+    osascript -l JavaScript tester/test_lag.js
+
+Kjør også `test_banetema.js` (sjekk 4 måler alle lakkene mot hver banes asfalt)
+og, hvis et lag eller en lagfarge er endret, `test_meny_kontrast.js`.
+
+**Sjekktallene i de to første VOKSER med hver lakk, og det er riktig.** Én ny
+spesiallakk ga +9 sjekker i `test_lag.js` og +1 i `test_banetema.js` da dette
+avsnittet ble prøvd ut. Tallene i fremdriftstabellen under gjelder altså
+lakkantallet på det tidspunktet, og et høyere tall er ikke en feil — et LAVERE
+tall er det derimot, for da er en lakk ikke plukket opp.
+
+Lagenes EGENSKAPER er en annen sak enn lakkene: `profil` og `lagFaktor` er
+plass satt av, ikke noe som virker ennå. Hvor de fire nøklene skal kobles inn,
+og hvorfor de må balanseres mot vanskelighetsgradene, står under «Lagenes
+egenskaper (`profil` + `lagFaktor`)» i runde 5-avsnittet lenger nede.
+
 ## Fremdrift
 
 ### GRAND PRIX del 3 (`vintage_f1.html`)
@@ -1725,7 +1800,7 @@ D dokumentasjonen, E sluttest.
 | A | ferdig | `936db02` | Ren omstrukturering: lakkene er egne objekter under `lag.lakk.{vanlig,spesial[]}`, `drawPattern` slår opp i `PATTERNS`, `aktivLakk()` er enestes velger av lakk, sprite-cachen nøkles på lakk-`id`, og hvert lag har en tom `profil` + `lagFaktor()` som alltid gir 1 | `test_lag.js` (105/105, ny), `test_banetema.js` (198/198, sjekk 4 bygget om) |
 | B | ferdig | `b862db3` | De ti nye lagene og de 21 lakkene, `aktivLakk` utvidet med tidslakker, og to latente fargefeil rettet (`teamInk`-referansen og negativ kulør i `rgbToHsl`) | `test_lag.js` (229/229), `test_banetema.js` (208/208), `test_meny_kontrast.js` (117/117), `test_ai_compare.js` |
 | C | ferdig | `89e4898` | SPESIALLAKK-innstillingen, LAG-skjermen bygget om til liste + detaljpanel med ← → mellom lakkene, spesiallakk-linja i banevalget, banebevisst bilforhåndsvisning, og `shot --tod`-feilen rettet | `test_meny_kontrast.js` (120/120, nå med 9 px-gulv), `test_lag.js` (229/229), `maalinger/lakk_grid_C.txt` |
-| D | ikke startet | — | «Ny lakk eller nytt lag» i dette notatet | — |
+| D | ferdig | — | «Ny lakk eller nytt lag» øverst i dette notatet: feltene og de tre kontrastkravene på en spesiallakk, nytt mønster i `PATTERNS`, nytt lag, og hvilke tester som er porten. Avsnittet er PRØVD UT, ikke bare skrevet | `test_lag.js` (229/229 etter at prøvelakken ble fjernet), `test_banetema.js` (208/208), `test_meny_kontrast.js` |
 | E | ikke startet | — | Sluttest, skjermbilder og ventelista | — |
 
 **Lakk-kontrakten.** En lakk er `{id,navn,base,acc,dark,hel,spc,pat}` pluss
@@ -1914,6 +1989,30 @@ må gå over ALLE feltene.
    validerer hvert felt for seg, så et manglende felt i et gammelt lagret
    objekt faller tilbake til standardverdien AUTO uten å dra resten med seg.
    En versjonsheving ville derimot kastet ALLE lagrede innstillinger.
+
+**Steg D i detalj:** avsnittet er testet slik bestillingen ba om — en
+midlertidig spesiallakk (VERDANT «Midlertidig» på MONTE SPIRA) ble lagt inn ved
+å følge BARE det nye avsnittet, og den virket på første forsøk: `test_lag.js`
+gikk 229 → 238 med alle ni nye sjekker grønne. Deretter er lakken fjernet igjen,
+og `git diff vintage_f1.html` er TOM — spillfila er bit-identisk med steg C.
+
+To ting kom ut av prøven som ikke var åpenbare da avsnittet ble skrevet:
+
+1. **Sjekktallene vokser med hver lakk** (+9 i `test_lag.js`, +1 i
+   `test_banetema.js`). Uten en setning om det ville neste leser sammenlignet
+   mot tallene i tabellen over og trodd noe var galt. Det står nå i avsnittet,
+   sammen med at et LAVERE tall er den ekte faresignalet.
+2. **At avsnittet stemmer er mutasjonstestet, ikke påstått.** De tre reglene
+   det lover høyest, ble brutt én om gangen på kopier i `/tmp`: dublett-`id`
+   felte «unike lakk-id», en lakk uten både `bane` og `tid` felte tre sjekker,
+   og en aksent for nær grunnfargen felte både asfalt- og aksentkravet. Alle
+   tre ble fanget — porten er altså ekte.
+
+«Ett objekt og ingenting annet» er også verifisert og ikke antatt: alle seks
+kallstedene går gjennom `lagLakker()`/`aktivLakk()` (kontrastrapporten,
+banevalgets spesiallakk-linje, `liveryOf`, `previewLivery`, LAG-skjermens
+detaljpanel og ←→-grensen), så en ny lakk blir plukket opp av menyene uten at
+én linje i dem endres.
 
 **Verifisert i steg C:** `test_meny_kontrast.js` 120/120 (117 før),
 `test_lag.js` 229/229 med svakeste asfaltkontrast UENDRET 3,21:1 (FRONTIER
