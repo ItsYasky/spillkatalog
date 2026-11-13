@@ -3626,7 +3626,6 @@ function contrastCheck(lv){
 }
 function contrastReport(){
   const rows=[];
-  SKINS.forEach(s=>{ if(s.base) rows.push({type:'LAKK', navn:s.name, lv:skinLivery(s)}); });
   // Alle lagets lakker, ikke bare den vanlige: en spesiallakk som bare kjøres
   // på én bane er like usynlig mot asfalten der om den ikke måles.
   TEAMS.forEach(t=> lagLakker(t).forEach(lv=>
@@ -3766,37 +3765,10 @@ const DIFFICULTIES_REALISTIC=[
 let DIFFICULTIES=DIFFICULTIES_CASUAL;
 let difficulty=1;
 
-// Lakkeringer spilleren kan velge, uavhengig av tilfeldig lag. STANDARD
-// bruker lagets egen lakkering. Åtte adskilte farger i stedet for de tolv
-// gamle — de brukte gradient (grumsete på en 28 px bil) og lå for tett i
-// farge (tre «mørk grå», tre «rød»).
-//   base/acc/dark/hel  karosseri / mønster+trim / vingenes hovedplan / hjelm
-//                      (+sponsorflater for spillerlakkeringer, se drawCarStatic)
-//   pat  split/spine/sash/chevron/tail/edges (se drawPattern)
-const SKINS=[
-  // base:null er signalet om at lagets egen lakkering skal brukes i stedet.
-  {name:'STANDARD',    base:null,      acc:null,      dark:null,      hel:null,      pat:null},
-  {name:'ROSSO',       base:'#c8102e', acc:'#f4ecd8', dark:'#4a0812', hel:'#f4ecd8', pat:'split'},
-  {name:'OXFORD',      base:'#2e4a5e', acc:'#c99a5e', dark:'#080d13', hel:'#e5e2d6', pat:'sash'},
-  {name:'RACINGGRØNN', base:'#1f5c45', acc:'#e9c46a', dark:'#0c2a1f', hel:'#f4ecd8', pat:'spine'},
-  {name:'PETROL',      base:'#1f8a8a', acc:'#ffe2c4', dark:'#0d3b3b', hel:'#f8fafc', pat:'chevron'},
-  {name:'ARKTISK',     base:'#ecebe4', acc:'#1d3557', dark:'#5c6b7a', hel:'#e63946', pat:'tail'},
-  {name:'KARBON',      base:'#2b2b31', acc:'#ff6b1a', dark:'#0e0e12', hel:'#ff6b1a', pat:'edges'},
-  // hel er lys her mens spc holder på den mørke dekalfargen: hjelmen ligger i
-  // en nesten svart cockpitåpning og må være lys, men sponsorflatene ligger på
-  // den lyse sanden og må være mørke. Derfor kan ikke spc bare arve hel.
-  {name:'SAND',        base:'#d9b26f', acc:'#2f2a26', dark:'#5a4630', hel:'#f4ecd8', spc:'#2f2a26', pat:'spine'},
-  {name:'FIOLETT',     base:'#5b3e96', acc:'#f2d49b', dark:'#241640', hel:'#f2d49b', pat:'sash'}
-];
-let skinSel=0;
-// Hvis et lagret valg peker på en lakkering som ikke finnes lenger — f.eks.
-// «TIGER» fra den gamle lista, eller et tall utenfor rekkevidde — skal spillet
-// falle tilbake til STANDARD, ikke krasje på `undefined.base` midt i et løp.
-// Alt som leser en lakkering går gjennom denne, så det finnes bare ett sted
-// dette kan gå galt.
-function skinAt(i){
-  return (Number.isInteger(i) && i>=0 && i<SKINS.length) ? SKINS[i] : SKINS[0];
-}
+// Spilleren har ingen egne lakkeringer: han kjører lagets lakk, spesiallakkene
+// inkludert, på samme vilkår som AI-ene. Lista med åtte valgbare SKIN-farger er
+// fjernet fordi den la seg OPPÅ laget og slo av spesiallakkene — altså gjorde
+// den halve lakksystemet usynlig for den som valgte noe annet enn STANDARD.
 
 // Spillerens lag trekkes tilfeldig, men det MÅ trekkes før baneutvalget tegnes.
 // Før lå trekningen inne i buildCars, altså først når løpet startet, og da løy
@@ -4400,7 +4372,7 @@ let ghostNextT=0;        // raceTime for neste punkt som skal tas opp
 // ── Innstillinger (lagres i localStorage) ────────────────────────────────────
 // Alt spilleren velger samles i ÉTT objekt og lagres under samme nøkkel, slik
 // at neste besøk starter nøyaktig der forrige sesjon slapp, i stedet for at
-// hvert valg (modus, AI-nivå, distanse, tid på døgnet, lag, skin, spøkelse)
+// hvert valg (modus, AI-nivå, distanse, tid på døgnet, lag, spesiallakk, spøkelse)
 // har sin egen usynkroniserte kilde.
 const SETTINGS_KEY='gp_innstillinger';
 const SETTINGS_VER=1;
@@ -4410,7 +4382,6 @@ const SETTINGS={
   lapsIdx:1,          // indeks i LAP_OPTIONS
   tid:'AUTO',         // 'AUTO' | 'TILFELDIG' | et navn fra TOD
   lag:'TILFELDIG',    // 'TILFELDIG' | et lagnavn fra TEAMS
-  skinIdx:0,          // indeks i SKINS
   spesiallakk:'AUTO', // 'AUTO' = lagene bruker spesiallakk, 'AV' = alltid vanlig
   spokelse:true       // spøkelse på/av i øving
 };
@@ -4441,7 +4412,10 @@ function lastInnstillinger(){
   if(Number.isInteger(d.lapsIdx) && LAP_OPTIONS[d.lapsIdx]!==undefined) SETTINGS.lapsIdx=d.lapsIdx;
   if(typeof d.tid==='string' && (d.tid==='AUTO'||d.tid==='TILFELDIG'||TOD.some(t=>t.name===d.tid))) SETTINGS.tid=d.tid;
   if(typeof d.lag==='string' && (d.lag==='TILFELDIG'||TEAMS.some(t=>t.name===d.lag))) SETTINGS.lag=d.lag;
-  if(Number.isInteger(d.skinIdx) && SKINS[d.skinIdx]!==undefined) SETTINGS.skinIdx=d.skinIdx;
+  // En lagring fra før SKIN ble fjernet har fortsatt `skinIdx`. Den leses bare
+  // ikke: hvert felt hentes for seg, så en ukjent nøkkel er allerede ignorert.
+  // SETTINGS_VER står derfor i ro — en versjonsheving ville kastet modus,
+  // AI-nivå, lag og resten sammen med det ene feltet som ikke finnes mer.
   if(typeof d.spesiallakk==='string' && (d.spesiallakk==='AUTO'||d.spesiallakk==='AV')) SETTINGS.spesiallakk=d.spesiallakk;
   if(typeof d.spokelse==='boolean') SETTINGS.spokelse=d.spokelse;
 }
@@ -4518,14 +4492,13 @@ function lakkOmfang(lv){
 }
 
 // Overfører SETTINGS til de kjøreklare variablene resten av spillet alt leser
-// (REALISTIC, DIFFICULTIES, difficulty, lapsIdx/LAPS, skinSel, ghostOn).
+// (REALISTIC, DIFFICULTIES, difficulty, lapsIdx/LAPS, ghostOn).
 // Kjøres ved oppstart og hver gang et valg endres i innstillingsskjermen.
 function applySettingsToGame(){
   REALISTIC=SETTINGS.realistisk;
   DIFFICULTIES=REALISTIC?DIFFICULTIES_REALISTIC:DIFFICULTIES_CASUAL;
   difficulty=settingsAiIndex();
   lapsIdx=SETTINGS.lapsIdx; LAPS=LAP_OPTIONS[lapsIdx];
-  skinSel=SETTINGS.skinIdx;
   ghostOn=SETTINGS.spokelse;
 }
 
@@ -5559,32 +5532,17 @@ function steerAngle(c){
   return Math.max(-STEER_VIS_MAX,Math.min(STEER_VIS_MAX,c.steerVel*STEER_VIS_GAIN));
 }
 
-// Lakkering = ett farge-/mønstersett. Lagenes lakker ER alt dette settet
-// (se LAKK-avsnittet over TEAMS); SKINS er spillerens egne og mangler både
-// `id` og `spc`, så de pakkes om her. `id` må finnes fordi sprite-bufferet
-// slår opp på den, og den har SKIN-prefiks så en spillerlakk aldri kan kollidere
-// med en lag-lakk. Spillerlakkeringer bruker hjelmfargen, alltid den lyseste i
-// settet, som dekal uansett grunnfarge.
-function skinLivery(sk){
-  return {id:'SKIN-'+sk.name, navn:sk.name,
-          base:sk.base, acc:sk.acc, dark:sk.dark, hel:sk.hel, spc:sk.spc||sk.hel, pat:sk.pat};
-}
 // Lakken en bil faktisk kjører med, her og nå: banen og tiden på døgnet avgjør
-// om laget bruker en spesiallakk. Spilleren med SKIN=STANDARD har ingen egne
-// farger og faller derfor ned i samme kall som AI-ene — altså kjører han lagets
-// spesiallakk på samme vilkår, uten en egen gren for det.
+// om laget bruker en spesiallakk. Spilleren har ingen egen gren — han er en bil
+// med et lag som alle andre, og kjører lagets spesiallakk på samme vilkår.
 function liveryOf(c){
-  const sk=c.isPlayer?skinAt(skinSel):null;
-  if(sk && sk.base) return skinLivery(sk);
   return aktivLakk(c.team,TR.name,TOD[todIdx].name,SETTINGS.spesiallakk);
 }
-// Lakkeringen som skal vises i menyene. STANDARD har ingen egne farger, så den
-// må vise et lag — og det er hele poenget med STANDARD, at du kjører lagets bil.
-// Banen sendes med fordi forhåndsvisningen ellers LYVER: med DITT LAG=AURUM på
-// LABIRINTO kjører du Rosé, og en fiolett bil i menyen er da ikke «garantert den
-// samme bilen du faktisk kjører».
-function previewLivery(sk,tr){
-  if(sk.base) return skinLivery(sk);
+// Lakkeringen som skal vises i menyene: spillerens lag, på den banen han står
+// og ser på. Banen sendes med fordi forhåndsvisningen ellers LYVER: med DITT
+// LAG=AURUM på LABIRINTO kjører du Rosé, og en fiolett bil i menyen er da ikke
+// «garantert den samme bilen du faktisk kjører».
+function previewLivery(tr){
   if(!playerIdent) rollPlayerIdent();
   if(!tr) return playerIdent.team.lakk.vanlig;
   return aktivLakk(playerIdent.team,tr.name,planlagtTid(tr),SETTINGS.spesiallakk);
@@ -6219,7 +6177,7 @@ function draw(){
     // Ingen tekst under 9 px: de to 8 px-linjene (baneteller og ESC-hintet) er
     // hevet til 9, som er grensen der Courier New fortsatt er til å lese.
     ctx.fillStyle='#f1f5f9'; ctx.font='bold 20px Courier New'; ctx.fillText('VELG BANE',W/2,62);
-    // MODUS-hjørnet, DITT LAG-linjen og AI-nivå/distanse/tid/skin-radene som
+    // MODUS-hjørnet, DITT LAG-linjen og AI-nivå/distanse/tid-radene som
     // før lå spredt rundt skjermen bak sine egne bokstavtaster (Q/E/Z/X/C/V/L)
     // er nå samlet i ÉN innstillingsboks under karusellen. Banevalget har
     // bare ← → for bane, ENTER for å kjøre og ↓ til INNSTILLINGER.
@@ -6278,18 +6236,18 @@ function draw(){
       ctx.fillText(`Bredde ${t.TW*2}  ·  RETT ${t.straightZones.length}`,ccx,by0+ph+60+lines.length*11);
     });
     // ── samlet innstillingsboks ──────────────────────────────────────────
-    // Erstatter AI-nivå/distanse/tid/skin-radene og DITT LAG-linjen som før
-    // lå spredt rundt skjermen, hver bak sin egen bokstavtast (Q/E/Z/X/C/V).
+    // Erstatter AI-nivå/distanse/tid-radene og DITT LAG-linjen som før
+    // lå spredt rundt skjermen, hver bak sin egen bokstavtast (Q/E/C/V).
     // Rammefargen #232a36 er hentet rett fra skissens UTSEENDE-avsnitt — den
     // er bevisst lav kontrast (dekorativ ramme, ikke bærer av informasjon;
     // selve innholdet i boksen leses fra tekst som MÅLES til 4,5:1 under).
     {
-      const D=DIFFICULTIES[difficulty], sk=skinAt(skinSel);
+      const D=DIFFICULTIES[difficulty];
       const bx=60, by=410, bw=400, bh=92;
       ctx.strokeStyle='#232a36'; ctx.lineWidth=1; ctx.strokeRect(bx,by,bw,bh);
       ctx.fillStyle='#c3cad4'; ctx.font='bold 11px Courier New';
       ctx.fillText(`${REALISTIC?'REALISTISK':'CASUAL'} · ${D.name} · ${LAPS} RUNDER · ${tidVisning(TRACKS[trackSel]).text}`,W/2,by+22);
-      ctx.fillText(`DITT LAG: ${teamFullName(playerIdent.team)} · SKIN ${sk.name}`,W/2,by+42);
+      ctx.fillText(`DITT LAG: ${teamFullName(playerIdent.team)}`,W/2,by+42);
       // Spesiallakk-linja gjelder ALLE lag og ikke bare spillerens: linja svarer
       // på «hva kommer jeg til å se på denne banen». Boksen er like høy uansett,
       // så en bane uten spesiallakk ikke flytter hjelpelinja og KJØR-knappen.
@@ -6339,8 +6297,12 @@ function draw(){
 
     // Faste y-posisjoner per rad (ikke stablet dynamisk), slik at en
     // forklaringslinje som vises eller skjules aldri flytter radene under den.
-    const ROW_LABELS=['MODUS','AI-NIVÅ','DISTANSE','TID PÅ DØGNET','DITT LAG','SKIN','SPESIALLAKK','SPØKELSE (ØVING)'];
-    const ROW_Y=[104,150,206,252,308,354,410,466];
+    const ROW_LABELS=['MODUS','AI-NIVÅ','DISTANSE','TID PÅ DØGNET','DITT LAG','SPESIALLAKK','SPØKELSE (ØVING)'];
+    // Jevne 54 px etter at SKIN-raden gikk ut, i stedet for den gamle 46/56-
+    // vekslingen: det holder blokken like høy som før med én rad mindre, og gir
+    // både forklaringslinjene (y+18) og bilen på DITT LAG (±20 px) mer luft enn
+    // de trange 46-ene hadde.
+    const ROW_Y=[104,158,214,270,326,382,438];
     const SUB_DY=18;
     const LX=60, RX=W-60;
 
@@ -6405,18 +6367,16 @@ function draw(){
         const t=TEAMS.find(t=>t.name===SETTINGS.lag);
         navn=t?t.name:'TILFELDIG'; farge=t?teamInk(t.color):'#94a3b8';
       }
+      // Navnet står på W-140 og ikke på RX fordi bilen tar de siste 74 px.
       ctx.textAlign='right'; ctx.font='bold 12px Courier New';
-      ctx.fillStyle=farge; ctx.fillText(navn,RX,y);
+      ctx.fillStyle=farge; ctx.fillText(navn,W-140,y);
+      // Bilen flyttet hit fra den gamle SKIN-raden: nå er det laget som avgjør
+      // lakken, så det er DITT LAG den hører til. previewLivery tar banen med,
+      // så en spesiallakk vises her på de banene den faktisk gjelder.
+      drawCarShape(ctx,previewLivery(TRACKS[trackSel]),{x:W-78,y,scale:2.2,shadow:false});
     });
 
     settingsRow(5,(sel,y)=>{
-      const sk=skinAt(skinSel);
-      ctx.textAlign='right'; ctx.font='bold 12px Courier New';
-      ctx.fillStyle='#f1f5f9'; ctx.fillText(sk.name,W-140,y);
-      drawCarShape(ctx,previewLivery(sk,TRACKS[trackSel]),{x:W-78,y,scale:2.2,shadow:false});
-    });
-
-    settingsRow(6,(sel,y)=>{
       ctx.textAlign='right'; ctx.font='bold 12px Courier New';
       ctx.fillStyle=SETTINGS.spesiallakk==='AUTO'?'#38bdf8':'#94a3b8';
       ctx.fillText(SETTINGS.spesiallakk,RX,y);
@@ -6426,7 +6386,7 @@ function draw(){
       }
     });
 
-    settingsRow(7,(sel,y)=>{
+    settingsRow(6,(sel,y)=>{
       ctx.textAlign='right'; ctx.font='bold 12px Courier New';
       ctx.fillStyle=ghostOn?GHOST_COL:GHOST_TXT_DIM;
       ctx.fillText(ghostOn?'PÅ':'AV',RX,y);
@@ -6725,7 +6685,7 @@ function draw(){
   ctx.closePath(); ctx.stroke();
   cars.forEach(c=>{
     const [mcx,mcy]=mmPt(c.x,c.y);
-    ctx.fillStyle=teamInk(c.isPlayer?(skinAt(skinSel).base||c.team.color):c.team.color); ctx.globalAlpha=c.isPlayer?1:.8;
+    ctx.fillStyle=teamInk(c.team.color); ctx.globalAlpha=c.isPlayer?1:.8;
     ctx.beginPath(); ctx.arc(mcx,mcy,c.isPlayer?3.2:2,0,Math.PI*2); ctx.fill();
   });
   ctx.globalAlpha=1;
@@ -6998,8 +6958,8 @@ document.addEventListener('keydown',e=>{
   // ikke rett ut til katalogen. Ingen bokstavtaster her.
   if(state==='settings'){
     if(e.key==='Escape'){ state=settingsReturnTo; return; }
-    if(e.key==='ArrowUp') settingsSel=(settingsSel+7)%8;
-    if(e.key==='ArrowDown') settingsSel=(settingsSel+1)%8;
+    if(e.key==='ArrowUp') settingsSel=(settingsSel+6)%7;
+    if(e.key==='ArrowDown') settingsSel=(settingsSel+1)%7;
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
       const dir=e.key==='ArrowRight'?1:-1;
       if(settingsSel===0){
@@ -7026,11 +6986,8 @@ document.addEventListener('keydown',e=>{
         if(!playerIdent) rollPlayerIdent();
         else playerIdent.team=fast||TEAMS[Math.floor(Math.random()*TEAMS.length)];
       } else if(settingsSel===5){
-        skinSel=(skinSel+dir+SKINS.length)%SKINS.length;
-        SETTINGS.skinIdx=skinSel;
-      } else if(settingsSel===6){
         SETTINGS.spesiallakk=SETTINGS.spesiallakk==='AUTO'?'AV':'AUTO';
-      } else if(settingsSel===7){
+      } else if(settingsSel===6){
         ghostOn=!ghostOn;
         SETTINGS.spokelse=ghostOn;
       }
@@ -7067,7 +7024,7 @@ document.addEventListener('keydown',e=>{
   // Baneutvalget: bare ← → for bane og ENTER for å kjøre/øve. ↓ går til
   // INNSTILLINGER (settingsReturnTo peker tilbake hit), ESC går til
   // hovedmenyen — ikke rett ut til katalogen. De gamle bokstavtastene
-  // (Q/E rundelengde, Z/X skin, C/V tid, L lagoversikt, P øving) er borte;
+  // (Q/E rundelengde, C/V tid, L lagoversikt, P øving) er borte;
   // alle de valgene bor nå i INNSTILLINGER eller i hovedmenyen.
   if(state==='trackselect'){
     if(e.key==='Escape'){ state='menu'; return; }

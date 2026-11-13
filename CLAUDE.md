@@ -2135,6 +2135,70 @@ fjernet, og akkumulator-nullstillingen tømt. En lytter som mangler gir nå FEIL
 og ikke et kast som river hele kjøringen — `fyr()` i testen sjekker at
 lytteren finnes før den kalles.
 
+### GRAND PRIX — SKIN fjernet (`vintage_f1.html`)
+
+| Status | Commit | Innhold | Test |
+|---|---|---|---|
+| ferdig | `—` | Hele SKIN-laget ute: raden i INNSTILLINGER, `SKINS`/`skinAt`/`skinLivery`/`skinSel`/`SETTINGS.skinIdx` og spiller-grenen i `liveryOf`. Spilleren kjører lagets lakk, spesiallakkene inkludert | `test_innstillinger.js` (55/55, var 56), `test_hovedmeny.js` (35/35, var 34), `test_meny_kontrast.js` (119/119, var 120), `test_lag.js` (229/229), `test_banetema.js` (208/208) |
+
+**Hvorfor den er borte:** SKIN la seg OPPÅ laget. De åtte fargene overstyrte
+lagets lakk og hoppet samtidig over spesiallakkene, så den som valgte noe annet
+enn STANDARD fikk aldri se dem — halve lakksystemet var usynlig bak et valg som
+så ut som pynt. Nå er laget det eneste som avgjør, og LAG-skjermen er stedet
+spesiallakkene vises fram.
+
+Fysikk, AI, baner og banegeometri er URØRT (`test_banegeometri.js --mot
+maalinger/geo_laas.json`: uendret på alle 13).
+
+**Fem ting som er verdt å vite om endringen:**
+
+1. **`liveryOf` er nå ÉN linje, og det er hele poenget.** Spilleren hadde en
+   egen gren som ble hoppet over når SKIN var STANDARD; den grenen er borte, så
+   spiller og AI går gjennom nøyaktig samme
+   `aktivLakk(c.team, TR.name, TOD[todIdx].name, SETTINGS.spesiallakk)`. Det var
+   allerede den virkelige oppførselen for STANDARD — se punkt 7 i runde 5 steg
+   C over — endringen fjerner bare muligheten til å velge seg bort fra den.
+2. **`SETTINGS_VER` står i ro på 1.** En lagring fra før endringen har fortsatt
+   `skinIdx`, men `lastInnstillinger` leser hvert felt for seg, så en ukjent
+   nøkkel er allerede ignorert. En versjonsheving ville kastet modus, AI-nivå,
+   lag og resten sammen med det ene feltet som ikke finnes mer. Målt begge
+   veier: lagringen inneholder ikke lenger `skinIdx`, og en gammel lagring med
+   `skinIdx:-4` leses uten at feltet havner i `SETTINGS`.
+3. **Bilforhåndsvisningen bodde i SKIN-raden og er flyttet til DITT LAG.** Det
+   er nå laget som avgjør lakken, så det er den raden bilen hører til.
+   `previewLivery` mistet skin-argumentet og tar bare banen:
+   forhåndsvisningen viser derfor lagets lakk PÅ DEN VALGTE BANEN, altså Rosé
+   når DITT LAG=AURUM og banen er LABIRINTO.
+4. **Radene er re-indeksert, og det er testet og ikke bare lest.** Syv rader
+   igjen (MODUS, AI-NIVÅ, DISTANSE, TID PÅ DØGNET, DITT LAG, SPESIALLAKK,
+   SPØKELSE), og både `settingsRow`-kallene og ←→-grenene måtte ned ett hakk.
+   `test_hovedmeny.js` har fått en ny port på det: ↓ sju ganger skal gi
+   `1,2,3,4,5,6,0`, og ↑ fra rad 0 skal gi 6. Peker markøren på et tall uten
+   rad, gjør ← → ingenting og raden tegnes ikke — det ser man ikke uten å stå i
+   menyen.
+5. **Radavstanden er jevne 54 px i stedet for den gamle vekslingen 46/56.** Med
+   én rad mindre holder det blokken like høy som før, og både
+   forklaringslinjene (`y+18`) og bilen (±20 px) får mer luft enn de trange
+   46-ene ga. Ingen avstand ble kortere enn før.
+
+**Sjekktallene falt med vilje tre steder, og et lavere tall er riktig her:**
+`test_innstillinger.js` mistet skin-sjekkene (56 → 55, men fikk én ny om at
+`skinIdx` ikke lagres), `test_meny_kontrast.js` mistet SKIN-navnet (120 → 119),
+og `test_hovedmeny.js` byttet `skinSel`-sjekken mot de to nye
+radnavigasjonssjekkene (34 → 35). `test_banetema.js` står uendret på 208 fordi
+sjekk 4 teller BANER og ikke lakker — de åtte spillerlakkene forsvant ut av
+målingen uten å endre antallet, og svakeste lakkontrast er fortsatt 3,21:1
+(FRONTIER Mojave mot VISTANOTTE).
+
+**Skjermbildene er bevisene:** `maalinger/bilder/skin_ut_innstillinger.png`
+(syv rader, ingen SKIN, Rosé-bilen på DITT LAG-raden med AURUM + LABIRINTO) og
+`maalinger/bilder/skin_ut_banevalg.png` (linja leser «DITT LAG: Kairon
+Logistikk AURUM», og «Spesiallakk: AURUM Rosé» står uendret under). At bilen
+FAKTISK er Rosé og ikke den vanlige fiolette er dessuten målt og ikke sett
+etter: `previewLivery(LABIRINTO).navn==='Rosé'`, `base=#d79a7b`.
+`chrome_harness.py maal` er ikke kjørt — porten gjelder `buildTrackBg` og
+temaene, og ingen av dem er rørt.
+
 ### ASTEROIDER (`asteroids.html`)
 
 | Steg | Status | Commit | Innhold |

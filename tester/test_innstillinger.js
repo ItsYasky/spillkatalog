@@ -88,13 +88,11 @@ function loadGame(path, storage){
     '  get difficulty(){ return difficulty; }, set difficulty(v){ difficulty = v; },\n' +
     '  get lapsIdx(){ return lapsIdx; },\n' +
     '  get LAPS(){ return LAPS; },\n' +
-    '  get skinSel(){ return skinSel; },\n' +
     '  get ghostOn(){ return ghostOn; }, set ghostOn(v){ ghostOn = v; },\n' +
     '  get playerIdent(){ return playerIdent; }, set playerIdent(v){ playerIdent = v; },\n' +
     '  get trackSel(){ return trackSel; }, set trackSel(v){ trackSel = v; },\n' +
     '  get TRACKS(){ return TRACKS; },\n' +
     '  get TEAMS(){ return TEAMS; },\n' +
-    '  get SKINS(){ return SKINS; },\n' +
     '  get TOD(){ return TOD; },\n' +
     '  get LAP_OPTIONS(){ return LAP_OPTIONS; },\n' +
     '  get DIFFICULTIES_CASUAL(){ return DIFFICULTIES_CASUAL; },\n' +
@@ -208,15 +206,12 @@ function testTeam(game){
 // ── TEST 5: applySettingsToGame dekker alle feltene ─────────────────────────
 function testApply(game){
   game.SETTINGS.lapsIdx = 3;
-  game.SETTINGS.skinIdx = 2;
   game.SETTINGS.spokelse = false;
   game.applySettingsToGame();
   check('applySettingsToGame setter LAPS fra lapsIdx', game.LAPS === game.LAP_OPTIONS[3], 'LAPS=' + game.LAPS);
-  check('applySettingsToGame setter skinSel', game.skinSel === 2, 'skinSel=' + game.skinSel);
   check('applySettingsToGame setter ghostOn', game.ghostOn === false, 'ghostOn=' + game.ghostOn);
 
   game.SETTINGS.lapsIdx = 1;
-  game.SETTINGS.skinIdx = 0;
   game.SETTINGS.spokelse = true;
   game.applySettingsToGame();
 }
@@ -230,7 +225,6 @@ function testRundtur(html){
   a.SETTINGS.lapsIdx = 4;
   a.SETTINGS.tid = 'NATT';
   a.SETTINGS.lag = a.TEAMS[5].name;
-  a.SETTINGS.skinIdx = 3;
   a.SETTINGS.spokelse = false;
   a.lagreInnstillinger();
 
@@ -244,8 +238,9 @@ function testRundtur(html){
   check('rundtur: lapsIdx', S.lapsIdx === 4);
   check('rundtur: tid', S.tid === 'NATT');
   check('rundtur: lag', S.lag === a.TEAMS[5].name);
-  check('rundtur: skinIdx', S.skinIdx === 3);
   check('rundtur: spokelse', S.spokelse === false);
+  check('rundtur: ingen skinIdx i det som lagres', storage.mem[a.SETTINGS_KEY].indexOf('skinIdx') < 0,
+    storage.mem[a.SETTINGS_KEY]);
 
   b.applySettingsToGame();
   check('rundtur: applySettingsToGame etter lesing gir riktig LAPS', b.LAPS === b.LAP_OPTIONS[4], 'LAPS=' + b.LAPS);
@@ -284,7 +279,10 @@ function testOdelagt(html){
   check('delvis ugyldig: ugyldig lapsIdx faller tilbake', g.SETTINGS.lapsIdx === 1, 'fikk ' + g.SETTINGS.lapsIdx);
   check('delvis ugyldig: ugyldig tid faller tilbake', g.SETTINGS.tid === 'AUTO', 'fikk ' + g.SETTINGS.tid);
   check('delvis ugyldig: ugyldig lag faller tilbake', g.SETTINGS.lag === 'TILFELDIG', 'fikk ' + g.SETTINGS.lag);
-  check('delvis ugyldig: ugyldig skinIdx faller tilbake', g.SETTINGS.skinIdx === 0, 'fikk ' + g.SETTINGS.skinIdx);
+  // skinIdx er med i lagringen over fordi en ekte lagring fra før SKIN ble
+  // fjernet HAR det feltet. Den skal ignoreres i stillhet — verken krasje,
+  // havne i SETTINGS eller dra de gyldige feltene over seg med ned.
+  check('delvis ugyldig: lagret skinIdx ignoreres', g.SETTINGS.skinIdx === undefined, 'fikk ' + g.SETTINGS.skinIdx);
 
   // Tomt (ingenting lagret før) skal også gi stille standardverdier.
   storage = makeStorage();

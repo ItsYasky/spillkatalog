@@ -61,6 +61,8 @@ høyst én linje under som sier hvor i koden det gjelder.
   Kan ikke gjøres før de to banene finnes: `test_lag.js` krever at `bane` er et navn som står i `TRACKS`, så lakkene ville strøket i dag. Begge lagene er bygget for det — NORDHAV er fra Stavanger og FRONTIER fra Indianapolis.
 - [GRAND PRIX] Ingen egen fullskjermknapp – liten – 2026-11-13
   Spillet ber aldri om fullskjerm selv (`requestFullscreen` finnes ikke i fila), så spilleren må bruke nettleserens egen. En F-tast eller et ikon i hovedmenyen ville gjort `fullscreenchange`-lytteren fra pauserettelsen til den vanlige veien inn og ut i stedet for en vi bare arver — og Safaris vindus-fullskjerm (grønn knapp) fyrer ikke den hendelsen i det hele tatt, der er det bare `blur` som fanger oss.
+- [GRAND PRIX] `spc`-fallbacken i `drawCarStatic` er død kode – liten – 2026-11-14
+  `const spc=lv.spc||lv.hel` (linje 5434) fantes fordi SKINS manglet `spc`. Nå er lagenes lakker de eneste som finnes, og `test_lag.js` krever at alle fem fargene står skrevet ut på hver av dem — `lv.spc` kan altså ikke være tom lenger. Fallbacken skjuler i praksis en glemt `spc` for sprite-tegningen mens testen fanger den; rydd den bort når noen likevel er inne i `drawCarStatic`.
 
 ## Arkaden (felles)
 

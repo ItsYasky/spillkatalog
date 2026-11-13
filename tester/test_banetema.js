@@ -86,9 +86,9 @@ function loadGame(path){
   // ikke kopieres ut i det øyeblikket fabrikken returnerer.
   const factory = eval('(function(document, window, requestAnimationFrame, performance, localStorage){\n' + src + '\n' +
     'return { get TRACKS(){ return TRACKS; }, get THEMES(){ return THEMES; },' +
-    ' get SKINS(){ return SKINS; }, get TEAMS(){ return TEAMS; },' +
+    ' get TEAMS(){ return TEAMS; },' +
     ' get ASPHALT_BASE(){ return ASPHALT_BASE; }, get TOD(){ return TOD; },' +
-    ' makeTheme: makeTheme, skinLivery: skinLivery, lagLakker: lagLakker,' +
+    ' makeTheme: makeTheme, lagLakker: lagLakker,' +
     ' contrastRatio: contrastRatio, relLuminance: relLuminance };\n})');
   return factory(documentStub, windowStub, function(){}, { now: function(){ return 0; } }, localStorageStub);
 }
@@ -181,11 +181,11 @@ function kjør(game){
   //    for den kjøres aldri noe annet sted. Målte vi den mot alle tretten ville
   //    testen krevd kontrast på baner lakken per definisjon ikke kan vises på,
   //    og en hjemmelakk valgt for sin egen bane ville strøket på en fremmed.
-  //    Spillerlakkene fra SKINS har ingen bane og måles mot alle tretten, som før.
+  //
+  //    Lagenes lakker er nå de ENESTE som finnes: SKIN-lista er fjernet, og
+  //    spilleren kjører lagets lakk. Antallet sjekker falt derfor med de åtte
+  //    spillerlakkene — det er riktig, de kan ikke lenger vises på en bane.
   const lakk = [];
-  game.SKINS.forEach(function(s){
-    if(s.base) lakk.push({ navn: 'LAKK ' + s.name, lv: game.skinLivery(s), bane: null });
-  });
   game.TEAMS.forEach(function(t){
     game.lagLakker(t).forEach(function(lv){
       lakk.push({ navn: 'LAG ' + t.name + ' ' + lv.navn, lv: lv, bane: lv.bane || null });

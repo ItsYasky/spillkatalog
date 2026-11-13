@@ -79,7 +79,6 @@ function loadGame(path){
     '  get trackSel(){ return trackSel; }, set trackSel(v){ trackSel = v; },\n' +
     '  get difficulty(){ return difficulty; },\n' +
     '  get LAPS(){ return LAPS; },\n' +
-    '  get skinSel(){ return skinSel; },\n' +
     '  get playerIdent(){ return playerIdent; }, set playerIdent(v){ playerIdent = v; },\n' +
     '  get TRACKS(){ return TRACKS; },\n' +
     '  get startRace(){ return startRace; }, set startRace(v){ startRace = v; },\n' +
@@ -227,19 +226,34 @@ function main(argv){
   }
 
   // ── TEST 9: de gamle bokstavtastene gjør INGENTING lenger ────────────────
-  // Q/E (rundelengde), Z/X (skin), C/V (tid), L (lagoversikt), P (øving),
-  // TAB (modus) skal alle være dødt i de nye menyene — de valgene bor nå bare
-  // i INNSTILLINGER eller hovedmenyen.
+  // Q/E (rundelengde), Z/X (den gamle skin-snarveien), C/V (tid), L
+  // (lagoversikt), P (øving), TAB (modus) skal alle være dødt i de nye menyene
+  // — de valgene bor nå bare i INNSTILLINGER eller hovedmenyen.
   {
     const L = loadGame(html); const g = L.game;
     g.state = 'trackselect';
-    const difFør = g.difficulty, lapsFør = g.LAPS, skinFør = g.skinSel, trackFør = g.trackSel;
+    const difFør = g.difficulty, lapsFør = g.LAPS, trackFør = g.trackSel;
     ['q','e','z','x','c','v','l','p','Tab'].forEach(function(k){ key(L, k); });
     check('bokstavtaster i trackselect endrer ikke difficulty', g.difficulty === difFør, 'før ' + difFør + ' etter ' + g.difficulty);
     check('bokstavtaster i trackselect endrer ikke LAPS', g.LAPS === lapsFør, 'før ' + lapsFør + ' etter ' + g.LAPS);
-    check('bokstavtaster i trackselect endrer ikke skinSel', g.skinSel === skinFør, 'før ' + skinFør + ' etter ' + g.skinSel);
     check('bokstavtaster i trackselect endrer ikke trackSel', g.trackSel === trackFør, 'før ' + trackFør + ' etter ' + g.trackSel);
     check('"p" i trackselect starter ikke øving (state uendret)', g.state === 'trackselect', 'state=' + g.state);
+  }
+  // ── TEST 9b: INNSTILLINGER har syv rader, og markøren går rundt på dem ───
+  // Porten mot en feilslått re-indeksering: da SKIN-raden gikk ut, måtte både
+  // ROW_LABELS, radtegningen og ←→-grenene flyttes ned ett hakk. Peker ↑↓ på et
+  // tall uten rad, treffer ← → ingenting og raden tegnes ikke — og det ser man
+  // ikke før man står i menyen. Syv er MODUS, AI-NIVÅ, DISTANSE, TID PÅ DØGNET,
+  // DITT LAG, SPESIALLAKK, SPØKELSE.
+  {
+    const L = loadGame(html); const g = L.game;
+    g.state = 'settings'; g.settingsSel = 0;
+    const sett = [];
+    for(let i=0;i<7;i++){ key(L, 'ArrowDown'); sett.push(g.settingsSel); }
+    check('↓ sju ganger i settings er en hel runde (syv rader)', sett.join(',') === '1,2,3,4,5,6,0', 'fikk ' + sett.join(','));
+    g.settingsSel = 0;
+    key(L, 'ArrowUp');
+    check('↑ fra rad 0 går til siste rad (6)', g.settingsSel === 6, 'fikk ' + g.settingsSel);
   }
   {
     const L = loadGame(html); const g = L.game;

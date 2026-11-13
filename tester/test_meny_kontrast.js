@@ -194,7 +194,6 @@ function main(argv){
   check('INNSTILLINGER','"Banens egen tid"-undertekst','#94a3b8',BG_SETTINGS,9,false);
   check('INNSTILLINGER','DITT LAG-verdi (TILFELDIG)','#94a3b8',BG_SETTINGS,12,true);
   GAME.TEAMS.forEach(t=>check('INNSTILLINGER','DITT LAG-verdi ('+t.name+')',GAME.teamInk(t.color),BG_SETTINGS,12,true));
-  check('INNSTILLINGER','SKIN-navn','#f1f5f9',BG_SETTINGS,12,true);
   check('INNSTILLINGER','SPESIALLAKK AUTO','#38bdf8',BG_SETTINGS,12,true);
   check('INNSTILLINGER','SPESIALLAKK AV','#94a3b8',BG_SETTINGS,12,true);
   check('INNSTILLINGER','SPESIALLAKK-forklaring','#94a3b8',BG_SETTINGS,9,false);
