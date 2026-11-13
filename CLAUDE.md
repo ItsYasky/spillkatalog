@@ -2139,7 +2139,7 @@ lytteren finnes før den kalles.
 
 | Status | Commit | Innhold | Test |
 |---|---|---|---|
-| ferdig | `—` | Hele SKIN-laget ute: raden i INNSTILLINGER, `SKINS`/`skinAt`/`skinLivery`/`skinSel`/`SETTINGS.skinIdx` og spiller-grenen i `liveryOf`. Spilleren kjører lagets lakk, spesiallakkene inkludert | `test_innstillinger.js` (55/55, var 56), `test_hovedmeny.js` (35/35, var 34), `test_meny_kontrast.js` (119/119, var 120), `test_lag.js` (229/229), `test_banetema.js` (208/208) |
+| ferdig | `204ff10` | Hele SKIN-laget ute: raden i INNSTILLINGER, `SKINS`/`skinAt`/`skinLivery`/`skinSel`/`SETTINGS.skinIdx` og spiller-grenen i `liveryOf`. Spilleren kjører lagets lakk, spesiallakkene inkludert | `test_innstillinger.js` (55/55, var 56), `test_hovedmeny.js` (35/35, var 34), `test_meny_kontrast.js` (119/119, var 120), `test_lag.js` (229/229), `test_banetema.js` (208/208) |
 
 **Hvorfor den er borte:** SKIN la seg OPPÅ laget. De åtte fargene overstyrte
 lagets lakk og hoppet samtidig over spesiallakkene, så den som valgte noe annet
