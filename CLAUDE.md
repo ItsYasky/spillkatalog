@@ -2067,7 +2067,7 @@ geo_laas.json` uendret på alle 13, og `chrome_harness.py maal` bygger alle 13
 
 | Status | Commit | Innhold | Test |
 |---|---|---|---|
-| ferdig | `PENDING` | `P` som pausetast ved siden av ESC, autopause når vinduet mister forgrunnen, og «ESC/P» i begge hjelpelinjene | `test_pause.js` (89/89, var 33/33) |
+| ferdig | `57a9df8` | `P` som pausetast ved siden av ESC, autopause når vinduet mister forgrunnen, og «ESC/P» i begge hjelpelinjene | `test_pause.js` (89/89, var 33/33) |
 
 **Hvorfor den finnes:** i fullskjerm går ESC ALLTID ut av fullskjerm, og det kan
 ingen nettside hindre — Keyboard Lock, som er det eneste som kunne gjort det,
