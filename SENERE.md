@@ -59,6 +59,8 @@ høyst én linje under som sier hvor i koden det gjelder.
   Kameraet settes på `theme.landmarkT` som standard, så et bilde som skal vise startfeltet havner et helt annet sted på runden, med bilene som knapt synlige prikker — og kommandoen sier ingenting om det. Traff meg i runde 5 steg E. Enten et eget `--grid`-flagg, eller at `shot` skriver hvilken rundeposisjon den brukte (den har tallet: `naadd`).
 - [GRAND PRIX] Hjemmelakk for NORDHAV på FJORD og FRONTIER på OVALE – liten – 2026-11-12
   Kan ikke gjøres før de to banene finnes: `test_lag.js` krever at `bane` er et navn som står i `TRACKS`, så lakkene ville strøket i dag. Begge lagene er bygget for det — NORDHAV er fra Stavanger og FRONTIER fra Indianapolis.
+- [GRAND PRIX] Ingen egen fullskjermknapp – liten – 2026-11-13
+  Spillet ber aldri om fullskjerm selv (`requestFullscreen` finnes ikke i fila), så spilleren må bruke nettleserens egen. En F-tast eller et ikon i hovedmenyen ville gjort `fullscreenchange`-lytteren fra pauserettelsen til den vanlige veien inn og ut i stedet for en vi bare arver — og Safaris vindus-fullskjerm (grønn knapp) fyrer ikke den hendelsen i det hele tatt, der er det bare `blur` som fanger oss.
 
 ## Arkaden (felles)
 

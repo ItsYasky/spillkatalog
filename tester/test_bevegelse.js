@@ -191,7 +191,9 @@ function loadGame(path){
     getElementById: function(){ return makeCanvasStub(); },
     createElement: function(){ return makeCanvasStub(); }
   };
-  const windowStub = { location: { href: '' } };
+  // blur-lytteren til autopausen ligger på window, så stubben må ha
+  // addEventListener — uten den kaster hele spillskriptet under lasting.
+  const windowStub = { location: { href: '' }, addEventListener: function(){} };
   const rafStub = function(){};
   const perfStub = { now: function(){ return 0; } };
   const factory = eval('(function(document, window, requestAnimationFrame, performance){\n' + src + '\n' +

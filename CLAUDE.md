@@ -2063,6 +2063,78 @@ geo_laas.json` uendret på alle 13, og `chrome_harness.py maal` bygger alle 13
 (sum 175,6 ms, snitt 13,5, verste VISTANOTTE 19,2 ms). Målingene står i
 `maalinger/lakk_grid_C.txt` og bildene i `maalinger/bilder/C_*.png`.
 
+### GRAND PRIX — pause i fullskjerm (`vintage_f1.html`)
+
+| Status | Commit | Innhold | Test |
+|---|---|---|---|
+| ferdig | `PENDING` | `P` som pausetast ved siden av ESC, autopause når vinduet mister forgrunnen, og «ESC/P» i begge hjelpelinjene | `test_pause.js` (89/89, var 33/33) |
+
+**Hvorfor den finnes:** i fullskjerm går ESC ALLTID ut av fullskjerm, og det kan
+ingen nettside hindre — Keyboard Lock, som er det eneste som kunne gjort det,
+finnes bare i Chrome. Pausetasten måtte derfor være en tast nettleseren ikke
+har tatt, og løpet måtte i tillegg pause av seg selv for den som blir kastet ut
+av fullskjerm midt i en sving.
+
+Fysikk, AI, baner og banegeometri er URØRT — endringen bor i `keydown`, i fire
+hendelseslyttere og i to tekstlinjer.
+
+**Tre ting som er verdt å vite om løsningen:**
+
+1. **`normKey` er ikke valgfritt for en bokstavtast.** `e.key` er `'P'` når
+   Shift holdes og `'p'` ellers, så en sjekk på bare `'p'` ville gjort
+   pausetasten død med Shift inne — altså akkurat under boost. Mutasjonstestet:
+   `e.key==='p'` i stedet for `normKey(e.key)==='p'` feller to sjekker.
+2. **P kolliderer ikke med øvingens `t`/`r`/`g` fordi åpne-grenen gjør
+   `return`.** P når aldri practice-blokken lenger nede. Det er målt begge
+   veier: P er død i alle fem menyene (`menu`, `trackselect`, `teams`,
+   `settings`, `win`), og `t`/`r`/`g` virker fortsatt som før i øving.
+3. **`autoPause()` gjenopptar aldri.** Når fokus kommer tilbake står pausen, og
+   spilleren velger FORTSETT selv — ellers ruller bilen i gang i det øyeblikket
+   han klikker tilbake i vinduet. `!paused`-vakten er der for at et
+   programbytte ikke skal kaste markøren hans tilbake til rad 0 i en pausemeny
+   han alt står og navigerer i.
+
+**`autoPause` står med vilje OVER «FAST TIDSSTEG»-avsnittet, ikke i det.**
+`test_fixed_timestep.js` klipper ut kildekoden fra `const STEP_MS` til siste
+`requestAnimationFrame(loop);` og eval'er den med en håndfull stubber — uten
+noe `window` i det hele tatt. Lå `window.addEventListener('blur',…)` innenfor
+det utsnittet, røk hele den testen på en ReferenceError. Bare `else
+autoPause();` ligger igjen inne i den delte `visibilitychange`-lytteren.
+
+**To eldre tester måtte få en fyldigere `window`-stubb** (`test_bevegelse.js`
+og `test_lazy_track_bg.js`): de bygde `{ location: { href: '' } }` uten
+`addEventListener`, så `blur`-lytteren fikk hele spillskriptet til å kaste
+under lasting. Det er stubbene som var mangelfulle, ikke spillet — `blur` fyres
+på window og ikke på document, og det er den eneste riktige plassen for den.
+
+**Akkumulator-nullstillingen deler nå lytter med autopausen**, og den er målt
+for seg (`accumulator`/`lastFrameT` er eksponert i testharnisken): uten den
+hopper `raceTime` når fanen blir synlig igjen. Mutasjonstest: tømmes
+`if(!document.hidden){…}`, feller det to sjekker.
+
+**Målt, ikke sett etter:** begge hjelpelinjene er målt med Chromes egen
+`measureText` på 9px Courier New — kontrollhjelpen 399,7 px og pausemenyens
+bunnlinje 221,4 px på et 520 px lerret (120,3 og 298,6 px margin). Fargen
+`#9aa4b2` er uendret og måler 8,00:1 mot hovedmenyens `#05070a` og 6,10:1 mot
+pauseduken (`rgba(5,7,10,.88)`) i verste tilfelle, altså over en helt hvit
+scene. Begge linjene er dessuten sett i skjermbilde fra Chrome, siden en tekst
+som får plass på papiret fortsatt kan bli tegnet feil.
+
+**Testene som er kjørt:** `test_pause.js` 89/89, `test_hovedmeny.js` 34/34,
+`test_innstillinger.js` 56/56, `test_meny_kontrast.js` 120/120, `test_lag.js`
+229/229, `test_banetema.js` 208/208, `test_boost.js` 39/39, `test_ghost.js`
+76/76, `test_cooldown.js` 24/24, `test_gap.js` 16/16, `test_track_limits.js`
+30/30, og `test_fixed_timestep.js`, `test_bevegelse.js`, `test_lazy_track_bg.js`
+PASS. `chrome_harness.py maal` er IKKE kjørt — porten gjelder `buildTrackBg` og
+temaene, og ingen av dem er rørt; at bakgrunnen fortsatt bygges er likevel
+bevist av at skjermbildet fra MONTE SPIRA ble til.
+
+**De fire mutasjonene som beviser at testen er en ekte port** (alle felt):
+bare `'p'` i lukke-grenen, P fjernet fra åpne-grenen, `else autoPause()`
+fjernet, og akkumulator-nullstillingen tømt. En lytter som mangler gir nå FEIL
+og ikke et kast som river hele kjøringen — `fyr()` i testen sjekker at
+lytteren finnes før den kalles.
+
 ### ASTEROIDER (`asteroids.html`)
 
 | Steg | Status | Commit | Innhold |

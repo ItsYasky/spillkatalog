@@ -8,9 +8,10 @@
 //   osascript -l JavaScript tester/test_pause.js
 //   osascript -l JavaScript tester/test_pause.js --html /tmp/annen.html
 //
-// Dekker TILSTANDSMASKINEN (ESC åpner/lukker pausemenyen fra 'playing' og
+// Dekker TILSTANDSMASKINEN (ESC og P åpner/lukker pausemenyen fra 'playing' og
 // 'practice', ↑↓/ENTER i pausemenyen, at update() fryser helt mens paused=true,
-// og ↑↓/ENTER/ESC på den nye resultatskjermen) — IKKE selve tegningen. Det er
+// autopause på blur/skjult fane/forlatt fullskjerm, og ↑↓/ENTER/ESC på den nye
+// resultatskjermen) — IKKE selve tegningen. Det er
 // verifisert manuelt med skjermbilder (se CLAUDE.md, steg C), slik
 // test_hovedmeny.js varslet for steg B. startRace()/startPractice() er for
 // tunge til å kjøre i en JSC-stub og byttes derfor ut med flagg-stubber i
@@ -60,13 +61,16 @@ function makeStorage(){
 function loadGame(path){
   const src = extractScript(readFile(path));
   const handlers = {};
+  const winHandlers = {};
   const documentStub = {
     hidden: false,
     addEventListener: function(type, fn){ handlers[type] = fn; },
     getElementById: function(){ return makeCanvasStub(); },
     createElement: function(){ return makeCanvasStub(); }
   };
-  const windowStub = { location: { href: '' }, addEventListener: function(){} };
+  // `blur` ligger på window og ikke på document, så den må fanges for seg —
+  // uten dette ville autopause-testene stilltiende målt ingenting.
+  const windowStub = { location: { href: '' }, addEventListener: function(type, fn){ winHandlers[type] = fn; } };
   windowStub.localStorage = makeStorage();
   const factory = eval('(function(document, window, requestAnimationFrame, performance, localStorage){\n' + src + '\n' +
     'return {\n' +
@@ -81,10 +85,12 @@ function loadGame(path){
     '  get startRace(){ return startRace; }, set startRace(v){ startRace = v; },\n' +
     '  get startPractice(){ return startPractice; }, set startPractice(v){ startPractice = v; },\n' +
     '  get update(){ return update; },\n' +
+    '  get accumulator(){ return accumulator; }, set accumulator(v){ accumulator = v; },\n' +
+    '  get lastFrameT(){ return lastFrameT; }, set lastFrameT(v){ lastFrameT = v; },\n' +
     '  get windowLocationHref(){ return window.location.href; }\n' +
     '};\n})');
   const game = factory(documentStub, windowStub, function(){}, { now: function(){ return 0; } }, windowStub.localStorage);
-  return { game: game, handlers: handlers };
+  return { game: game, handlers: handlers, winHandlers: winHandlers, documentStub: documentStub };
 }
 
 const results = [];
@@ -92,6 +98,17 @@ function check(navn, ok, detalj){ results.push({ navn: navn, ok: !!ok, detalj: d
 function key(g, k, extra){
   const e = Object.assign({ key: k, preventDefault: function(){} }, extra||{});
   g.handlers.keydown(e);
+}
+// En lytter som ikke er registrert skal gi FEIL og ikke et kast som river hele
+// kjøringen — en glemt lytter er nettopp den feilen autopause-testene finnes for.
+function fyr(L, hvor, type){
+  const map = hvor === 'window' ? L.winHandlers : L.handlers;
+  if(typeof map[type] !== 'function'){
+    check(type + '-lytteren er registrert på ' + hvor, false, 'ingen ' + type + '-lytter funnet');
+    return false;
+  }
+  map[type]({ preventDefault: function(){} });
+  return true;
 }
 
 function main(argv){
@@ -266,6 +283,151 @@ function main(argv){
     check('"t" på resultatskjermen gjør ingenting lenger (state uendret)', g.state === 'win', 'state=' + g.state);
     key(L, 'T');
     check('"T" på resultatskjermen gjør ingenting lenger (state uendret)', g.state === 'win', 'state=' + g.state);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // P-tasten og autopause (fullskjermrettelsen)
+  // ══════════════════════════════════════════════════════════════════════════
+  // Bakgrunn: i fullskjerm tar nettleseren ESC selv og går ut av fullskjerm, og
+  // ingen side kan hindre det (Keyboard Lock finnes bare i Chrome). Derfor må
+  // P gjøre nøyaktig det samme som ESC, og løpet må pause av seg selv når
+  // vinduet mister forgrunnen.
+
+  // ── TEST 14: P åpner pausemenyen, både liten og stor bokstav ─────────────
+  // Begge skrivemåtene må med: e.key er 'P' når Shift holdes, og en test som
+  // bare sjekket 'p' ville godkjent en normKey-glipp.
+  ['p','P'].forEach(function(tast){
+    ['playing','practice'].forEach(function(st){
+      const L = loadGame(html); const g = L.game;
+      g.state = st;
+      key(L, tast);
+      check('"' + tast + '" i ' + st + ' setter paused=true', g.paused === true, 'paused=' + g.paused);
+      check('"' + tast + '" i ' + st + ' starter på rad 0', g.pauseSel === 0, 'pauseSel=' + g.pauseSel);
+      check('"' + tast + '" i ' + st + ' lar state stå urørt', g.state === st, 'state=' + g.state);
+      check('"' + tast + '" i ' + st + ' rører IKKE window.location', g.windowLocationHref === '', 'fikk ' + g.windowLocationHref);
+    });
+  });
+
+  // ── TEST 15: P lukker pausemenyen igjen (FORTSETT), som ESC ──────────────
+  ['p','P'].forEach(function(tast){
+    const L = loadGame(html); const g = L.game;
+    g.state = 'playing'; g.paused = true; g.pauseSel = 2;
+    key(L, tast);
+    check('"' + tast + '" i pausemenyen gir paused=false', g.paused === false, 'paused=' + g.paused);
+    check('"' + tast + '" i pausemenyen lar state stå (playing)', g.state === 'playing', 'state=' + g.state);
+    check('"' + tast + '" i pausemenyen lar pauseSel stå (ingen navigasjon)', g.pauseSel === 2, 'pauseSel=' + g.pauseSel);
+  });
+  // P skal kunne slås av og på gjentatte ganger, ikke bare én vei
+  {
+    const L = loadGame(html); const g = L.game;
+    g.state = 'practice';
+    key(L, 'p'); key(L, 'p'); key(L, 'p');
+    check('P tre ganger ender i pause (av/på/av…)', g.paused === true, 'paused=' + g.paused);
+    key(L, 'p');
+    check('P fjerde gang lukker igjen', g.paused === false, 'paused=' + g.paused);
+  }
+
+  // ── TEST 16: P er BARE en pausesnarvei — død i alle andre skjermer ────────
+  // Her ligger kollisjonsfaren: P må ikke bli en ny meny-tast, og den må ikke
+  // røre øvingens t/r/g.
+  ['menu','trackselect','teams','settings','win'].forEach(function(st){
+    const L = loadGame(html); const g = L.game;
+    g.state = st;
+    let startet = null;
+    g.startRace = function(){ startet = 'race'; };
+    g.startPractice = function(){ startet = 'practice'; };
+    key(L, 'p'); key(L, 'P');
+    check('P/p gjør ingenting i ' + st + ' (paused står false)', g.paused === false, 'paused=' + g.paused);
+    check('P/p gjør ingenting i ' + st + ' (state uendret)', g.state === st, 'state=' + g.state);
+    check('P/p gjør ingenting i ' + st + ' (starter ingen økt)', startet === null, 'kalte ' + startet);
+  });
+  {
+    // Øvingens egne snarveier er uendret av at P kom til: P returnerer FØR
+    // practice-blokken, så t/r/g kan ikke ha blitt skadet — det måles her.
+    const L = loadGame(html); const g = L.game;
+    g.state = 'practice';
+    let kaltMed = null;
+    g.startPractice = function(){ kaltMed = 'practice'; };
+    key(L, 'r');
+    check('"r" i øving starter fortsatt økta på nytt', kaltMed === 'practice', 'kalte ' + kaltMed);
+  }
+  {
+    const L = loadGame(html); const g = L.game;
+    g.state = 'practice';
+    key(L, 't');
+    check('"t" i øving går fortsatt til baneutvalget', g.state === 'trackselect', 'state=' + g.state);
+  }
+
+  // ── TEST 17: autopause når vinduet mister forgrunnen ─────────────────────
+  ['playing','practice'].forEach(function(st){
+    const L = loadGame(html); const g = L.game;
+    g.state = st;
+    fyr(L, 'window', 'blur');
+    check('blur i ' + st + ' setter paused=true', g.paused === true, 'paused=' + g.paused);
+    check('blur i ' + st + ' setter pauseSel=0', g.pauseSel === 0, 'pauseSel=' + g.pauseSel);
+  });
+  ['playing','practice'].forEach(function(st){
+    const L = loadGame(html); const g = L.game;
+    g.state = st;
+    L.documentStub.hidden = true;
+    fyr(L, 'document', 'visibilitychange');
+    check('visibilitychange med hidden=true i ' + st + ' setter paused=true', g.paused === true, 'paused=' + g.paused);
+    check('visibilitychange med hidden=true i ' + st + ' setter pauseSel=0', g.pauseSel === 0, 'pauseSel=' + g.pauseSel);
+  });
+  {
+    const L = loadGame(html); const g = L.game;
+    g.state = 'playing';
+    fyr(L, 'document', 'fullscreenchange');
+    check('fullscreenchange ut av fullskjerm setter paused=true', g.paused === true, 'paused=' + g.paused);
+  }
+  {
+    // Fortsatt I fullskjerm: hendelsen fyrer også når man går INN, og da skal
+    // løpet ikke pauses.
+    const L = loadGame(html); const g = L.game;
+    g.state = 'playing';
+    L.documentStub.fullscreenElement = {};
+    fyr(L, 'document', 'fullscreenchange');
+    check('fullscreenchange INN i fullskjerm pauser IKKE', g.paused === false, 'paused=' + g.paused);
+  }
+  {
+    // Autopause må holde seg til løpet: i menyene finnes ingen pausemeny å
+    // vise, og en paused=true der ville frosset dem uten vei ut.
+    const L = loadGame(html); const g = L.game;
+    g.state = 'menu';
+    fyr(L, 'window', 'blur');
+    L.documentStub.hidden = true;
+    fyr(L, 'document', 'visibilitychange');
+    check('blur/hidden i menyen setter IKKE paused', g.paused === false, 'paused=' + g.paused);
+  }
+  {
+    // Ingen automatisk gjenopptaking: spilleren velger FORTSETT selv, ellers
+    // ruller bilen i gang før han har hendene på tastene.
+    const L = loadGame(html); const g = L.game;
+    g.state = 'playing';
+    fyr(L, 'window', 'blur');
+    L.documentStub.hidden = false;
+    fyr(L, 'document', 'visibilitychange');
+    check('pausen står når fokus kommer tilbake (ingen auto-fortsett)', g.paused === true, 'paused=' + g.paused);
+  }
+  {
+    // Autopause må ikke flytte markøren i en pause spilleren selv åpnet og
+    // navigerte i — et programbytte skal ikke kaste valget hans tilbake til rad 0.
+    const L = loadGame(html); const g = L.game;
+    g.state = 'playing'; g.paused = true; g.pauseSel = 3;
+    fyr(L, 'window', 'blur');
+    check('blur i en alt pauset meny lar pauseSel stå', g.pauseSel === 3, 'pauseSel=' + g.pauseSel);
+  }
+
+  // ── TEST 18: akkumulator-nullstillingen står fortsatt ────────────────────
+  // Den delte visibilitychange-lytteren har to jobber nå. Uten nullstillingen
+  // hopper raceTime i det fanen blir synlig igjen, så den må måles eksplisitt.
+  {
+    const L = loadGame(html); const g = L.game;
+    g.accumulator = 1234; g.lastFrameT = 999;
+    L.documentStub.hidden = false;
+    fyr(L, 'document', 'visibilitychange');
+    check('visibilitychange synlig nullstiller accumulator', g.accumulator === 0, 'accumulator=' + g.accumulator);
+    check('visibilitychange synlig nullstiller lastFrameT', g.lastFrameT === null, 'lastFrameT=' + g.lastFrameT);
   }
 
   console.log('');

@@ -6094,8 +6094,9 @@ function draw(){
     ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
     // «ESC Pause» lagt til i steg D: pausemenyen (steg C) fantes ikke da linja
     // først ble skrevet, så ESC under løpet gjorde da det samme som overalt
-    // ellers (rett ut til katalogen). Nå åpner den pausemenyen i stedet.
-    ctx.fillText('↑ Gass · ↓ Brems · ← → Styr · SPACE Rett-modus · SHIFT Boost · ESC Pause',W/2,H-36);
+    // ellers (rett ut til katalogen). Nå åpner den pausemenyen i stedet. «/P»
+    // står her fordi det er den eneste pausetasten som virker i fullskjerm.
+    ctx.fillText('↑ Gass · ↓ Brems · ← → Styr · SPACE Rett-modus · SHIFT Boost · ESC/P Pause',W/2,H-36);
     ctx.fillText('↑ ↓ velg · ENTER bekreft · ESC katalog',W/2,H-20);
     ctx.restore(); return;
   }
@@ -6926,7 +6927,7 @@ function draw(){
     });
     ctx.textAlign='center';
     ctx.fillStyle='#9aa4b2'; ctx.font='9px Courier New';
-    ctx.fillText('↑ ↓ velg · ENTER bekreft · ESC fortsett',W/2,PROW_Y0+PAUSE_LABELS.length*PROW_DY+14);
+    ctx.fillText('↑ ↓ velg · ENTER bekreft · ESC/P fortsett',W/2,PROW_Y0+PAUSE_LABELS.length*PROW_DY+14);
   }
 
   ctx.textBaseline='alphabetic';
@@ -6948,7 +6949,12 @@ document.addEventListener('keydown',e=>{
   // settes separat under, der state sjekkes — denne blokken er bare
   // navigasjonen INNE i menyen.
   if(paused){
-    if(e.key==='Escape'){ paused=false; return; }
+    // P gjør det samme som ESC fordi ESC er TAPT i fullskjerm: der tar nettleseren
+    // tasten selv og går ut av fullskjerm, og det kan ingen side hindre (Keyboard
+    // Lock finnes bare i Chrome). P er ikke reservert noe sted og er derfor den
+    // ene snarveien som overlever. normKey trengs fordi en bokstavtast kommer som
+    // 'p' eller 'P' avhengig av Shift — samme grunn som øvingens t/r/g sjekker begge.
+    if(e.key==='Escape'||normKey(e.key)==='p'){ paused=false; return; }
     if(e.key==='ArrowUp') pauseSel=(pauseSel+PAUSE_LABELS.length-1)%PAUSE_LABELS.length;
     if(e.key==='ArrowDown') pauseSel=(pauseSel+1)%PAUSE_LABELS.length;
     if(e.key==='Enter'){
@@ -6962,7 +6968,10 @@ document.addEventListener('keydown',e=>{
   // ESC under selve løpet/øvinga åpner pausemenyen i stedet for å gå rett ut
   // til katalogen — det ER steg C sin jobb, se SENERE-oppføringen som er
   // fjernet fra hovedmenyens kontrollhint i steg B.
-  if((state==='playing'||state==='practice') && e.key==='Escape'){
+  // P åpner den på samme vis, og `return` her er grunnen til at P ikke kolliderer
+  // med øvingens t/r/g lenger ned: P kommer aldri dit. I de andre menyene legges
+  // P bevisst ikke til — det er en pausesnarvei, ikke en meny-tast.
+  if((state==='playing'||state==='practice') && (e.key==='Escape'||normKey(e.key)==='p')){
     paused=true; pauseSel=0; return;
   }
   // Lagoversikten er et lag OVER baneutvalget, ikke en egen del av spillet, så
@@ -7097,6 +7106,29 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>{keys[normKey(e.key)]=false;});
 
+// Løpet skal stå stille når vinduet ikke er i forgrunnen, og hovedgrunnen er
+// fullskjerm: ESC kaster deg UT av fullskjerm i stedet for å pause, så uten
+// dette ville bilen kjørt videre mens skjermen skiftet. De tre hendelsene
+// dekker tre ulike måter å miste forgrunnen på (bytt program, skjult fane,
+// forlatt fullskjerm) — nettleserne fyrer ikke alltid alle tre.
+//
+// Vi gjenopptar ALDRI av oss selv når fokus kommer tilbake: spilleren skal få
+// se PAUSE-skjermen og velge FORTSETT selv, ellers ruller løpet i gang i det
+// øyeblikket han klikker tilbake, før han har hendene på tastene. `!paused`
+// er der for at et programbytte ikke skal kaste markøren hans tilbake til rad 0
+// i en meny han alt står i.
+function autoPause(){
+  if((state==='playing'||state==='practice') && !paused){ paused=true; pauseSel=0; }
+}
+window.addEventListener('blur',autoPause);
+// Både med og uten webkit-prefiks: eldre Safari fyrer bare den prefiksede
+// hendelsen, og `fullscreenElement` er udefinert der.
+const utAvFullskjerm=()=>{ if(!document.fullscreenElement && !document.webkitFullscreenElement) autoPause(); };
+document.addEventListener('fullscreenchange',utAvFullskjerm);
+document.addEventListener('webkitfullscreenchange',utAvFullskjerm);
+// Den skjulte fanen henger sammen med akkumulator-nullstillingen lenger ned og
+// deler lytter med den, se FAST TIDSSTEG.
+
 // ══════════════════════════════════════════════════════════════════
 // FAST TIDSSTEG (Glenn Fiedler «Fix Your Timestep», akkumulator-metoden)
 // ══════════════════════════════════════════════════════════════════
@@ -7138,6 +7170,7 @@ function loop(t){
 // men fortsatt synlig som et hopp) i det fanen blir aktiv igjen.
 document.addEventListener('visibilitychange',()=>{
   if(!document.hidden){ lastFrameT=null; accumulator=0; }
+  else autoPause(); // skjult fane er også «mistet forgrunnen», se autoPause over
 });
 requestAnimationFrame(loop);
 </script>
