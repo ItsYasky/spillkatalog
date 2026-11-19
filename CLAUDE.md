@@ -2208,7 +2208,7 @@ E sluttest.
 
 | Steg | Status | Commit | Innhold | Test |
 |---|---|---|---|---|
-| A | ferdig | — | FJORD i `TRACKS` + minimalt `THEMES`-tema, geometrilåsen utvidet til 14 | `test_banegeometri.js` (14/14), `test_banetema.js` (218/218), `test_ai_sim.js`, `chrome_harness.py maal` |
+| A | ferdig | `69cbc34` | FJORD i `TRACKS` + minimalt `THEMES`-tema, geometrilåsen utvidet til 14 | `test_banegeometri.js` (14/14), `test_banetema.js` (218/218), `test_ai_sim.js`, `chrome_harness.py maal` |
 
 **Avvik verdt å vite i steg A:**
 
