@@ -130,9 +130,14 @@ function testStandard(game){
   check('VISTANOTTE har naturligTid NATT', navn['VISTANOTTE'] === 'NATT', 'VISTANOTTE=' + navn['VISTANOTTE']);
   check('SERPENTINA har naturligTid SOLNEDGANG', navn['SERPENTINA'] === 'SOLNEDGANG', 'SERPENTINA=' + navn['SERPENTINA']);
   check('VULCANO har naturligTid SOLNEDGANG', navn['VULCANO'] === 'SOLNEDGANG', 'VULCANO=' + navn['VULCANO']);
+  check('FJORD har naturligTid SOLNEDGANG', navn['FJORD'] === 'SOLNEDGANG', 'FJORD=' + navn['FJORD']);
   check('MONTE SPIRA faller tilbake til DAG', navn['MONTE SPIRA'] === 'DAG', 'MONTE SPIRA=' + navn['MONTE SPIRA']);
+  // Tallet er FEM fra og med FJORD. Det er med vilje et eksakt tall og ikke en
+  // nedre grense: hver bane med en annen tid enn DAG er navngitt i sjekkene
+  // over, så en bane som stille får en døgntid ingen har bedt om skal gi
+  // STRYK her og ikke gli forbi.
   const antallIkkeDag = game.TRACKS.filter(function(t){ return t.naturligTid !== 'DAG'; }).length;
-  check('nøyaktig fire baner har en annen naturligTid enn DAG', antallIkkeDag === 4, 'antall=' + antallIkkeDag);
+  check('nøyaktig fem baner har en annen naturligTid enn DAG', antallIkkeDag === 5, 'antall=' + antallIkkeDag);
 }
 
 // ── TEST 2: resolveTodIdx (AUTO / TILFELDIG / fast) ─────────────────────────

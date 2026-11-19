@@ -167,5 +167,18 @@
   "raceLine": "0f57358f",
   "wallOffsArr": "7707ae6a",
   "straightZones": "f612539e"
+ },
+ "FJORD": {
+  "PN": 828,
+  "TW": 48,
+  "walls": false,
+  "soner": 1,
+  "PATH": "84185597",
+  "heading": "2859fafb",
+  "smoothCurv": "feae08d0",
+  "severity": "6c5cb56e",
+  "raceLine": "cdbd2592",
+  "wallOffsArr": "null",
+  "straightZones": "64386f16"
  }
 }

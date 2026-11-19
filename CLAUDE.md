@@ -2199,6 +2199,124 @@ etter: `previewLivery(LABIRINTO).navn==='Rosé'`, `base=#d79a7b`.
 `chrome_harness.py maal` er ikke kjørt — porten gjelder `buildTrackBg` og
 temaene, og ingen av dem er rørt.
 
+### GRAND PRIX — FJORD, den fjortende banen (`vintage_f1.html`)
+
+Oppdraget står i sin helhet i [`prompter/grand-prix-baner-fjord.md`](prompter/grand-prix-baner-fjord.md).
+Fem steg: A geometri + minimalt tema, B landskapet, C landemerket/brua/nattlys,
+D tunnelen (D1 visuelt, D2 harde vegger er valgfritt og må avklares først),
+E sluttest.
+
+| Steg | Status | Commit | Innhold | Test |
+|---|---|---|---|---|
+| A | ferdig | — | FJORD i `TRACKS` + minimalt `THEMES`-tema, geometrilåsen utvidet til 14 | `test_banegeometri.js` (14/14), `test_banetema.js` (218/218), `test_ai_sim.js`, `chrome_harness.py maal` |
+
+**Avvik verdt å vite i steg A:**
+
+Banen er skrevet av nøyaktig som bestilt, og to tall beviser at avskriften er
+riktig: **PATH-lengden er 10418 px og PN er 828**, begge bokstavelig talt det
+bestillingen lovet. Ingen kontrollpunkt er rørt. Men TRE av tallene i
+bestillingen lot seg ikke reprodusere, og siden prompten sa «avviker den, har
+du skrevet av feil» er det verdt å vise hva de faktisk måler:
+
+1. **Minste svingradius ~74 px finnes ikke i noen formel jeg kan konstruere, og
+   kravet holder likevel med god margin.** Målt på FJORD:
+
+   | formel | FJORD |
+   |---|---|
+   | `1/max abs(smoothCurv)` (enhetsløs) | 13,5 |
+   | `steglengde/max abs(smoothCurv)` (px) | **170** |
+   | omskreven sirkel av tre PATH-punkt | **141** |
+   | samme på `raceLine` | 144 |
+
+   Den ENESTE kandidaten der alle tretten gamle banene klarer sitt eget gulv er
+   `steg/maxSmooth` (de gamle ligger på 130–258 px mot gulv på 59–101). Med den
+   måler FJORD **170 px mot et gulv på 71** (`TW+GRAVEL_SAFE` = 48+23), altså
+   2,4x margin. Tre-punktsradien kan ikke være den tiltenkte formelen, for da
+   måler MONTE SPIRA 44 px mot sitt eget gulv på 71 — en bane som har ligget i
+   spillet siden starten. **Tallet 74 er trolig `max abs(smoothCurv)` = 0,0739
+   lest som piksler.** Det substansielle kravet — ingen sving er trangere enn
+   kerb og grus får plass inni — er altså oppfylt, og FJORD er faktisk en av de
+   SLAKERE banene i feltet (3. slakest av 14 på rå treperktsradius).
+2. **«~28 % krappe partier» gjelder bare ved en terskel ingen i koden bruker.**
+   Ved `abs(smoothCurv)>0,03` måler FJORD 31,6 % og ved 0,04 måler den 22,7 %,
+   så 28 % ligger rundt 0,033. Spillets EGEN terskel er 0,014 (den
+   `findStraightZones` bruker), og der måler FJORD **57,1 %** — i den slakere
+   halvdelen av feltet, mot MONTE SPIRA 70,6 %, ALPEN 69,3 % og DISCESA 68,8 %.
+3. **`straightCount:2` ga ÉN sone, og det er normalt og ikke en feil.**
+   `findStraightZones` krever at hver sone er minst 10 % av runden, så den
+   leverer færre soner enn det blir bedt om når banen ikke har dem — MONTE
+   SPIRA ber også om 2 og får 1. Viktigere er HVOR sona ligger: målt til
+   **t = 0,032–0,146**, altså på kaia rett etter start/mål. Det er nøyaktig det
+   steg C krever («banen har rett-modus-sonen sin på kaia, ikke på brua»), og
+   brua skal ligge på 0,29–0,37. Det er bekreftet på oversiktsbildet, der den
+   lilla sona ligger på start/mål-strekket.
+
+**To påstander i bestillingen om temaet stemmer ikke, og temaet er lagt inn av
+en annen grunn enn den oppgitte:**
+
+4. **Et manglende `THEMES['FJORD']` ville IKKE fått banen til å kaste i
+   `buildTrackBg`.** `makeTheme(navn)` gjør `THEMES[navn] || {}` og gir en
+   standardverdi for HVERT felt, så en bane uten tema blir en bane som ser ut
+   som standard — ikke en som krasjer. Temaet er lagt inn likevel, og det er
+   riktig, men den ekte grunnen er sjekk 12 i `test_banetema.js`: den krever at
+   signaturen `asfalt|ground|runoff` er UNIK per bane, og fjortende bane på
+   standardverdiene ville kollidert med standarden.
+5. **Kravet om «≥3:1 internt mellom bakketonene» finnes ikke.** Sjekk 5 krever
+   bare 2–3 gyldige hex. 3:1-regelen er sjekk 13, og den måler LANDSKAPS- og
+   landemerketoner mot den VERSTE bakketonen — den biter altså først fra steg B.
+   Bakketonene er likevel valgt mørke med vilje (`#17241f`/`#1f2f28`/`#2a3b33`,
+   tak på luminans 0,216), for det er steg B som trenger rommet: et grått fjell
+   og en snøtone skal nå 3:1 OVER den verste bakketonen, og da kan ikke bakken
+   ligge lyst.
+
+**En test måtte endres, og det er en direkte følge av bestillingen og ikke et
+funn:** `test_innstillinger.js` krevde at «nøyaktig fire baner har en annen
+naturligTid enn DAG». FJORDs bestilte `SOLNEDGANG` gjør dem fem. Tallet er
+hevet til 5 og FJORD er navngitt i en egen sjekk ved siden av de fire andre —
+det eksakte tallet er beholdt med vilje, slik at en bane som stille får en
+døgntid ingen har bedt om fortsatt gir stryk.
+
+**Geometrilåsen er utvidet BEVISST, i to trinn.** Først er de tretten gamle
+bekreftet bit-identiske mot den gamle låsen (alle meldte `uendret`, bare FJORD
+meldte `NY BANE`), og FØRST da er `geo_laas.json` skrevet på nytt. At de gamle
+er urørt er dessuten bevist av diffen på selve låsefila: **13 linjer lagt til,
+0 fjernet.** Låsen dekker nå 14 baner.
+
+**AI-simuleringen på FJORD er ren i alle fire konfigurasjonene** — og bedre enn
+kravet, ikke så vidt innenfor det:
+
+| modus / nivå | spredning L8 | vegg | utenfor | brudd | beste |
+|---|---|---|---|---|---|
+| CASUAL / MIDDELS | 0,420 | 0 | 0 | 0 | 45,19 |
+| CASUAL / ULTRA | 0,738 | 0 | 0 | 0 | 36,68 |
+| REALISTISK / MIDDELS | 0,378 | 0 | 0 | 0 | 39,96 |
+| REALISTISK / ULTRA | 0,720 | 0 | 0 | 0 | 26,03 |
+
+Spredningen er under én runde overalt (verste 0,74), og **null veggtreff, null
+tid utenfor banen og null banegrensebrudd** — altså ikke en ny utligger som
+SERPENTINA, som ligger på 6,65 brudd i sin verste konfigurasjon. Ingen sving
+måtte åpnes: hverken Svingane (0,76) eller Naustsvingen (0,93) ga AI-en
+problemer, så ingen `width` er rørt.
+
+**De tretten gamle banene er bekreftet uendret FELT FOR FELT**, ikke bare på de
+fire tallene `test_ai_compare.js` skriver. Sammenligningen gikk over `steps`,
+`finished`, `wallHitsPerCar`, `offFracPerCar`, `violPerCar`, `otFrac`,
+`besteLap`, `medLap`, `spreadLap1`, `spreadLap4` og `spreadLap8` for alle 52
+konfigurasjoner (13 baner x 4) mot `ai_baseline_lag_E.json`: **0 ulike felt av
+572**, 4 nye konfigurasjoner (FJORD) og 0 forsvunne. Det bekrefter samtidig at
+simuleringen er deterministisk nok til å bære en slik påstand — at en fjortende
+bane legges til i `TRACKS` flytter ikke ett siffer på de tretten andre.
+
+**Byggeporten er grønn:** `chrome_harness.py maal` bygger alle 14, FJORD på
+12,3 ms (3826x3169 px, `bgScale` 1,000) mot budsjettet på 100 ms, sum 205,5 ms.
+`nattlys 0` og `beveg 0` er RIKTIG i steg A — begge kommer i steg C.
+
+**`terrain:'fjord'` er en ukjent terrengtype overalt, og det er håndtert pent
+av seg selv.** Hverken vegetasjonskjeden eller den levende ambient-kjeden har
+en `fjord`-gren, så banen strør ingen trær og tegner ingen fugler — og kaster
+ingen steder. Den tomme bakken i oversiktsbildet er altså forventet, ikke en
+manglende kobling.
+
 ### ASTEROIDER (`asteroids.html`)
 
 | Steg | Status | Commit | Innhold |

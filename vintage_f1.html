@@ -3137,7 +3137,19 @@ const THEMES={
       const nav=s.lokal(p,0,cy);
       s.lys(nav.x,nav.y,P.kabin,24);
       s.sperr(p.x,p.y,R*1.4);
-    } }
+    } },
+
+  // FJORD er ny i den fjortende banen og har med vilje BARE det bakgrunnen
+  // trenger for å bygges: bakketoner, dekke og flekktype. Fjorden, fjellsida
+  // og naustrekka kommer i steg B og C, og da — ikke før — trenger temaet en
+  // `lagPal`, siden sjekk 14 i test_banetema.js krever tonene som data først
+  // når temaet faktisk TEGNER noe eget.
+  //
+  // Bakketonene er mørk kystlyng, og at de er mørke er et VALG for steg B:
+  // landskapstonene måles mot den VERSTE (lyseste) bakketonen på 3:1, så et
+  // lyst gråfjell og en snøtone må ha rom å nå opp i. #2a3b33 gir et tak på
+  // luminans 0,216, godt over en steingrå tone.
+  'FJORD':{ ground:['#17241f','#1f2f28','#2a3b33'], speckle:'grass', asphalt:'#363c40' }
 };
 // Standardverdiene ligger her i stedet for spredt utover tegnekoden, slik at en
 // bane som mangler et felt får det samme som alle andre og ikke en tilfeldig
@@ -3428,6 +3440,27 @@ const TRACKS=[
       {a0:.95*Math.PI*2,width:.016*Math.PI*2,depth:-380}
     ],
     straightCount:3
+  }),
+  // ncp:46 av samme grunn som VISTANOTTEs 58: standard sampling ga for grovt
+  // mellomrom mellom PATH-punktene til at smoothCurv fanget hårnålene her.
+  // 46 gir ~12,7 px, altså VISTANOTTEs tetthet, uten å endre banens form.
+  buildTrack({name:'FJORD', info:'Fjord · Smal, tunnel og sikksakk over fjellet',
+    ncp:46, R0:1400, cx:1500, cy:1400, wobbleAmp:220, wobbleFreq:2, wobblePhase:Math.PI/2,
+    TW:48, terrain:'fjord', naturligTid:'SOLNEDGANG',
+    features:[
+      {a0:.15*Math.PI*2, width:.06*Math.PI*2,  depth:160},   // Fjordsvingen (rask)
+      {a0:.25*Math.PI*2, width:.019*Math.PI*2, depth:-240},  // Brygga, venstre
+      {a0:.285*Math.PI*2,width:.019*Math.PI*2, depth:200},   // Brygga, høyre
+      {a0:.40*Math.PI*2, width:.10*Math.PI*2,  depth:60},    // slakt inn mot tunnelen
+      {a0:.47*Math.PI*2, width:.016*Math.PI*2, depth:-230},  // Blindsvingen i tunnelen
+      {a0:.64*Math.PI*2, width:.025*Math.PI*2, depth:-330},  // Stigen
+      {a0:.70*Math.PI*2, width:.025*Math.PI*2, depth:250},   // sikksakk
+      {a0:.76*Math.PI*2, width:.033*Math.PI*2, depth:-230},  // Svingane
+      {a0:.82*Math.PI*2, width:.025*Math.PI*2, depth:250},   // Utsikten
+      {a0:.93*Math.PI*2, width:.020*Math.PI*2, depth:-330},  // Naustsvingen
+      {a0:.972*Math.PI*2,width:.016*Math.PI*2, depth:150}
+    ],
+    straightCount:2
   })
 ];
 
